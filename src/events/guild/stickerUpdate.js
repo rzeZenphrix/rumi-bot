@@ -1,0 +1,4 @@
+const { Events } = require('discord.js');
+const { sendLog } = require('../../systems/logging/logDispatcher');
+const { diffField, compactFields } = require('../../utils/logFields');
+module.exports = { name: Events.GuildStickerUpdate || 'stickerUpdate', async execute(_client, oldSticker, newSticker) { const fields = compactFields([diffField('Name', oldSticker.name, newSticker.name), diffField('Description', oldSticker.description, newSticker.description, false), diffField('Tags', oldSticker.tags, newSticker.tags, false), { name: 'Sticker ID', value: `\`${newSticker.id}\``, inline: true }]); if (fields.length <= 1) return; await sendLog(newSticker.guild, 'stickerUpdate', { title: 'Sticker updated', description: `Sticker **${newSticker.name}** was updated.`, targetId: newSticker.id, fields, thumbnail: newSticker.url }); } };

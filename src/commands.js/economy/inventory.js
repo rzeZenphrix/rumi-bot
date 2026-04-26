@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond'); const db=require('../../services/database');
+module.exports={name:'inventory',aliases:['inv'],category:'economy',description:'I show your inventory.',usage:'inventory',examples:['inventory'],guildOnly:true,async execute({message}){const a=await db.getKv(`guild:${message.guild.id}:economy`,message.author.id,{inventory:[]}); return respond.reply(message,'info',null,{description:`🎒 **Inventory**\n${a.inventory?.length?a.inventory.map(x=>`• ${x}`).join('\n'):'I do not see any items in your inventory yet.'}`});}};

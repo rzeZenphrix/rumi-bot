@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond');
+module.exports={name:'reverse',aliases:['rev'],category:'fun',description:'I reverse text.',usage:'reverse <text>',examples:['reverse hello'],async execute({message,args}){const t=args.join(' '); if(!t)return respond.reply(message,'info','send text to reverse.'); return respond.reply(message,'info',null,{description:`↩️ ${[...t].reverse().join('')}`});}};

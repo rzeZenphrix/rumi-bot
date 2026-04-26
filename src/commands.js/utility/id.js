@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond');
+module.exports={name:'id',aliases:['snowflake'],category:'utility',description:'I return Discord IDs.',usage:'id [mention]',examples:['id @user'],guildOnly:true,async execute({message,args}){const raw=args[0]||''; const id=raw.match(/\d{17,20}/)?.[0] || message.author.id; return respond.reply(message,'info',null,{description:`🆔 **ID**\n\`${id}\``});}};

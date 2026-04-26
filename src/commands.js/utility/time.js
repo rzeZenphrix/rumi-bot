@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond');
+module.exports={name:'time',aliases:['timestamp'],category:'utility',description:'I make Discord timestamps.',usage:'time [unix|now]',examples:['time','time 1760000000'],async execute({message,args}){const raw=args[0]; const ts=raw&&/^\d+$/.test(raw)?Number(raw):Math.floor(Date.now()/1000); return respond.reply(message,'info',null,{description:`🕒 **Time**\n**Full:** <t:${ts}:F>\n**Relative:** <t:${ts}:R>\n**Raw:** \`<t:${ts}:F>\``});}};

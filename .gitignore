@@ -1,0 +1,8 @@
+node_modules/
+.env
+supabase/
+scripts/
+docs/
+data/
+package-lock.json
+package.patch.json

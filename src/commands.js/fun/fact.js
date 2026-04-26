@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond'); const facts=['Discord launched in 2015.','A single Discord snowflake includes timestamp information.','Bots can use webhooks for cleaner log delivery.'];
+module.exports={name:'fact',aliases:['randomfact'],category:'fun',description:'I share a random fact.',usage:'fact',examples:['fact'],async execute({message}){return respond.reply(message,'info',null,{description:`💡 **Fact**\n${facts[Math.floor(Math.random()*facts.length)]}`});}};

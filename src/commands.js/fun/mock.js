@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond');
+module.exports={name:'mock',aliases:['spongebob'],category:'fun',description:'I alternate text casing.',usage:'mock <text>',examples:['mock hello there'],async execute({message,args}){const t=args.join(' '); if(!t)return respond.reply(message,'info','send text to mock.'); const out=[...t].map((c,i)=>i%2?c.toLowerCase():c.toUpperCase()).join(''); return respond.reply(message,'info',null,{description:`🪞 ${out}`});}};

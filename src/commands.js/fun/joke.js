@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond'); const jokes=['Why did the bot join the server? Because it had permission issues to resolve.','I told my code a joke. It threw an exception.','Why do developers hate nature? Too many bugs.'];
+module.exports={name:'joke',aliases:[],category:'fun',description:'I tell a joke.',usage:'joke',examples:['joke'],async execute({message}){return respond.reply(message,'info',null,{description:`😂 **Joke**\n${jokes[Math.floor(Math.random()*jokes.length)]}`});}};

@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond');
+module.exports={name:'choose',aliases:['pick'],category:'fun',description:'I choose from options.',usage:'choose option1 | option2',examples:['choose pizza | burger'],async execute({message,args}){const opts=args.join(' ').split('|').map(x=>x.trim()).filter(Boolean); if(opts.length<2)return respond.reply(message,'info','separate at least two options with `|`.'); return respond.reply(message,'info',null,{description:`🎲 **I choose:** ${opts[Math.floor(Math.random()*opts.length)]}`});}};

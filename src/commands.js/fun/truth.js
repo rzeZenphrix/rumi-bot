@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond'); const prompts=['What is a goal you are secretly proud of?','What is one habit you want to improve?','What is the funniest mistake you made recently?'];
+module.exports={name:'truth',aliases:[],category:'fun',description:'I give a safe truth question.',usage:'truth',examples:['truth'],async execute({message}){return respond.reply(message,'info',null,{description:`🗣️ **Truth**\n${prompts[Math.floor(Math.random()*prompts.length)]}`});}};

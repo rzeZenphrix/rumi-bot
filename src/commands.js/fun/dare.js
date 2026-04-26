@@ -1,0 +1,2 @@
+const respond=require('../../utils/respond'); const prompts=['Send a compliment to someone in the chat.','Use only emojis for your next message.','Share a harmless hot take.'];
+module.exports={name:'dare',aliases:[],category:'fun',description:'I give a safe dare.',usage:'dare',examples:['dare'],async execute({message}){return respond.reply(message,'info',null,{description:`🔥 **Dare**\n${prompts[Math.floor(Math.random()*prompts.length)]}`});}};

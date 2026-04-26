@@ -1,0 +1,36 @@
+{
+  "name": "rumi-bot",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Rumi multi-function Discord bot with moderation, logging, media, customization, dashboard, AI, utility, economy, community, and fun features.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "start:single": "node -e \"process.env.BOT_MODE='single'; require('./src/index.js')\"",
+    "dev:single": "node -e \"process.env.BOT_MODE='single'; require('./src/index.js')\"",
+    "start:shards": "node -e \"process.env.BOT_MODE='shard'; require('./src/index.js')\"",
+    "check": "node scripts/check.js",
+    "install:next30": "node scripts/install-next-30.js",
+    "migrate:print": "node -e \"console.log(require('fs').readFileSync('supabase/migrations/0001_rumi_core.sql','utf8'))\""
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@napi-rs/canvas": "^0.1.99",
+    "@supabase/supabase-js": "^2.49.4",
+    "cors": "^2.8.6",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "pg": "^8.13.1",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "sharp": "^0.34.5"
+  }
+}

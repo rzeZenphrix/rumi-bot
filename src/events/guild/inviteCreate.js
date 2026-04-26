@@ -1,0 +1,3 @@
+const { Events } = require('discord.js');
+const { sendLog } = require('../../systems/logging/logDispatcher');
+module.exports = { name: Events.InviteCreate || 'inviteCreate', async execute(_client, invite) { await sendLog(invite.guild, 'inviteCreate', { title: 'Invite created', description: `Invite \`${invite.code}\` was created.`, actorId: invite.inviterId, channelId: invite.channelId, fields: [{ name: 'Code', value: `\`${invite.code}\``, inline: true }, { name: 'Max uses', value: String(invite.maxUses || 'Unlimited'), inline: true }, { name: 'Expires', value: invite.expiresTimestamp ? `<t:${Math.floor(invite.expiresTimestamp / 1000)}:R>` : 'Never', inline: true }] }); } };
