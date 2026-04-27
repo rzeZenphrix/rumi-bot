@@ -196,7 +196,7 @@ module.exports = {
     if (usage && !usage.ok) {
       return sendPlain(
         message.channel,
-        `You have used all ${limit} AI quer${limit === 1 ? 'y' : 'ies'} for today. That resets at 00:00 UTC.`
+        `You have used all ${limit} AI quer${limit === 1 ? 'y' : 'ies'} for today. That resets at 00:00 UTC. Upgrade to [premium](https://rumi.rocks/plans) for a higher quota and dedicated service!`
       );
     }
 
