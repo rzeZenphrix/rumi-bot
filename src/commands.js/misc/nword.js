@@ -10,7 +10,7 @@ module.exports = {
   examples: ['nword'],
 
   async execute({ message }) {
-    const counts = getUserCounts(message.author.id);
+    const counts = await getUserCounts(message.author.id);
 
     return respond.reply(message, 'info', null, {
       title: `${message.author.username}'s global word counter`,

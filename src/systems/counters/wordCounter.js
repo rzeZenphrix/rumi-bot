@@ -1,15 +1,7 @@
-const { readStore, writeStore } = require('../storage/jsonStore');
+const db = require('../../services/database');
 
 function countMatches(content, regex) {
   return [...String(content || '').matchAll(regex)].length;
-}
-
-function getStore() {
-  return readStore('wordCounts', { users: {} });
-}
-
-function saveStore(store) {
-  writeStore('wordCounts', store);
 }
 
 function defaultCounts() {
@@ -21,21 +13,12 @@ function defaultCounts() {
   };
 }
 
-function getUserCounts(userId) {
-  const store = getStore();
-
-  store.users[userId] ||= defaultCounts();
-  saveStore(store);
-
-  return store.users[userId];
+async function getUserCounts(userId) {
+  return db.getKv('counters:words', userId, defaultCounts());
 }
 
-function incrementFromContent(userId, content) {
+async function incrementFromContent(userId, content) {
   if (!userId || !content) return;
-
-  const store = getStore();
-
-  store.users[userId] ||= defaultCounts();
 
   const text = String(content);
 
@@ -46,12 +29,12 @@ function incrementFromContent(userId, content) {
 
   if (!nwordTotal && !hardR && !fword && !fuh) return;
 
-  store.users[userId].nwordTotal += nwordTotal;
-  store.users[userId].hardR += hardR;
-  store.users[userId].fword += fword;
-  store.users[userId].fuh += fuh;
-
-  saveStore(store);
+  const current = await getUserCounts(userId);
+  current.nwordTotal += nwordTotal;
+  current.hardR += hardR;
+  current.fword += fword;
+  current.fuh += fuh;
+  await db.setKv('counters:words', userId, current);
 }
 
 module.exports = {

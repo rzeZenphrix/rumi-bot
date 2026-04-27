@@ -1,4 +1,4 @@
-const { readStore, writeStore } = require('../storage/jsonStore');
+const db = require('../../services/database');
 
 function defaultGuild() {
   return {
@@ -19,29 +19,6 @@ function defaultGuild() {
   };
 }
 
-function getStore() {
-  return readStore('levels', { guilds: {} });
-}
-
-function saveStore(store) {
-  writeStore('levels', store);
-}
-
-function getGuildLevels(guildId) {
-  const store = getStore();
-  store.guilds[guildId] ||= defaultGuild();
-  saveStore(store);
-  return store.guilds[guildId];
-}
-
-function updateGuildLevels(guildId, updater) {
-  const store = getStore();
-  store.guilds[guildId] ||= defaultGuild();
-  updater(store.guilds[guildId]);
-  saveStore(store);
-  return store.guilds[guildId];
-}
-
 function neededXp(level) {
   return 100 + level * level * 35;
 }
@@ -56,15 +33,32 @@ function ensureUser(config, userId) {
   return config.users[userId];
 }
 
-function getUserLevel(guildId, userId) {
-  const config = getGuildLevels(guildId);
+async function getGuildLevels(guildId) {
+  const config = await db.getKv('levels:guilds', guildId, defaultGuild());
+  config.users ||= {};
+  return {
+    ...defaultGuild(),
+    ...config,
+    users: config.users || {}
+  };
+}
+
+async function updateGuildLevels(guildId, updater) {
+  const config = await getGuildLevels(guildId);
+  updater(config);
+  await db.setKv('levels:guilds', guildId, config);
+  return config;
+}
+
+async function getUserLevel(guildId, userId) {
+  const config = await getGuildLevels(guildId);
   return ensureUser(config, userId);
 }
 
-function addXp(guildId, userId, amount) {
+async function addXp(guildId, userId, amount) {
   let result;
 
-  updateGuildLevels(guildId, (config) => {
+  await updateGuildLevels(guildId, (config) => {
     const user = ensureUser(config, userId);
     user.xp += amount;
 

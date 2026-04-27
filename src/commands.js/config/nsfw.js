@@ -4,7 +4,7 @@ const store = require('../../utils/simpleStore');
 
 module.exports = {
   name: 'nsfw',
-  aliases: ['nsfwsettings'],
+  aliases: [],
   category: 'config',
   description: 'Enable or disable NSFW responses and NSFW-tagged commands for this server.',
   usage: 'nsfw <toggle|status> [on|off]',

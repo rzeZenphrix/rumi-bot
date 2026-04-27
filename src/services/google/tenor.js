@@ -60,7 +60,7 @@ async function resolveViaApi(url) {
   endpoint.searchParams.set('ids', id);
   endpoint.searchParams.set('key', key);
   endpoint.searchParams.set('media_filter', 'gif,mediumgif,tinygif,webp,tinywebp,mp4,loopedmp4,webm,tinywebm');
-  endpoint.searchParams.set('client_key', 'rumi-bot');
+  endpoint.searchParams.set('client_key', 'ohara-bot');
 
   const response = await fetch(endpoint, { headers: { accept: 'application/json' } });
   if (!response.ok) return null;

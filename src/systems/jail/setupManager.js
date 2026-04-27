@@ -4,6 +4,8 @@ const logger = require('../logging/logger');
 
 const JAIL_ROLE_NAME = 'rumi jail';
 const JAIL_CHANNEL_NAME = 'rumi-jail';
+const LEGACY_JAIL_ROLE_NAMES = [JAIL_ROLE_NAME, 'ohara jail'];
+const LEGACY_JAIL_CHANNEL_NAMES = [JAIL_CHANNEL_NAME, 'ohara-jail'];
 
 async function setupJail(guild, actorId = null) {
   const me = guild.members.me || await guild.members.fetchMe();
@@ -15,7 +17,9 @@ async function setupJail(guild, actorId = null) {
     : null;
 
   if (!jailRole) {
-    jailRole = guild.roles.cache.find((role) => role.name.toLowerCase() === JAIL_ROLE_NAME);
+    jailRole = guild.roles.cache.find((role) => {
+      return LEGACY_JAIL_ROLE_NAMES.includes(role.name.toLowerCase());
+    });
 
     if (!jailRole) {
       jailRole = await guild.roles.create({
@@ -42,7 +46,7 @@ async function setupJail(guild, actorId = null) {
 
   if (!jailChannel) {
     jailChannel = guild.channels.cache.find((channel) => {
-      return channel.name === JAIL_CHANNEL_NAME && channel.type === ChannelType.GuildText;
+      return LEGACY_JAIL_CHANNEL_NAMES.includes(channel.name.toLowerCase()) && channel.type === ChannelType.GuildText;
     });
 
     if (!jailChannel) {

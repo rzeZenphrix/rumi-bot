@@ -3,6 +3,14 @@ const cors = require('cors');
 const { getCommandCatalog } = require('./commandCatalog');
 const db = require('../database');
 const { hashToken } = require('../../systems/dashboard/session');
+const musicService = require('../musicService');
+const {
+  isDashboardReady,
+  isMusicReady,
+  dashboardNotReadyPayload,
+  musicNotReadyPayload
+} = require('../../systems/runtime/featureGates');
+const { getCatalog, getPremiumStatus } = require('../../systems/monetization/service');
 
 let serverStarted = false;
 
@@ -16,19 +24,18 @@ async function verifyDashboardToken(req, res, next) {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || req.query.token || req.body?.token;
   if (!token) return res.status(401).json({ ok: false, error: 'I need a dashboard token.' });
 
-  const tokenHash = hashToken(token);
-  const { data, error } = await db.supabase
-    .from('dashboard_sessions')
-    .select('*')
-    .eq('token_hash', tokenHash)
-    .gt('expires_at', new Date().toISOString())
-    .maybeSingle();
+  let data;
 
-  if (error) return res.status(500).json({ ok: false, error: 'I could not verify that dashboard session.' });
+  try {
+    data = await db.getDashboardSessionByTokenHash(hashToken(token));
+  } catch (_error) {
+    return res.status(503).json({ ok: false, error: 'I could not verify that dashboard session because the database is unavailable.' });
+  }
+
   if (!data) return res.status(401).json({ ok: false, error: 'I could not find a valid dashboard session.' });
 
   req.dashboardSession = data;
-  await db.supabase.from('dashboard_sessions').update({ used_at: new Date().toISOString() }).eq('id', data.id).catch?.(() => null);
+  await db.touchDashboardSession(data.id).catch(() => null);
   return next();
 }
 
@@ -38,6 +45,41 @@ function publicGuild(guild) {
     name: guild.name,
     icon: guild.iconURL?.({ size: 128, extension: 'png' }) || null,
     memberCount: guild.memberCount || null
+  };
+}
+
+function runtimeStatus(client, database) {
+  const catalog = getCommandCatalog(client);
+  const guilds = [...(client.guilds?.cache?.values?.() || [])];
+  const guildCount = guilds.length;
+  const userCount = guilds.reduce((total, guild) => total + Number(guild.memberCount || 0), 0);
+  const shardIds = client.shard?.ids || [0];
+
+  return {
+    ok: true,
+    name: 'rumi',
+    uptime: process.uptime(),
+    commands: catalog.commandCount || 0,
+    total_commands: catalog.count || 0,
+    ready: Boolean(client.user),
+    database,
+    schema: client.runtimeState?.schemaAudit || null,
+    user: client.user ? { id: client.user.id, tag: client.user.tag } : null,
+    guilds: guildCount,
+    total_guilds: guildCount,
+    users: userCount,
+    total_users: userCount,
+    ping: client.ws?.ping ?? 0,
+    avg_ping: client.ws?.ping ?? 0,
+    shards: shardIds.map((id) => ({
+      id,
+      status: client.isReady?.() ? 'ready' : 'starting',
+      ping: client.ws?.ping ?? 0,
+      guilds: guildCount,
+      users: userCount
+    })),
+    memory: process.memoryUsage(),
+    cluster: process.env.CLUSTER_ID || 'local'
   };
 }
 
@@ -68,15 +110,13 @@ function startApiServer(client) {
   app.get('/health', async (_req, res) => {
     res.set('Cache-Control', 'no-store');
     const database = await db.dbHealthCheck().catch((error) => ({ ok: false, error: error.message }));
-    res.json({
-      ok: true,
-      name: 'rumi',
-      uptime: process.uptime(),
-      commands: client.commands?.size || 0,
-      ready: Boolean(client.user),
-      database,
-      user: client.user ? { id: client.user.id, tag: client.user.tag } : null
-    });
+    res.json(runtimeStatus(client, database));
+  });
+
+  app.get('/status', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const database = await db.dbHealthCheck().catch((error) => ({ ok: false, error: error.message }));
+    res.json(runtimeStatus(client, database));
   });
 
   app.get('/commands', (_req, res) => {
@@ -84,11 +124,65 @@ function startApiServer(client) {
     res.json(getCommandCatalog(client));
   });
 
+  app.get('/premium/catalog', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await getCatalog());
+  });
+
+  app.get('/premium/status', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await getPremiumStatus({
+      userId: req.query.userId || null,
+      guildId: req.query.guildId || null
+    }));
+  });
+
+  app.get('/music/state', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!isMusicReady()) return res.status(503).json(musicNotReadyPayload());
+    const guildId = req.query.guildId;
+    if (!guildId) return res.status(400).json({ ok: false, error: 'I need a guildId.' });
+    const payload = await musicService.getState(guildId);
+    if (!payload) return res.status(503).json({ ok: false, error: 'I could not reach the music service.' });
+    res.json(payload);
+  });
+
+  app.post('/music/command', async (req, res) => {
+    if (!isMusicReady()) return res.status(503).json(musicNotReadyPayload());
+    const guildId = req.body?.guildId;
+    const command = req.body?.command;
+    const options = req.body?.options || {};
+    if (!guildId || !command) return res.status(400).json({ ok: false, error: 'I need a guildId and command.' });
+    const payload = await musicService.runCommand(guildId, command, options);
+    if (!payload) return res.status(503).json({ ok: false, error: 'I could not reach the music service.' });
+    res.json(payload);
+  });
+
+  app.post('/spotify/link', async (req, res) => {
+    if (!isMusicReady()) return res.status(503).json(musicNotReadyPayload());
+    const userId = req.body?.userId;
+    if (!userId) return res.status(400).json({ ok: false, error: 'I need a userId.' });
+    const payload = await musicService.linkSpotify(userId, req.body || {});
+    if (!payload) return res.status(503).json({ ok: false, error: 'I could not reach the music service.' });
+    res.json(payload);
+  });
+
+  app.post('/spotify/unlink', async (req, res) => {
+    if (!isMusicReady()) return res.status(503).json(musicNotReadyPayload());
+    const userId = req.body?.userId;
+    if (!userId) return res.status(400).json({ ok: false, error: 'I need a userId.' });
+    const payload = await musicService.unlinkSpotify(userId);
+    if (!payload) return res.status(503).json({ ok: false, error: 'I could not reach the music service.' });
+    res.json(payload);
+  });
+
   app.post('/dashboard/session', verifyDashboardToken, (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
     res.json({ ok: true, session: { userId: req.dashboardSession.user_id, guildId: req.dashboardSession.guild_id, scopes: req.dashboardSession.scopes, expiresAt: req.dashboardSession.expires_at } });
   });
 
   app.get('/dashboard/guilds', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
     const session = req.dashboardSession;
     const guilds = [];
 
@@ -101,14 +195,24 @@ function startApiServer(client) {
   });
 
   app.get('/dashboard/guilds/:guildId/settings', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
     const { guildId } = req.params;
     if (req.dashboardSession.guild_id && req.dashboardSession.guild_id !== guildId) return res.status(403).json({ ok: false, error: 'I cannot let this session manage that server.' });
-    const settings = await db.getGuildSettings(guildId);
-    const fakePermissions = await db.listFakePermissions(guildId).catch(() => []);
+    let settings;
+    let fakePermissions;
+
+    try {
+      settings = await db.getGuildSettings(guildId);
+      fakePermissions = await db.listFakePermissions(guildId).catch(() => []);
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not load settings because the database is unavailable.' });
+    }
+
     res.json({ ok: true, settings, fakePermissions });
   });
 
   app.patch('/dashboard/guilds/:guildId/settings', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
     const { guildId } = req.params;
     if (req.dashboardSession.guild_id && req.dashboardSession.guild_id !== guildId) return res.status(403).json({ ok: false, error: 'I cannot let this session manage that server.' });
 
@@ -118,7 +222,14 @@ function startApiServer(client) {
       if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) patch[key] = req.body[key];
     }
     if (!Object.keys(patch).length) return res.status(400).json({ ok: false, error: 'I did not receive any settings I can save.' });
-    const saved = await db.updateGuildSettings(guildId, patch);
+    let saved;
+
+    try {
+      saved = await db.updateGuildSettings(guildId, patch);
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not save settings because the database is unavailable.' });
+    }
+
     res.json({ ok: true, settings: saved });
   });
 

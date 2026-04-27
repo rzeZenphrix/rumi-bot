@@ -1,105 +1,116 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const {
+  getGlobalCustomization
+} = require('../../systems/customization/customizationStore');
+const {
   savePresence,
   saveStatsPresence,
-  applySavedPresence
+  setPresenceEverywhere,
+  normalizeStatus,
+  normalizeActivityType
 } = require('../../systems/customization/presenceManager');
-const { getGlobalCustomization } = require('../../systems/customization/customizationStore');
 
 module.exports = {
   name: 'presence',
-  aliases: ['status', 'activity', 'botstatus'],
+  aliases: ['setpresence', 'botpresence'],
   category: 'config',
-  description: 'Customize my global status, stats status, and activity text.',
-  usage: 'presence <view|set|stats|clear>',
+  description: 'View or update Rumi global presence settings.',
+  usage: 'presence <view|set|stats|off> ...',
   examples: [
     'presence view',
     'presence set online watching over your server',
-    'presence set idle listening to commands',
+    'presence set idle playing with moderation',
     'presence stats on Watching {servers} servers',
-    'presence stats off'
+    'presence off'
   ],
-  subcommands: [
-    { name: 'view', description: 'Shows my current presence configuration.', usage: 'view' },
-    { name: 'set', description: 'Sets my custom status/activity.', usage: 'set <online|idle|dnd|invisible> <playing|watching|listening|competing> <text>' },
-    { name: 'stats', description: 'Toggles stats-based presence.', usage: 'stats <on|off> [format]' },
-    { name: 'clear', description: 'Restores my default presence.', usage: 'clear' }
-  ],
+  ownerOnly: true,
   permissions: [PermissionFlagsBits.Administrator],
 
   async execute({ client, message, args }) {
-    const sub = (args.shift() || 'view').toLowerCase();
+    const sub = String(args.shift() || 'view').toLowerCase();
 
     if (sub === 'view') {
-      const cfg = getGlobalCustomization();
-
+      const global = getGlobalCustomization();
       return respond.reply(message, 'info', null, {
-        description: 'I found my current global presence setup.',
+        mentionUser: false,
+        title: 'Rumi Presence',
         fields: [
-          {
-            name: 'Presence',
-            value: [
-              `Status: \`${cfg.presence?.status || 'online'}\``,
-              `Activity type: \`${cfg.presence?.activityType || 'Watching'}\``,
-              `Activity text: \`${cfg.presence?.activityText || 'over your server'}\``
-            ].join('\n')
-          },
-          {
-            name: 'Stats mode',
-            value: [
-              `Enabled: \`${Boolean(cfg.stats?.enabled)}\``,
-              `Format: \`${cfg.stats?.format || 'Watching {servers} servers'}\``
-            ].join('\n')
-          }
+          { name: 'Status', value: global.presence?.status || 'online', inline: true },
+          { name: 'Activity type', value: global.presence?.activityType || 'watching', inline: true },
+          { name: 'Activity text', value: global.presence?.activityText || 'over your server', inline: false },
+          { name: 'Stats presence', value: global.stats?.enabled ? 'enabled' : 'disabled', inline: true },
+          { name: 'Stats format', value: global.stats?.format || 'Watching {servers} servers', inline: false }
         ]
       });
     }
 
-    if (sub === 'set') {
-      const status = args.shift();
-      const activityType = args.shift();
-      const activityText = args.join(' ').trim();
-
-      if (!status || !activityType || !activityText) {
-        return respond.reply(message, 'info', 'need `presence set <status> <activityType> <text>`.');
-      }
-
-      savePresence({ status, activityType, activityText });
-      await applySavedPresence(client);
-
-      return respond.reply(message, 'good', 'updated my global presence.');
+    if (sub === 'off' || sub === 'disable') {
+      await saveStatsPresence({ enabled: false });
+      await savePresence({
+        status: 'online',
+        activityType: 'watching',
+        activityText: 'over your server'
+      });
+      await setPresenceEverywhere(client, {
+        status: 'online',
+        activityType: 'watching',
+        activityText: 'over your server'
+      }).catch(() => null);
+      return respond.reply(message, 'good', 'I reset the live presence back to the default Rumi status.');
     }
 
     if (sub === 'stats') {
-      const toggle = (args.shift() || '').toLowerCase();
+      const mode = String(args.shift() || '').toLowerCase();
+      const format = args.join(' ').trim() || 'Watching {servers} servers';
+      const enabled = ['on', 'enable', 'enabled', 'true'].includes(mode);
 
-      if (!['on', 'off'].includes(toggle)) {
-        return respond.reply(message, 'info', 'need `presence stats <on|off> [format]`.');
+      if (!['on', 'off', 'enable', 'disable', 'enabled', 'disabled', 'true', 'false'].includes(mode)) {
+        return respond.reply(message, 'info', 'Use `presence stats <on|off> [format]`.');
       }
 
-      saveStatsPresence({
-        enabled: toggle === 'on',
-        format: args.join(' ').trim() || 'Watching {servers} servers'
-      });
+      await saveStatsPresence({ enabled, format });
+      if (enabled) {
+        await setPresenceEverywhere(client, {
+          status: getGlobalCustomization().presence?.status || 'online',
+          activityType: 'watching',
+          activityText: format
+        }).catch(() => null);
+      }
 
-      await applySavedPresence(client);
-
-      return respond.reply(message, 'good', `${toggle === 'on' ? 'enabled' : 'disabled'} stats presence.`);
+      return respond.reply(message, 'good', `Stats presence is now ${enabled ? 'enabled' : 'disabled'}.`);
     }
 
-    if (sub === 'clear') {
-      savePresence({
-        status: 'online',
-        activityType: 'Watching',
-        activityText: 'over your server'
-      });
+    if (sub === 'set') {
+      const status = String(args.shift() || '').toLowerCase();
+      const activityType = String(args.shift() || '').toLowerCase();
+      const activityText = args.join(' ').trim();
 
-      await applySavedPresence(client);
+      if (!status || !activityType || !activityText) {
+        return respond.reply(message, 'info', 'Use `presence set <online|idle|dnd|invisible> <watching|playing|listening|streaming|competing> <text>`.');
+      }
 
-      return respond.reply(message, 'good', 'restored my default presence.');
+       if (normalizeStatus(status) !== status) {
+        return respond.reply(message, 'bad', 'Use a valid status: online, idle, dnd, or invisible.');
+      }
+
+      if (!['playing', 'streaming', 'listening', 'watching', 'competing'].includes(activityType) || normalizeActivityType(activityType) === undefined) {
+        return respond.reply(message, 'bad', 'Use a valid activity type: watching, playing, listening, streaming, or competing.');
+      }
+
+      await saveStatsPresence({ enabled: false });
+      await savePresence({ status, activityType, activityText });
+      const applied = await setPresenceEverywhere(client, { status, activityType, activityText }).catch(() => false);
+
+      return respond.reply(
+        message,
+        applied ? 'good' : 'alert',
+        applied
+          ? 'I updated the live Rumi presence.'
+          : 'I saved the new presence, but I could not apply it live right now.'
+      );
     }
 
-    return respond.reply(message, 'bad', `do not know the presence action \`${sub}\`.`);
+    return respond.reply(message, 'info', 'Use `presence view`, `presence set`, `presence stats`, or `presence off`.');
   }
 };

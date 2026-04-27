@@ -1,5 +1,6 @@
 const respond = require('../../utils/respond');
 const { getGuildLevels } = require('../../systems/levels/levelStore');
+const { getProfile } = require('../../systems/social/store');
 
 module.exports = {
   name: 'leaderboard',
@@ -9,10 +10,18 @@ module.exports = {
   usage: 'leaderboard',
 
   async execute({ message }) {
-    const config = getGuildLevels(message.guild.id);
+    const config = await getGuildLevels(message.guild.id);
+    const rows = await Promise.all(
+      Object.entries(config.users || {}).map(async ([userId, data]) => ({
+        userId,
+        data,
+        profile: await getProfile(userId).catch(() => ({ hideLeaderboard: false }))
+      }))
+    );
 
-    const entries = Object.entries(config.users || {})
-      .sort(([, a], [, b]) => b.xp - a.xp)
+    const entries = rows
+      .filter((entry) => !entry.profile?.hideLeaderboard)
+      .sort((a, b) => b.data.xp - a.data.xp)
       .slice(0, 10);
 
     if (!entries.length) {
@@ -21,7 +30,7 @@ module.exports = {
 
     return respond.reply(message, 'list', null, {
       description: entries
-        .map(([userId, data], index) => `**${index + 1}.** <@${userId}> — Level **${data.level}**, **${data.xp} XP**`)
+        .map((entry, index) => `**${index + 1}.** <@${entry.userId}> - Level **${entry.data.level}**, **${entry.data.xp} XP**`)
         .join('\n'),
       mentionUser: false
     });

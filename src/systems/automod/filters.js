@@ -5,8 +5,10 @@ const { logModerationAction, logSecurityEvent } = require('../logging/auditLog')
 const { jailMember } = require('../jail/jailManager');
 const { createUserFlag } = require('../flags/flagEngine');
 const logger = require('../logging/logger');
+const { probeFakePermission } = require('../permissions/fakePermissions');
 const { scanLinks } = require('./linkScanner');
 const { analyzeSpam } = require('./spamDetector');
+const { getProtectionSettings, isSecuritySystemEnabled } = require('../security/protectionConfig');
 
 const BLOCKED_PATTERNS = [
   {
@@ -26,18 +28,24 @@ async function handleMessageCreate(message) {
   if (message.author.bot) return;
   if (!message.content) return;
 
-  const settings = await db.getGuildSettings(message.guild.id);
+  const settings = await db.getGuildSettings(message.guild.id).catch(() => null);
+  const protection = await getProtectionSettings(message.guild.id).catch(() => null);
 
-  if (!settings.automod_enabled) return;
-  if (await db.isWhitelisted(message.guild.id, message.author.id)) return;
+  if (!settings || !protection || !isSecuritySystemEnabled(protection, 'automod', settings.automod_enabled !== false)) return;
+  if (await db.isWhitelisted(message.guild.id, message.author.id).catch(() => false)) return;
 
   const member =
     message.member ||
     (await message.guild.members.fetch(message.author.id).catch(() => null));
 
   if (!member) return;
+  const specificBypass = await probeFakePermission(message.guild.id, member, 'RumiBypassAutomod');
+  const generalBypass = await probeFakePermission(message.guild.id, member, 'RumiBypass');
+  if (!specificBypass.ok || !generalBypass.ok) return;
+  if (specificBypass.value || generalBypass.value) return;
 
-  const thresholds = settings.thresholds_json.automod;
+  const thresholds = settings.thresholds_json?.automod;
+  if (!thresholds) return;
   const linkScan = scanLinks(message.content);
   const spam = analyzeSpam(message, thresholds, linkScan);
 
@@ -108,7 +116,18 @@ async function handleMessageCreate(message) {
     }
   });
 
-  await message.delete().catch(() => null);
+  const messageDeleted = await message.delete().then(() => true).catch((error) => {
+    logger.warn(
+      {
+        error,
+        guildId: message.guild.id,
+        channelId: message.channel.id,
+        messageId: message.id
+      },
+      'Automod could not delete message'
+    );
+    return false;
+  });
 
   let timeoutApplied = false;
   let jailApplied = false;
@@ -185,7 +204,7 @@ async function handleMessageCreate(message) {
     metadata: {
       confidence,
       detections,
-      messageDeleted: true,
+      messageDeleted,
       timeoutApplied,
       jailApplied
     }

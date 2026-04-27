@@ -48,7 +48,7 @@ module.exports = {
       const targetMessage = await fetchTargetMessage(message, msgArg);
       if (!targetMessage || !emoji || !role) return respond.reply(message, 'info', 'Usage: `rr add <messageId|messageLink> <emoji> <role>`.');
       await targetMessage.react(emoji).catch(() => null);
-      addReactionRole(message.guild.id, targetMessage.channel.id, targetMessage.id, emoji, role.id);
+      await addReactionRole(message.guild.id, targetMessage.channel.id, targetMessage.id, emoji, role.id);
       return respond.reply(message, 'good', `Added reaction role: ${emoji} → **${role.name}** on [message](${targetMessage.url}).`);
     }
 
@@ -57,20 +57,20 @@ module.exports = {
       const key = args.join(' ');
       const targetMessage = await fetchTargetMessage(message, msgArg);
       if (!targetMessage || !key) return respond.reply(message, 'info', 'Usage: `rr remove <messageId|messageLink> <emoji|role>`.');
-      removeReactionRole(message.guild.id, targetMessage.id, key);
+      await removeReactionRole(message.guild.id, targetMessage.id, key);
       return respond.reply(message, 'good', `Removed matching reaction role from [message](${targetMessage.url}).`);
     }
 
     if (sub === 'clear') {
       const targetMessage = await fetchTargetMessage(message, args.shift());
       if (!targetMessage) return respond.reply(message, 'info', 'Usage: `rr clear <messageId|messageLink>`.');
-      clearReactionRoles(message.guild.id, targetMessage.id);
+      await clearReactionRoles(message.guild.id, targetMessage.id);
       await targetMessage.reactions.removeAll().catch(() => null);
       return respond.reply(message, 'good', `Cleared reaction roles and reactions from [message](${targetMessage.url}).`);
     }
 
     if (sub === 'list') {
-      const config = getGuild(message.guild.id);
+      const config = await getGuild(message.guild.id);
       const lines = Object.entries(config.messages || {}).flatMap(([messageId, data]) => {
         return Object.entries(data.items || {}).map(([emoji, roleId]) => `**${messageId}** — ${emoji} → <@&${roleId}>`);
       });

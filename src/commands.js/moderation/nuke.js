@@ -1,4 +1,5 @@
 const { PermissionFlagsBits } = require('discord.js');
+const respond = require('../../utils/respond');
 
 module.exports = {
   name: 'nuke',
@@ -19,6 +20,8 @@ module.exports = {
     await clone.setPosition(position).catch(() => null);
     await channel.delete(reason).catch(() => null);
 
-    return clone.send({ content: 'first', allowedMentions: { parse: [] } });
+    await clone.send({ content: 'first', allowedMentions: { parse: [] } }).catch(() => null);
+
+    return respond.send(clone, 'alert', message.author, `nuked this channel. Reason: ${reason}`);
   }
 };

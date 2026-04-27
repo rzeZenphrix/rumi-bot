@@ -18,7 +18,7 @@ module.exports = {
     const sub = (args.shift() || 'settings').toLowerCase();
 
     if (sub === 'enable') {
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.enabled = true;
       });
 
@@ -26,7 +26,7 @@ module.exports = {
     }
 
     if (sub === 'disable') {
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.enabled = false;
       });
 
@@ -34,7 +34,7 @@ module.exports = {
     }
 
     if (sub === 'settings') {
-      const config = getGuildLevels(message.guild.id);
+      const config = await getGuildLevels(message.guild.id);
 
       return respond.reply(message, 'info', null, {
         description: 'Leveling settings for this server.',
@@ -53,7 +53,7 @@ module.exports = {
 
       if (!text) return respond.reply(message, 'info', 'Send a level-up message template.');
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.levelMessage = text;
       });
 
@@ -63,7 +63,7 @@ module.exports = {
     if (sub === 'channel') {
       const channelId = idFromMention(args[0]);
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.levelChannelId = channelId;
       });
 
@@ -81,7 +81,7 @@ module.exports = {
         return respond.reply(message, 'info', 'Use `levels multiplier <number>`.');
       }
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.multiplier = value;
       });
 
@@ -95,7 +95,7 @@ module.exports = {
         return respond.reply(message, 'info', 'Use `levels stackroles <on|off>`.');
       }
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.stackRoles = ['on', 'true'].includes(value);
       });
 
@@ -110,7 +110,7 @@ module.exports = {
         return respond.reply(message, 'info', 'Use `levels role <level> @role`.');
       }
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.levelRoles[level] = roleId;
       });
 
@@ -120,7 +120,7 @@ module.exports = {
     if (sub === 'roleclear') {
       const level = Number(args[0]);
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         delete config.levelRoles[level];
       });
 
@@ -132,7 +132,7 @@ module.exports = {
 
       if (!channelId) return respond.reply(message, 'info', 'Use `levels ignore #channel`.');
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         if (!config.ignoredChannels.includes(channelId)) config.ignoredChannels.push(channelId);
       });
 
@@ -142,7 +142,7 @@ module.exports = {
     if (sub === 'unignore') {
       const channelId = idFromMention(args[0]);
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.ignoredChannels = config.ignoredChannels.filter((id) => id !== channelId);
       });
 
@@ -157,7 +157,7 @@ module.exports = {
         return respond.reply(message, 'info', 'Use `levels rolemultiplier @role <number>`.');
       }
 
-      updateGuildLevels(message.guild.id, (config) => {
+      await updateGuildLevels(message.guild.id, (config) => {
         config.roleMultipliers[roleId] = value;
       });
 

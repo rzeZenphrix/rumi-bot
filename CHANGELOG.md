@@ -1,0 +1,11 @@
+## 2026-04-27
+- Help and variables now use working pagers, cleaner labels, distinct subcommand examples, and stable embed colors while paging.
+- Media help now matches the real command surface, with added image modification tools wired through the shared media pipeline.
+- Translate now supports reply-to-message usage and no longer sends the broken `auto` source flow.
+- IP lookup is implemented, user lookups can resolve raw IDs outside the current guild, and economy icon parsing is more reliable.
+- AutoJail is now rule-driven, with join-time checks, periodic scan support, keyword and account-age rules, and DB-backed settings.
+- Vape juice is purchasable, refills work, and economy config reset support was added.
+- Music readiness was aligned around Java 17 and Lavalink plugin setup docs, while runtime music and Spotify features remain gated as not ready.
+- The bot API now exposes live premium catalog and status endpoints, dashboard routes are gated behind `Dashboard not ready`, and music endpoints return `feature not ready yet`.
+- Database failures now use short-lived caches and throttled logging in guild settings, protection config, and fake-permission lookups.
+- Premium deployment work now includes live plans/perks/payment endpoints, redemption commands, entitlement tables, and deploy-safe website gating.

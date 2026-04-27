@@ -1,18 +1,10 @@
-const { readStore, writeStore } = require('../storage/jsonStore');
+const db = require('../../services/database');
 
 const WORD_PATTERNS = {
   nword: /\bn[1i!|]gg(?:a|er|ers|as)\b/gi,
   hardr: /\bn[1i!|]ggers?\b/gi,
   fword: /\bf(?:u|v|oo)c?k(?:ing|ed|er|ers|s)?\b|\bfuh\b/gi
 };
-
-function getStore() {
-  return readStore('wordStats', { users: {} });
-}
-
-function saveStore(store) {
-  return writeStore('wordStats', store);
-}
 
 function ensureUser(store, userId) {
   store.users[userId] ||= {
@@ -28,7 +20,15 @@ function countMatches(content, regex) {
   return [...String(content || '').matchAll(regex)].length;
 }
 
-function trackMessageWords(message) {
+async function getStore() {
+  return db.getKv('stats:wordStore', 'global', { users: {} });
+}
+
+async function saveStore(store) {
+  return db.setKv('stats:wordStore', 'global', store);
+}
+
+async function trackMessageWords(message) {
   if (!message?.author?.id || message.author.bot || !message.content) return null;
 
   const counts = {
@@ -39,7 +39,7 @@ function trackMessageWords(message) {
 
   if (!counts.nword && !counts.hardr && !counts.fword) return counts;
 
-  const store = getStore();
+  const store = await getStore();
   const user = ensureUser(store, message.author.id);
 
   user.nword += counts.nword;
@@ -47,12 +47,12 @@ function trackMessageWords(message) {
   user.fword += counts.fword;
   user.lastSeenAt = new Date().toISOString();
 
-  saveStore(store);
+  await saveStore(store);
   return counts;
 }
 
-function getUserWordStats(userId) {
-  const store = getStore();
+async function getUserWordStats(userId) {
+  const store = await getStore();
   const user = ensureUser(store, userId);
   return { ...user };
 }

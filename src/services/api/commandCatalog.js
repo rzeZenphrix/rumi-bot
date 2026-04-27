@@ -61,7 +61,6 @@ function permissionToNames(permission) {
   }
 
   let value;
-
   try {
     value = BigInt(permission.toString());
   } catch {
@@ -81,62 +80,123 @@ function permissionToNames(permission) {
   return names.length ? names : [permission.toString()];
 }
 
-function normalizeUsage(command) {
-  const usage = command.usage || command.name;
-  return String(usage).replace(/^[/,!.?]/, '');
+function unique(list = []) {
+  return [...new Set((list || []).map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
-function serializeSubcommands(command) {
-  if (!Array.isArray(command.subcommands)) return [];
-
-  return command.subcommands.map((sub) => ({
-    name: sub.name || '',
-    description: sub.description || '',
-    usage: sub.usage || '',
-    examples: Array.isArray(sub.examples) ? sub.examples : []
-  }));
+function normalizeUsage(value, fallback = '') {
+  return String(value || fallback || '').replace(/^[/,!.?]/, '').trim();
 }
 
-function serializeCommand(command) {
+function deriveParametersFromUsage(usage, fullName) {
+  const normalizedUsage = normalizeUsage(usage, fullName);
+  const normalizedName = normalizeUsage(fullName, fullName);
+  const stripped = normalizedUsage.startsWith(normalizedName)
+    ? normalizedUsage.slice(normalizedName.length).trim()
+    : normalizedUsage;
+  return stripped || 'n/a';
+}
+
+function deriveExamples(prefix, examples = [], fallbackUsage = '') {
+  if (!Array.isArray(examples) || !examples.length) {
+    return fallbackUsage ? [`${prefix}${normalizeUsage(fallbackUsage, '')}`] : [];
+  }
+  return examples.map((example) => `${prefix}${normalizeUsage(example, fallbackUsage)}`);
+}
+
+function deriveFlags(source = {}) {
+  if (Array.isArray(source.flags)) return unique(source.flags);
+  return [];
+}
+
+function deriveInformation(source, commandCategory, permissions, botPermissions) {
+  const parts = [];
+  if (permissions.length) parts.push(permissions.join(', '));
+  if (source.premium) parts.push('Premium');
+  if (source.nsfw) parts.push('NSFW');
+  if (botPermissions.length) parts.push(`Bot: ${botPermissions.join(', ')}`);
+  if (source.guildOnly) parts.push('Guild only');
+  if (commandCategory) parts.push(`Module ${String(commandCategory).toLowerCase()}`);
+  return parts.join(' • ') || 'n/a';
+}
+
+function serializeEntry(command, prefix, sub = null) {
+  const fullName = sub ? `${command.name} ${sub.name}` : command.name;
+  const permissions = Array.isArray(command.permissions)
+    ? command.permissions.flatMap(permissionToNames).filter(Boolean)
+    : [];
+  const botPermissions = Array.isArray(command.botPermissions)
+    ? command.botPermissions.flatMap(permissionToNames).filter(Boolean)
+    : [];
+  const usage = normalizeUsage(sub?.usage || command.usage || fullName, fullName);
+  const examples = deriveExamples(prefix, sub?.examples || command.examples, usage);
+
   return {
-    name: command.name,
-    prefix: DEFAULT_PREFIX,
-    aliases: Array.isArray(command.aliases) ? command.aliases : [],
+    id: fullName.toLowerCase().replace(/\s+/g, ':'),
+    parent: sub ? command.name : null,
+    type: sub ? 'subcommand' : 'command',
+    name: sub?.name || command.name,
+    fullName,
+    prefix,
+    aliases: unique(sub?.aliases || command.aliases),
     category: command.category || 'misc',
-    description: command.description || 'No description provided.',
-    usage: normalizeUsage(command),
-    permissions: Array.isArray(command.permissions)
-      ? command.permissions.flatMap(permissionToNames).filter(Boolean)
-      : [],
-    botPermissions: Array.isArray(command.botPermissions)
-      ? command.botPermissions.flatMap(permissionToNames).filter(Boolean)
-      : [],
-    examples: Array.isArray(command.examples)
-      ? command.examples.map((ex) => String(ex).replace(/^[/,!.?]/, ''))
-      : [],
-    subcommands: serializeSubcommands(command)
+    module: command.category || 'misc',
+    description: sub?.description || command.description || 'No description provided.',
+    usage,
+    parameters: deriveParametersFromUsage(usage, fullName),
+    examples,
+    example: examples[0] || `${prefix}${fullName}`,
+    permissions,
+    botPermissions,
+    flags: deriveFlags(sub || command),
+    premium: Boolean(sub?.premium ?? command.premium),
+    nsfw: Boolean(sub?.nsfw ?? command.nsfw),
+    information: deriveInformation(sub || command, command.category, permissions, botPermissions)
   };
 }
 
-function getCommandCatalog(client) {
-  const unique = new Map();
+function serializeSubcommands(command, prefix) {
+  if (!Array.isArray(command.subcommands)) return [];
+  return command.subcommands.map((sub) => serializeEntry(command, prefix, sub));
+}
+
+function serializeCommand(command, prefix = DEFAULT_PREFIX) {
+  const entry = serializeEntry(command, prefix);
+  return {
+    ...entry,
+    subcommands: serializeSubcommands(command, prefix)
+  };
+}
+
+function getCommandCatalog(client, prefix = DEFAULT_PREFIX) {
+  const uniqueCommands = new Map();
 
   for (const command of client.commands.values()) {
     if (!command?.name) continue;
-    unique.set(command.name, serializeCommand(command));
+    uniqueCommands.set(command.name, serializeCommand(command, prefix));
   }
 
-  const commands = [...unique.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const commands = [...uniqueCommands.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const entries = commands
+    .flatMap((command) => {
+      const { subcommands, ...base } = command;
+      return [base, ...(subcommands || [])];
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   return {
-    prefix: DEFAULT_PREFIX,
+    prefix,
     commands,
-    count: commands.length,
+    entries,
+    count: entries.length,
+    commandCount: commands.length,
     source: 'rumi-bot-runtime',
     updatedAt: new Date().toISOString()
   };
 }
 
 module.exports = {
-  getCommandCatalog
+  getCommandCatalog,
+  serializeCommand,
+  serializeEntry
 };

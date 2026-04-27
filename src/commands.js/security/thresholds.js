@@ -2,6 +2,7 @@ const { PermissionFlagsBits } = require('discord.js');
 const db = require('../../services/database');
 const respond = require('../../utils/respond');
 const { DEFAULT_THRESHOLDS } = require('../../utils/constants');
+const { updateProtectionThresholds } = require('../../systems/security/protectionConfig');
 
 function getNested(obj, path) {
   return path.split('.').reduce((current, key) => current?.[key], obj);
@@ -54,8 +55,8 @@ module.exports = {
   usage: 'thresholds <view|set|reset> [path] [value]',
   examples: [
     'thresholds view',
-    'thresholds set antiRaid.joinCount 8',
-    'thresholds set antiNuke.channelDeletes 3',
+    'thresholds set antiRaid.joinBurst 8',
+    'thresholds set antiNuke.channelDelete 3',
     'thresholds reset'
   ],
   subcommands: [
@@ -88,9 +89,7 @@ module.exports = {
     }
 
     if (subcommand === 'reset') {
-      await db.updateGuildSettings(message.guild.id, {
-        thresholds_json: DEFAULT_THRESHOLDS
-      });
+      await updateProtectionThresholds(message.guild.id, () => DEFAULT_THRESHOLDS);
 
       return respond.reply(message, 'good', 'I reset this server’s thresholds to the defaults.');
     }
@@ -100,7 +99,7 @@ module.exports = {
       const rawValue = args.shift();
 
       if (!path || rawValue === undefined) {
-        return respond.reply(message, 'info', 'I use it like this: `thresholds set <path> <number>`. Example: `thresholds set antiRaid.joinCount 8`.');
+        return respond.reply(message, 'info', 'I use it like this: `thresholds set <path> <number>`. Example: `thresholds set antiRaid.joinBurst 8`.');
       }
 
       if (getNested(DEFAULT_THRESHOLDS, path) === undefined) {
@@ -115,9 +114,7 @@ module.exports = {
 
       setNested(current, path, value);
 
-      await db.updateGuildSettings(message.guild.id, {
-        thresholds_json: current
-      });
+      await updateProtectionThresholds(message.guild.id, () => current);
 
       return respond.reply(message, 'good', `I set \`${path}\` to \`${value}\`.`);
     }

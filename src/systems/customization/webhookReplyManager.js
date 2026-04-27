@@ -71,7 +71,7 @@ async function sendWithGuildWebhook(channel, payload) {
   if (!webhook) return null;
 
   const username =
-    config.botProfile?.username ||
+    config.botProfile?.nickname ||
     channel.client.user.username;
 
   const avatarURL =

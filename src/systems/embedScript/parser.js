@@ -5,7 +5,6 @@ const {
   EmbedBuilder,
   StringSelectMenuBuilder
 } = require('discord.js');
-const { parseComponentEmoji } = require('../../utils/componentEmoji');
 
 const MAX_EMBEDS = 10;
 const MAX_ROWS = 5;
@@ -130,10 +129,7 @@ function addButton(state, value, context) {
     .setLabel(label.slice(0, 80))
     .setDisabled(disabled);
 
-  if (emoji) {
-    const parsedEmoji = parseComponentEmoji(emoji);
-    if (parsedEmoji) button.setEmoji(parsedEmoji);
-  }
+  if (emoji) button.setEmoji(emoji);
 
   let row = state.rows[state.rows.length - 1];
   if (!row || row.components.length >= 5 || row.components.some((component) => component.data?.type === 3)) {

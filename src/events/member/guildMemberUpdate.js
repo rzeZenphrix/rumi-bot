@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
+const { syncRoleConnections } = require('../../systems/automation/serverRoles');
 
 function roleDiff(oldMember, newMember) {
   const oldIds = new Set(oldMember.roles.cache.keys());
@@ -23,6 +24,8 @@ module.exports = {
     if (diff.removed.length) fields.push({ name: 'Roles removed', value: diff.removed.join(', '), inline: false });
 
     if (!fields.length) return;
+
+    await syncRoleConnections(oldMember, newMember).catch(() => null);
 
     await sendLog(newMember.guild, 'memberUpdate', {
       title: 'Member updated',

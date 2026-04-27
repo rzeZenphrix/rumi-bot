@@ -143,9 +143,9 @@ function safeEmojiObject(raw) {
   return null;
 }
 
-function buildTicketTypeButton(type) {
+function buildTicketTypeButton(type, panelId = null) {
   const button = new ButtonBuilder()
-    .setCustomId(`ticket:create_key:${type.key}`)
+    .setCustomId(`ticket:create_key:${panelId || 'default'}:${type.key}`)
     .setLabel(trim(type.name, 80))
     .setStyle(ButtonStyle.Primary);
 
@@ -158,7 +158,7 @@ function buildTicketTypeButton(type) {
   return button;
 }
 
-function buildPanelComponents(types, mode = 'dropdown') {
+function buildPanelComponents(types, mode = 'dropdown', panelId = null) {
   const enabledTypes = types.filter((type) => type.enabled);
 
   if (mode === 'buttons') {
@@ -171,7 +171,7 @@ function buildPanelComponents(types, mode = 'dropdown') {
         row = new ActionRowBuilder();
       }
 
-      row.addComponents(buildTicketTypeButton(type));
+      row.addComponents(buildTicketTypeButton(type, panelId));
     });
 
     if (row.components.length) rows.push(row);
@@ -180,7 +180,7 @@ function buildPanelComponents(types, mode = 'dropdown') {
   }
 
   const menu = new StringSelectMenuBuilder()
-    .setCustomId('ticket:select_key')
+    .setCustomId(`ticket:select_key:${panelId || 'default'}`)
     .setPlaceholder('Choose a ticket type')
     .setMinValues(1)
     .setMaxValues(1);
@@ -201,17 +201,17 @@ function buildPanelComponents(types, mode = 'dropdown') {
   return [new ActionRowBuilder().addComponents(menu)];
 }
 
-async function validatePanel(guild) {
+async function validatePanel(guild, panelId = null) {
   const warnings = [];
   const errors = [];
-  const panel = await ticketDb.getPanel(guild.id);
+  const panel = await ticketDb.getPanel(guild.id, panelId);
 
   if (!panel) {
     errors.push('No ticket panel exists. Run `ticket panel create` first.');
     return { panel: null, types: [], errors, warnings };
   }
 
-  const types = await ticketDb.listTicketTypes(guild.id);
+  const types = await ticketDb.listTicketTypes(guild.id, panel.id);
 
   if (!types.length) {
     warnings.push('This panel has no ticket types yet.');
@@ -303,8 +303,8 @@ function panelValidationEmbed(result) {
   return embed;
 }
 
-async function publishPanel({ guild, channel, mode = null, userId }) {
-  const result = await validatePanel(guild);
+async function publishPanel({ guild, channel, mode = null, userId, panelId = null }) {
+  const result = await validatePanel(guild, panelId);
 
   if (!result.panel) {
     const error = new Error('NO_PANEL');
@@ -342,7 +342,7 @@ async function publishPanel({ guild, channel, mode = null, userId }) {
 
   const sent = await channel.send({
     embeds: [embed],
-    components: buildPanelComponents(types, chosenMode),
+    components: buildPanelComponents(types, chosenMode, panel.id),
     allowedMentions: { parse: [] }
   });
 
@@ -352,7 +352,7 @@ async function publishPanel({ guild, channel, mode = null, userId }) {
     panel_message_id: sent.id,
     mode: chosenMode,
     updated_by: userId
-  });
+  }, panel.id);
 
   return sent;
 }
@@ -527,13 +527,21 @@ function buildOverwrites(guild, member, type) {
 
 async function openTicket({ guild, member, typeKey, panelId = null, formAnswers = [] }) {
   const type = await ticketDb.getTicketType(guild.id, typeKey);
+  const panel = await ticketDb.getPanel(guild.id, panelId);
+
+  if (panelId && !panel) {
+    return { ok: false, reason: 'That ticket panel no longer exists.' };
+  }
+
+  if (panel && type && type.panel_id && type.panel_id !== panel.id) {
+    return { ok: false, reason: 'That ticket type does not belong to the selected panel.', type };
+  }
+
   const validation = await ensureTicketCanOpen({ guild, member, type });
 
   if (!validation.ok) {
     return { ok: false, reason: validation.reason, admin: validation.admin, type };
   }
-
-  const panel = await ticketDb.getPanel(guild.id);
 
   const formSummary = formAnswers.length
     ? formAnswers.map((item) => `**${item.label}**\n${item.answer || 'No answer'}`).join('\n\n')
@@ -635,9 +643,12 @@ async function openTicket({ guild, member, typeKey, panelId = null, formAnswers 
   return { ok: true, ticket, type, channel };
 }
 
-async function createTicketModal(interaction, typeKey) {
+async function createTicketModal(interaction, typeKey, panelId = null) {
   const type = await ticketDb.getTicketType(interaction.guild.id, typeKey);
   if (!type) return failEphemeral(interaction, 'That ticket type no longer exists.');
+  if (panelId && type.panel_id && type.panel_id !== panelId) {
+    return failEphemeral(interaction, 'That ticket type is not available from this panel anymore.');
+  }
 
   const questions = await ticketDb.listQuestions(interaction.guild.id, type.id);
 
@@ -645,7 +656,8 @@ async function createTicketModal(interaction, typeKey) {
     const result = await openTicket({
       guild: interaction.guild,
       member: interaction.member,
-      typeKey
+      typeKey,
+      panelId
     });
 
     if (!result.ok) return failEphemeral(interaction, result.reason, result.admin);
@@ -657,7 +669,7 @@ async function createTicketModal(interaction, typeKey) {
   }
 
   const modal = new ModalBuilder()
-    .setCustomId(`ticket:modal:${type.key}`)
+    .setCustomId(`ticket:modal:${panelId || 'default'}:${type.key}`)
     .setTitle(trim(`${type.name} Ticket`, 45));
 
   for (const question of questions.slice(0, 5)) {
@@ -678,7 +690,8 @@ async function createTicketModal(interaction, typeKey) {
 }
 
 async function handleModalSubmit(interaction) {
-  const [, , typeKey] = interaction.customId.split(':');
+  const [, , rawPanelId, typeKey] = interaction.customId.split(':');
+  const panelId = rawPanelId && rawPanelId !== 'default' ? rawPanelId : null;
   const type = await ticketDb.getTicketType(interaction.guild.id, typeKey);
 
   if (!type) {
@@ -698,6 +711,7 @@ async function handleModalSubmit(interaction) {
     guild: interaction.guild,
     member: interaction.member,
     typeKey,
+    panelId,
     formAnswers: answers
   });
 
@@ -1097,12 +1111,14 @@ async function handleTicketInteraction(interaction) {
   const action = parts[1];
 
   if (action === 'create_key') {
-    return createTicketModal(interaction, parts.slice(2).join(':'));
+    const panelId = parts[2] && parts[2] !== 'default' ? parts[2] : null;
+    return createTicketModal(interaction, parts.slice(3).join(':'), panelId);
   }
 
   if (action === 'select_key') {
+    const panelId = parts[2] && parts[2] !== 'default' ? parts[2] : null;
     const typeKey = interaction.values?.[0];
-    return createTicketModal(interaction, typeKey);
+    return createTicketModal(interaction, typeKey, panelId);
   }
 
   if (action === 'modal') {

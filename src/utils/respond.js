@@ -5,6 +5,8 @@ const {
   DEFAULT_REPLY_COLORS,
   DEFAULT_REPLY_EMOJIS
 } = require('../systems/customization/customizationStore');
+const { sendWithGuildWebhook } = require('../systems/customization/webhookReplyManager');
+const logger = require('../systems/logging/logger');
 
 const DEFAULT_COLORS = {
   list: 0x2b2d31,
@@ -14,7 +16,7 @@ const DEFAULT_COLORS = {
   alert: 0xfee75c
 };
 
-async function getTheme(guildId, type) {
+function getTheme(guildId, type) {
   if (!guildId) {
     return {
       emoji: DEFAULT_REPLY_EMOJIS[type] || DEFAULT_REPLY_EMOJIS.info,
@@ -22,47 +24,57 @@ async function getTheme(guildId, type) {
     };
   }
 
-  const config = await getGuildCustomization(guildId).catch(() => null);
+  const config = getGuildCustomization(guildId);
 
   return {
     emoji:
-      config?.replyEmojis?.[type] ||
+      config.replyEmojis?.[type] ||
       DEFAULT_REPLY_EMOJIS[type] ||
       DEFAULT_REPLY_EMOJIS.info,
 
     color: hexToInt(
-      config?.replyColors?.[type] || DEFAULT_REPLY_COLORS[type],
+      config.replyColors?.[type] || DEFAULT_REPLY_COLORS[type],
       DEFAULT_COLORS[type] || DEFAULT_COLORS.info
     )
   };
 }
 
-function cleanText(text) {
-  return String(text || '').trim();
+function buildDescription({ emoji, user, action, description, mentionUser }) {
+  const body = String(description || action || '').trim();
+
+  if (!body) return '';
+
+  const shouldMention = mentionUser !== false && user;
+
+  return `${emoji} ${shouldMention ? `${user}, ` : ''}${body}`;
 }
 
-async function makeEmbed(type, user, action, options = {}) {
+function makeEmbed(type, user, action, options = {}) {
   const guildId =
     options.guildId ||
     options.message?.guild?.id ||
     options.guild?.id ||
     null;
 
-  const theme = await getTheme(guildId, type);
+  const theme = getTheme(guildId, type);
 
   const embed = new EmbedBuilder()
     .setColor(options.color || theme.color);
 
-  const body = cleanText(options.description || action);
-  const emoji = options.emoji === false ? '' : options.emoji || theme.emoji;
+  if (options.allowTitle === true && options.title) {
+    embed.setTitle(String(options.title).slice(0, 256));
+  }
 
-  if (body) {
-    const mention =
-      options.mentionUser === true && user
-        ? `${user}, `
-        : '';
+  const description = buildDescription({
+    emoji: options.emoji || theme.emoji,
+    user,
+    action,
+    description: options.description,
+    mentionUser: options.mentionUser
+  });
 
-    embed.setDescription(`${emoji ? `${emoji} ` : ''}${mention}${body}`.slice(0, 4096));
+  if (description) {
+    embed.setDescription(description.slice(0, 4096));
   }
 
   if (Array.isArray(options.fields) && options.fields.length) {
@@ -72,11 +84,12 @@ async function makeEmbed(type, user, action, options = {}) {
   if (options.author) embed.setAuthor(options.author);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   if (options.image) embed.setImage(options.image);
+  if (options.footer) embed.setFooter(options.footer);
 
   return embed;
 }
 
-async function buildPayload(type, user, action, options = {}) {
+function buildPayload(type, user, action, options = {}) {
   if (options.plain === true) {
     return {
       content: options.content || action || '',
@@ -86,7 +99,7 @@ async function buildPayload(type, user, action, options = {}) {
     };
   }
 
-  const embed = await makeEmbed(type, user, action, options);
+  const embed = makeEmbed(type, user, action, options);
 
   return {
     content: options.content || undefined,
@@ -96,28 +109,76 @@ async function buildPayload(type, user, action, options = {}) {
     allowedMentions:
       options.allowedMentions ||
       {
-        parse: []
+        users: user?.id ? [user.id] : [],
+        roles: []
       }
   };
 }
 
 async function reply(message, type, action, options = {}) {
-  const payload = await buildPayload(type, options.user || message.author, action, {
+  const payload = buildPayload(type, options.user || message.author, action, {
     ...options,
     message,
     guildId: message.guild?.id
   });
 
-  return message.channel.send(payload);
+  if (message.guild && options.useWebhook !== false) {
+    const webhookResult = await sendWithGuildWebhook(message.channel, payload).catch(() => null);
+
+    if (webhookResult) return webhookResult;
+  }
+
+  return message.channel.send(payload).catch((error) => {
+    const code = Number(error?.code || error?.rawError?.code || 0);
+    const status = Number(error?.status || 0);
+
+    if (code === 50013 || status === 403) {
+      logger.warn(
+        {
+          guildId: message.guild?.id,
+          channelId: message.channel?.id,
+          userId: message.author?.id
+        },
+        'Could not send response because Discord denied channel permissions'
+      );
+
+      return null;
+    }
+
+    throw error;
+  });
 }
 
 async function send(channel, type, user, action, options = {}) {
-  const payload = await buildPayload(type, user, action, {
+  const payload = buildPayload(type, user, action, {
     ...options,
     guildId: channel.guild?.id
   });
 
-  return channel.send(payload);
+  if (channel.guild && options.useWebhook !== false) {
+    const webhookResult = await sendWithGuildWebhook(channel, payload).catch(() => null);
+
+    if (webhookResult) return webhookResult;
+  }
+
+  return channel.send(payload).catch((error) => {
+    const code = Number(error?.code || error?.rawError?.code || 0);
+    const status = Number(error?.status || 0);
+
+    if (code === 50013 || status === 403) {
+      logger.warn(
+        {
+          guildId: channel.guild?.id,
+          channelId: channel.id
+        },
+        'Could not send channel response because Discord denied channel permissions'
+      );
+
+      return null;
+    }
+
+    throw error;
+  });
 }
 
 module.exports = {

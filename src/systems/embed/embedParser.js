@@ -1,24 +1,23 @@
 const {
+  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   StringSelectMenuBuilder
 } = require('discord.js');
-const { parseComponentEmoji } = require('../../utils/componentEmoji');
-const { safeEmojiObject } = require('../tickets/ticketManager');
+const { resolveVariables } = require('../variables/variableRegistry');
 
 function parseBlocks(input) {
   const text = String(input || '');
   const blocks = [];
-  let index = 0;
+  let i = 0;
 
-  while (index < text.length) {
-    const start = text.indexOf('$v{', index);
+  while (i < text.length) {
+    const start = text.indexOf('$v{', i);
     if (start === -1) break;
 
-    let cursor = start + 3;
     let depth = 1;
+    let cursor = start + 3;
 
     while (cursor < text.length && depth > 0) {
       const char = text[cursor];
@@ -29,8 +28,9 @@ function parseBlocks(input) {
       cursor += 1;
     }
 
-    blocks.push(text.slice(start + 3, cursor - 1));
-    index = cursor;
+    const raw = text.slice(start + 3, cursor - 1);
+    blocks.push(raw);
+    i = cursor;
   }
 
   return blocks;
@@ -46,115 +46,12 @@ function splitKeyValue(block) {
   ];
 }
 
-function color(value) {
+function normalizeColor(value) {
   const clean = String(value || '').replace('#', '').trim();
+
   if (!/^[0-9a-f]{6}$/i.test(clean)) return 0x2b2d31;
-  return parseInt(clean, 16);
-}
 
-function resolveUrl(value) {
-  const clean = String(value || '').trim();
-  return /^https?:\/\//i.test(clean) ? clean : null;
-}
-
-function buttonStyle(value) {
-  const clean = String(value || '').toLowerCase();
-
-  if (['primary', 'blurple'].includes(clean)) return ButtonStyle.Primary;
-  if (['secondary', 'gray', 'grey'].includes(clean)) return ButtonStyle.Secondary;
-  if (['success', 'green'].includes(clean)) return ButtonStyle.Success;
-  if (['danger', 'red'].includes(clean)) return ButtonStyle.Danger;
-  if (['link', 'url'].includes(clean)) return ButtonStyle.Link;
-
-  return ButtonStyle.Secondary;
-}
-
-function extractAction(parts) {
-  const item = parts.find((part) => /^action=/i.test(part));
-  if (!item) return null;
-
-  return item.slice(item.indexOf('=') + 1).trim();
-}
-
-function buildButton(value, index) {
-  const parts = value.split('&&').map((part) => part.trim()).filter(Boolean);
-  const action = extractAction(parts);
-  const url = parts.find((part) => /^https?:\/\//i.test(part));
-  const styleText = parts.find((part) => ['primary', 'secondary', 'success', 'danger', 'link', 'url', 'blurple', 'gray', 'grey', 'green', 'red'].includes(part.toLowerCase())) || (url ? 'link' : 'secondary');
-
-  let label = parts.find((part) => {
-    if (/^action=/i.test(part)) return false;
-    if (/^https?:\/\//i.test(part)) return false;
-    if (['primary', 'secondary', 'success', 'danger', 'link', 'url', 'blurple', 'gray', 'grey', 'green', 'red'].includes(part.toLowerCase())) return false;
-    if (safeEmojiObject(part)) return false;
-    return true;
-  }) || 'Button';
-
-  const emojiText = parts.find((part) => safeEmojiObject(part));
-  const style = buttonStyle(styleText);
-
-  const button = new ButtonBuilder()
-    .setLabel(label.slice(0, 80))
-    .setStyle(style);
-
-  const emoji = safeEmojiObject(emojiText);
-  if (emoji) {
-    const parsedEmoji = parseComponentEmoji(emoji);
-    if (parsedEmoji) button.setEmoji(parsedEmoji);
-  }
-
-  if (action?.startsWith('create_ticket:')) {
-    const typeKey = action.split(':').slice(1).join(':');
-    button.setCustomId(`ticket:create_key:${typeKey}`);
-    if (style === ButtonStyle.Link) button.setStyle(ButtonStyle.Primary);
-    return button;
-  }
-
-  if (style === ButtonStyle.Link) {
-    if (!url) {
-      button.setStyle(ButtonStyle.Secondary);
-      button.setCustomId(`embed:button:${index}`);
-    } else {
-      button.setURL(url);
-    }
-  } else {
-    button.setCustomId(action ? `embed:action:${index}:${action}` : `embed:button:${index}`);
-  }
-
-  return button;
-}
-
-function buildDropdown(value) {
-  const parts = value.split('&&').map((part) => part.trim()).filter(Boolean);
-  const placeholder = parts.shift() || 'Choose an option';
-
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId('ticket:select_key')
-    .setPlaceholder(placeholder.slice(0, 150))
-    .setMinValues(1)
-    .setMaxValues(1);
-
-  let optionCount = 0;
-
-  for (const raw of parts.slice(0, 25)) {
-    const [key, label, description, emojiText] = raw.split(':').map((part) => String(part || '').trim());
-
-    if (!key || !label) continue;
-
-    const option = {
-      label: label.slice(0, 100),
-      value: key.slice(0, 100),
-      description: (description || `Open a ${label} ticket`).slice(0, 100)
-    };
-
-    const emoji = safeEmojiObject(emojiText);
-    if (emoji) option.emoji = emoji;
-
-    menu.addOptions(option);
-    optionCount += 1;
-  }
-
-  return optionCount ? menu : null;
+  return Number.parseInt(clean, 16);
 }
 
 function extractInlineMedia(description, config) {
@@ -173,18 +70,93 @@ function extractInlineMedia(description, config) {
   return output.trim();
 }
 
-function addButtonsToRows(buttons) {
+function parseField(value) {
+  const parts = value.split('&&').map((part) => part.trim());
+
+  return {
+    name: parts[0] || '\u200b',
+    value: parts[1] || '\u200b',
+    inline: ['true', 'yes', 'inline'].includes(String(parts[2] || '').toLowerCase())
+  };
+}
+
+function buttonStyle(value) {
+  const clean = String(value || '').toLowerCase();
+
+  if (clean === 'primary' || clean === 'blurple') return ButtonStyle.Primary;
+  if (clean === 'secondary' || clean === 'gray' || clean === 'grey') return ButtonStyle.Secondary;
+  if (clean === 'success' || clean === 'green') return ButtonStyle.Success;
+  if (clean === 'danger' || clean === 'red') return ButtonStyle.Danger;
+  if (clean === 'link' || clean === 'url') return ButtonStyle.Link;
+
+  return ButtonStyle.Secondary;
+}
+
+function parseButton(value, index) {
+  const parts = value.split('&&').map((part) => part.trim());
+
+  const maybeUrl = parts.find((part) => /^https?:\/\//i.test(part));
+  const label = parts.find((part) => part && !/^https?:\/\//i.test(part) && !['primary', 'secondary', 'success', 'danger', 'link', 'url'].includes(part.toLowerCase())) || 'Button';
+  const styleText = parts.find((part) => ['primary', 'secondary', 'success', 'danger', 'link', 'url', 'blurple', 'gray', 'grey', 'green', 'red'].includes(part.toLowerCase())) || (maybeUrl ? 'link' : 'secondary');
+  const emoji = parts.find((part) => /^<a?:.+:\d+>$|^\p{Emoji}/u.test(part)) || null;
+
+  return {
+    label,
+    url: maybeUrl,
+    style: styleText,
+    emoji,
+    customId: maybeUrl ? null : `ohara_embed_button_${index}`,
+    action: parts.find((part) => part.startsWith('action='))?.slice(7) || null,
+    roleId: parts.find((part) => part.startsWith('role='))?.slice(5) || null
+  };
+}
+
+function buildComponents(config) {
   const rows = [];
+  const buttons = config.buttons || [];
 
   for (let i = 0; i < buttons.length; i += 5) {
-    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+    const row = new ActionRowBuilder();
+
+    for (const buttonConfig of buttons.slice(i, i + 5)) {
+      const button = new ButtonBuilder()
+        .setLabel(buttonConfig.label.slice(0, 80))
+        .setStyle(buttonStyle(buttonConfig.style));
+
+      if (buttonConfig.emoji) button.setEmoji(buttonConfig.emoji);
+
+      if (buttonStyle(buttonConfig.style) === ButtonStyle.Link && buttonConfig.url) {
+        button.setURL(buttonConfig.url);
+      } else {
+        button.setCustomId(buttonConfig.customId || `ohara_embed_button_${i}`);
+      }
+
+      row.addComponents(button);
+    }
+
+    rows.push(row);
   }
 
-  return rows;
+  for (const dropdown of config.dropdowns || []) {
+    const row = new ActionRowBuilder();
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(dropdown.customId || 'ohara_embed_dropdown')
+      .setPlaceholder(dropdown.placeholder || 'Choose an option')
+      .setMinValues(dropdown.min || 1)
+      .setMaxValues(dropdown.max || 1);
+
+    menu.addOptions(dropdown.options.slice(0, 25));
+    row.addComponents(menu);
+    rows.push(row);
+  }
+
+  return rows.slice(0, 5);
 }
 
 async function parseEmbedScript(script, context = {}) {
+  const hasEmbedToken = String(script).includes('{embed}');
   const blocks = parseBlocks(script);
+
   const config = {
     color: 0x2b2d31,
     fields: [],
@@ -194,15 +166,16 @@ async function parseEmbedScript(script, context = {}) {
   };
 
   for (const block of blocks) {
-    const [key, value] = splitKeyValue(block);
+    const [key, rawValue] = splitKeyValue(block);
+    const value = await resolveVariables(rawValue, context);
 
-    if (key === 'color') config.color = color(value);
-    else if (key === 'title') config.title = value;
+    if (key === 'title') config.title = value;
     else if (key === 'url') config.url = value;
     else if (key === 'description') config.description = extractInlineMedia(value, config);
+    else if (key === 'color') config.color = normalizeColor(value);
     else if (key === 'thumbnail') config.thumbnail = value;
     else if (key === 'image' || key === 'gif') config.image = value;
-    else if (key === 'timestamp') config.timestamp = ['on', 'true', 'yes'].includes(value.toLowerCase());
+    else if (key === 'timestamp') config.timestamp = ['true', 'yes', 'on'].includes(value.toLowerCase());
     else if (key === 'author') {
       const [name, iconURL, url] = value.split('&&').map((part) => part.trim());
       config.author = { name, iconURL, url };
@@ -210,57 +183,49 @@ async function parseEmbedScript(script, context = {}) {
       const [text, iconURL] = value.split('&&').map((part) => part.trim());
       config.footer = { text, iconURL };
     } else if (key === 'field') {
-      const [name, fieldValue, inline] = value.split('&&').map((part) => part.trim());
-      config.fields.push({
-        name: name || '\u200b',
-        value: fieldValue || '\u200b',
-        inline: ['true', 'yes', 'inline'].includes(String(inline || '').toLowerCase())
-      });
+      config.fields.push(parseField(value));
     } else if (key === 'button') {
-      config.buttons.push(buildButton(value, config.buttons.length));
-    } else if (key === 'dropdown') {
-      const dropdown = buildDropdown(value);
-      if (dropdown) config.dropdowns.push(dropdown);
+      config.buttons.push(parseButton(value, config.buttons.length));
     }
   }
 
-  if (!blocks.length) config.description = String(script || '');
+  if (!hasEmbedToken && blocks.length === 0) {
+    config.description = await resolveVariables(script, context);
+  }
 
   const embed = new EmbedBuilder().setColor(config.color);
 
   if (config.title) embed.setTitle(config.title.slice(0, 256));
-  if (resolveUrl(config.url)) embed.setURL(config.url);
+  if (config.url && /^https?:\/\//i.test(config.url)) embed.setURL(config.url);
   if (config.description) embed.setDescription(config.description.slice(0, 4096));
-  if (resolveUrl(config.thumbnail)) embed.setThumbnail(config.thumbnail);
-  if (resolveUrl(config.image)) embed.setImage(config.image);
-  if (config.timestamp) embed.setTimestamp();
+  if (config.thumbnail && /^https?:\/\//i.test(config.thumbnail)) embed.setThumbnail(config.thumbnail);
+  if (config.image && /^https?:\/\//i.test(config.image)) embed.setImage(config.image);
 
   if (config.author?.name) {
     embed.setAuthor({
       name: config.author.name.slice(0, 256),
-      iconURL: resolveUrl(config.author.iconURL) || undefined,
-      url: resolveUrl(config.author.url) || undefined
+      iconURL: config.author.iconURL && /^https?:\/\//i.test(config.author.iconURL) ? config.author.iconURL : undefined,
+      url: config.author.url && /^https?:\/\//i.test(config.author.url) ? config.author.url : undefined
     });
   }
 
   if (config.footer?.text) {
     embed.setFooter({
       text: config.footer.text.slice(0, 2048),
-      iconURL: resolveUrl(config.footer.iconURL) || undefined
+      iconURL: config.footer.iconURL && /^https?:\/\//i.test(config.footer.iconURL) ? config.footer.iconURL : undefined
     });
   }
 
-  if (config.fields.length) embed.addFields(config.fields.slice(0, 25));
+  if (config.timestamp) embed.setTimestamp();
 
-  const rows = [
-    ...addButtonsToRows(config.buttons),
-    ...config.dropdowns.map((dropdown) => new ActionRowBuilder().addComponents(dropdown))
-  ].slice(0, 5);
+  if (config.fields.length) {
+    embed.addFields(config.fields.slice(0, 25));
+  }
 
   return {
     config,
     embeds: [embed],
-    components: rows
+    components: buildComponents(config)
   };
 }
 

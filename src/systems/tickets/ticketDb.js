@@ -37,15 +37,29 @@ async function createPanel({ guildId, userId, name = 'Main Ticket Panel' }) {
   );
 }
 
-async function getPanel(guildId) {
+async function listPanels(guildId) {
+  return db.many(
+    `select * from ticket_panels where guild_id = $1 order by created_at asc`,
+    [guildId]
+  );
+}
+
+async function getPanel(guildId, panelId = null) {
+  if (panelId) {
+    return db.one(
+      `select * from ticket_panels where guild_id = $1 and id = $2`,
+      [guildId, panelId]
+    );
+  }
+
   return db.one(
     `select * from ticket_panels where guild_id = $1 order by created_at asc limit 1`,
     [guildId]
   );
 }
 
-async function updatePanel(guildId, updates = {}) {
-  const panel = await getPanel(guildId);
+async function updatePanel(guildId, updates = {}, panelId = null) {
+  const panel = await getPanel(guildId, panelId);
   if (!panel) return null;
 
   const fields = [];
@@ -70,8 +84,8 @@ async function updatePanel(guildId, updates = {}) {
   );
 }
 
-async function deletePanel(guildId) {
-  const panel = await getPanel(guildId);
+async function deletePanel(guildId, panelId = null) {
+  const panel = await getPanel(guildId, panelId);
   if (!panel) return null;
 
   await db.query(`delete from ticket_panels where id = $1`, [panel.id]);
@@ -128,7 +142,14 @@ async function getTicketType(guildId, key) {
   );
 }
 
-async function listTicketTypes(guildId) {
+async function listTicketTypes(guildId, panelId = null) {
+  if (panelId) {
+    return db.many(
+      `select * from ticket_types where guild_id = $1 and panel_id = $2 order by created_at asc`,
+      [guildId, panelId]
+    );
+  }
+
   return db.many(
     `select * from ticket_types where guild_id = $1 order by created_at asc`,
     [guildId]
@@ -443,6 +464,7 @@ module.exports = {
   arrayValue,
   getPlan,
   createPanel,
+  listPanels,
   getPanel,
   updatePanel,
   deletePanel,

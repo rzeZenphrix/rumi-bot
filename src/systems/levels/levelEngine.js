@@ -57,7 +57,7 @@ function getMultiplier(message, config) {
 async function handleLevelXp(client, message) {
   if (!message.guild || message.author.bot) return;
 
-  const config = getGuildLevels(message.guild.id);
+  const config = await getGuildLevels(message.guild.id);
 
   if (!config.enabled) return;
   if (config.ignoredChannels.includes(message.channel.id)) return;
@@ -72,16 +72,16 @@ async function handleLevelXp(client, message) {
   const base = randomBetween(Number(config.baseXpMin || 8), Number(config.baseXpMax || 15));
   const amount = Math.max(1, Math.floor(base * getMultiplier(message, config)));
 
-  updateGuildLevels(message.guild.id, (draft) => {
+  await updateGuildLevels(message.guild.id, (draft) => {
     draft.users[message.author.id] ||= { xp: 0, level: 0, lastXpAt: 0 };
     draft.users[message.author.id].lastXpAt = now;
   });
 
   const beforeLevel = user.level || 0;
-  const after = addXp(message.guild.id, message.author.id, amount);
+  const after = await addXp(message.guild.id, message.author.id, amount);
 
   if (after.leveled && after.level > beforeLevel) {
-    await applyLevelRoles(message, getGuildLevels(message.guild.id), after.level);
+    await applyLevelRoles(message, await getGuildLevels(message.guild.id), after.level);
 
     const outputChannel = config.levelChannelId
       ? await message.guild.channels.fetch(config.levelChannelId).catch(() => null)

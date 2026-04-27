@@ -1,5 +1,6 @@
 const respond = require('../../utils/respond');
 const { extractUrl } = require('../../services/google/tenor');
+const { requireUserPremium } = require('../../systems/monetization/access');
 
 function findMeta(html, property) {
   const re = new RegExp(`<meta[^>]+(?:property|name)=["']${property}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i');
@@ -16,6 +17,9 @@ module.exports = {
   typing: true,
 
   async execute({ message, args }) {
+    const access = await requireUserPremium(message, 'Link preview').catch(() => null);
+    if (!access) return null;
+
     const url = extractUrl(args.join(' '));
     if (!url) return respond.reply(message, 'info', 'Use `linkpreview <url>`.');
     const res = await fetch(url, { headers: { 'user-agent': 'RumiBot/0.2' } });

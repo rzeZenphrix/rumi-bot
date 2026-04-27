@@ -1,82 +1,126 @@
 const { ActivityType } = require('discord.js');
 const {
   getGlobalCustomization,
-  updateGlobalCustomization
+  updateGlobalCustomization,
+  isCustomizationEnabled
 } = require('./customizationStore');
+const logger = require('../logging/logger');
 
 const ACTIVITY_TYPES = {
-  Playing: ActivityType.Playing,
-  Streaming: ActivityType.Streaming,
-  Listening: ActivityType.Listening,
-  Watching: ActivityType.Watching,
-  Competing: ActivityType.Competing
+  playing: ActivityType.Playing,
+  streaming: ActivityType.Streaming,
+  listening: ActivityType.Listening,
+  watching: ActivityType.Watching,
+  competing: ActivityType.Competing
 };
 
 function normalizeStatus(status) {
-  const clean = String(status || 'online').toLowerCase();
-
-  if (['online', 'idle', 'dnd', 'invisible'].includes(clean)) {
-    return clean;
-  }
-
+  const clean = String(status || '').toLowerCase();
+  if (['online', 'idle', 'dnd', 'invisible'].includes(clean)) return clean;
   return 'online';
 }
 
 function normalizeActivityType(type) {
-  const clean = String(type || 'Watching');
-
-  return ACTIVITY_TYPES[clean] ? clean : 'Watching';
+  const clean = String(type || '').toLowerCase();
+  return ACTIVITY_TYPES[clean];
 }
 
-async function applyPresence(client, presenceConfig = {}) {
+function renderStatsFormat(client, format) {
+  const guilds = client.guilds?.cache?.size || 0;
+  const users = client.guilds?.cache?.reduce((total, guild) => total + (guild.memberCount || 0), 0) || 0;
+
+  return String(format || 'Watching {servers} servers')
+    .replaceAll('{servers}', guilds.toLocaleString())
+    .replaceAll('{guilds}', guilds.toLocaleString())
+    .replaceAll('{users}', users.toLocaleString())
+    .slice(0, 128);
+}
+
+async function setPresenceEverywhere(client, presence) {
   if (!client?.user) return false;
 
-  const enabled = presenceConfig.enabled !== false;
-
-  if (!enabled) return false;
-
-  const status = normalizeStatus(presenceConfig.status);
-  const activityTypeName = normalizeActivityType(presenceConfig.activityType);
-  const activityText =
-    String(presenceConfig.activityText || 'over the server').slice(0, 128);
-
+  const type = normalizeActivityType(presence.activityType) ?? ActivityType.Watching;
   const activity = {
-    name: activityText,
-    type: ACTIVITY_TYPES[activityTypeName]
+    name: presence.activityText || 'over your server',
+    type
   };
 
-  if (activityTypeName === 'Streaming' && presenceConfig.url) {
-    activity.url = presenceConfig.url;
+  if (type === ActivityType.Streaming) {
+    activity.url = process.env.STREAM_URL || 'https://twitch.tv/discord';
   }
 
-  client.user.setPresence({
-    status,
+  const payload = {
+    status: normalizeStatus(presence.status),
     activities: [activity]
-  });
+  };
+
+  if (client.shard) {
+    await client.shard.broadcastEval(
+      (shardClient, context) => shardClient.user.setPresence(context.payload),
+      { context: { payload } }
+    );
+  } else {
+    await client.user.setPresence(payload);
+  }
 
   return true;
 }
 
 async function applySavedPresence(client) {
-  const config = await getGlobalCustomization();
-  return applyPresence(client, config.presence);
+  if (!isCustomizationEnabled()) {
+    logger.debug('Customization is disabled; skipping saved presence load.');
+    return false;
+  }
+
+  try {
+    const global = getGlobalCustomization();
+    const presence = global.stats?.enabled
+      ? {
+          status: global.presence?.status || 'online',
+          activityType: 'watching',
+          activityText: renderStatsFormat(client, global.stats.format)
+        }
+      : (global.presence || {
+          status: 'online',
+          activityType: 'watching',
+          activityText: 'over your server'
+        });
+
+    return setPresenceEverywhere(client, presence);
+  } catch (error) {
+    logger.warn({ error }, 'Saved presence could not be applied; continuing startup.');
+    return false;
+  }
 }
 
-async function setPresence(client, options = {}) {
-  const updated = await updateGlobalCustomization((config) => {
-    config.presence = {
-      ...(config.presence || {}),
-      ...options
+function savePresence({ status, activityType, activityText }) {
+  if (!isCustomizationEnabled()) return getGlobalCustomization();
+
+  return updateGlobalCustomization((global) => {
+    global.presence = {
+      status: normalizeStatus(status),
+      activityType: ACTIVITY_TYPES[String(activityType || '').toLowerCase()] ? String(activityType).toLowerCase() : 'watching',
+      activityText: activityText || 'over your server'
     };
   });
+}
 
-  await applyPresence(client, updated.presence);
+function saveStatsPresence({ enabled, format }) {
+  if (!isCustomizationEnabled()) return getGlobalCustomization();
 
-  return updated.presence;
+  return updateGlobalCustomization((global) => {
+    global.stats = {
+      enabled: Boolean(enabled),
+      format: format || 'Watching {servers} servers'
+    };
+  });
 }
 
 module.exports = {
-  applyPresence,
+  setPresenceEverywhere,
   applySavedPresence,
-  setPresence
+  savePresence,
+  saveStatsPresence,
+  normalizeStatus,
+  normalizeActivityType
 };

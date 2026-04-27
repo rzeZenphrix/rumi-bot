@@ -1,309 +1,204 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const {
+  disabledMessage,
+  isCustomizationEnabled,
   getGuildCustomization,
-  updateGuildCustomization,
+  setGuildCustomization,
   resetGuildCustomization,
-  normalizeHex
+  normalizeHex,
+  appendSupportInvite
 } = require('../../systems/customization/customizationStore');
+const { applyGuildProfile } = require('../../systems/customization/profileManager');
+const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
 
-const REPLY_TYPES = ['info', 'good', 'bad', 'alert', 'list'];
+const TYPES = new Set(['info', 'good', 'bad', 'alert', 'list']);
 
-function getAttachmentUrl(message) {
-  return message.attachments?.first?.()?.url || null;
+function normalizeEmojiInput(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (['off', 'none', 'disable'].includes(text.toLowerCase())) return '';
+  return text.slice(0, 64);
 }
 
-function isUrl(value) {
-  return /^https?:\/\//i.test(String(value || ''));
+function cleanUrl(value) {
+  const text = String(value || '').trim();
+  if (!text || ['reset', 'default', 'none'].includes(text.toLowerCase())) return null;
+
+  try {
+    const url = new URL(text);
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
-function validReplyType(value) {
-  return REPLY_TYPES.includes(String(value || '').toLowerCase());
+async function safeApplyProfile(guild) {
+  try {
+    return await applyGuildProfile(guild, {
+      config: getGuildCustomization(guild.id)
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error?.message || 'Unknown Discord profile update error.'
+    };
+  }
 }
 
 module.exports = {
   name: 'customize',
-  aliases: [
-    'custom'
-  ],
+  aliases: ['custom'],
   category: 'config',
-  description: 'Customize my replies and server-specific bot branding for this server.',
-  usage: 'customize view|mode|name|avatar|banner|bio|replycolor|replyemoji|reset|test',
+  description: 'Customize Rumi replies, profile styling, and webhook response mode for this server.',
+  usage: 'customize <view|mode|color|emoji|profile|reset> ...',
   examples: [
     'customize view',
     'customize mode webhook',
-    'customize name Rumi',
-    'customize avatar url',
-    'customize banner url',
-    'customize bio API coded from https://rumi.bot/',
-    'customize replycolor good #57f287',
-    'customize replyemoji good 👍',
-    'customize reset all',
-    'customize test'
-  ],
-  subcommands: [
-    {
-      name: 'view',
-      description: 'Shows this server’s customization.',
-      usage: 'view'
-    },
-    {
-      name: 'mode',
-      description: 'Changes reply mode. Bot mode is normal. Webhook mode allows server-specific name/avatar.',
-      usage: 'mode bot|webhook'
-    },
-    {
-      name: 'name',
-      description: 'Sets my server-specific webhook reply name.',
-      usage: 'name name'
-    },
-    {
-      name: 'avatar',
-      description: 'Sets my server-specific webhook reply avatar.',
-      usage: 'avatar url|attachment'
-    },
-    {
-      name: 'banner',
-      description: 'Saves my server-specific display banner URL.',
-      usage: 'banner url|attachment'
-    },
-    {
-      name: 'bio',
-      description: 'Saves my server-specific bio text.',
-      usage: 'bio text'
-    },
-    {
-      name: 'replycolor',
-      description: 'Sets a reply embed color.',
-      usage: 'replycolor info|good|bad|alert|list|all #hex'
-    },
-    {
-      name: 'replyemoji',
-      description: 'Sets a reply emoji.',
-      usage: 'replyemoji info|good|bad|alert|list|all emoji'
-    },
-    {
-      name: 'reset',
-      description: 'Resets this server’s customization.',
-      usage: 'reset theme|profile|webhooks|all'
-    },
-    {
-      name: 'test',
-      description: 'Tests the current reply theme.',
-      usage: 'test'
-    }
+    'customize color info #f6c8d8',
+    'customize emoji good <:heart:123>',
+    'customize profile bio cutest helper in town',
+    'customize profile nickname Rumi'
   ],
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageGuild],
-  botPermissions: [
-    PermissionFlagsBits.SendMessages,
-    PermissionFlagsBits.EmbedLinks,
-    PermissionFlagsBits.ManageWebhooks
-  ],
 
   async execute({ message, args }) {
     const sub = (args.shift() || 'view').toLowerCase();
 
+    if (!isCustomizationEnabled()) {
+      return respond.reply(message, 'alert', disabledMessage(), { useWebhook: false });
+    }
+
     if (sub === 'view') {
       const config = getGuildCustomization(message.guild.id);
-
       return respond.reply(message, 'info', null, {
-        description: 'Server customization settings.',
         mentionUser: false,
         fields: [
-          {
-            name: 'Reply mode',
-            value: `\`${config.replyMode}\``,
-            inline: true
-          },
-          {
-            name: 'Profile',
-            value: [
-              `Name: ${config.botProfile.username || 'default bot name'}`,
-              `Avatar: ${config.botProfile.avatarUrl || 'default bot avatar'}`,
-              `Banner: ${config.botProfile.bannerUrl || 'not set'}`,
-              `Bio: ${config.botProfile.bio || 'not set'}`
-            ].join('\n').slice(0, 1024)
-          },
-          {
-            name: 'Reply colors',
-            value: Object.entries(config.replyColors)
-              .map(([key, value]) => `\`${key}\` ${value}`)
-              .join('\n')
-              .slice(0, 1024),
-            inline: true
-          },
-          {
-            name: 'Reply emojis',
-            value: Object.entries(config.replyEmojis)
-              .map(([key, value]) => `\`${key}\` ${value}`)
-              .join('\n')
-              .slice(0, 1024),
-            inline: true
-          }
+          { name: 'Reply mode', value: config.replyMode || 'bot', inline: true },
+          { name: 'Info color', value: config.replyColors.info || 'default', inline: true },
+          { name: 'Info emoji', value: config.replyEmojis.info || 'disabled', inline: true },
+          { name: 'Custom nickname', value: config.botProfile.nickname || message.guild.members.me?.nickname || 'Default', inline: true },
+          { name: 'Custom avatar', value: config.botProfile.avatarUrl ? '[Open avatar](' + config.botProfile.avatarUrl + ')' : 'Default', inline: true },
+          { name: 'Custom banner', value: config.botProfile.bannerUrl ? '[Open banner](' + config.botProfile.bannerUrl + ')' : 'Default', inline: true },
+          { name: 'Custom bio', value: config.botProfile.bio || 'Default' }
         ]
       });
     }
 
     if (sub === 'mode') {
-      const mode = String(args[0] || '').toLowerCase();
-
+      const mode = (args.shift() || '').toLowerCase();
       if (!['bot', 'webhook'].includes(mode)) {
-        return respond.reply(
-          message,
-          'info',
-          'Use `customize mode bot` or `customize mode webhook`.'
-        );
+        return respond.reply(message, 'info', 'Use `customize mode <bot|webhook>`.');
       }
 
-      updateGuildCustomization(message.guild.id, (config) => {
+      await setGuildCustomization(message.guild.id, (config) => {
         config.replyMode = mode;
       });
 
-      return respond.reply(
-        message,
-        'good',
-        mode === 'webhook'
-          ? 'Webhook reply mode enabled. I can now use this server’s custom name and avatar in my replies.'
-          : 'Bot reply mode enabled. I’ll reply as the normal bot account.'
-      );
+      return respond.reply(message, 'good', `Rumi reply mode is now set to **${mode}**.`);
     }
 
-    if (sub === 'name') {
-      const name = args.join(' ').trim();
-
-      if (!name || name.length > 80) {
-        return respond.reply(message, 'info', 'Send a name between 1 and 80 characters.');
+    if (sub === 'color') {
+      const type = (args.shift() || '').toLowerCase();
+      const hex = normalizeHex(args.shift());
+      if (!TYPES.has(type) || !hex) {
+        return respond.reply(message, 'info', 'Use `customize color <info|good|bad|alert|list> <hex>`.');
       }
 
-      updateGuildCustomization(message.guild.id, (config) => {
-        config.botProfile.username = name;
+      await setGuildCustomization(message.guild.id, (config) => {
+        config.replyColors[type] = hex;
       });
 
-      return respond.reply(message, 'good', `Server reply name set to **${name}**.`);
+      return respond.reply(message, 'good', `Updated **${type}** reply color to \`${hex}\`.`);
     }
 
-    if (sub === 'avatar') {
-      const url = args[0] || getAttachmentUrl(message);
-
-      if (!isUrl(url)) {
-        return respond.reply(message, 'info', 'Send an image URL or attach an image.');
+    if (sub === 'emoji') {
+      const type = (args.shift() || '').toLowerCase();
+      const emoji = normalizeEmojiInput(args.join(' '));
+      if (!TYPES.has(type) || emoji === null) {
+        return respond.reply(message, 'info', 'Use `customize emoji <info|good|bad|alert|list> <emoji|off>`.');
       }
 
-      updateGuildCustomization(message.guild.id, (config) => {
-        config.botProfile.avatarUrl = url;
+      await setGuildCustomization(message.guild.id, (config) => {
+        config.replyEmojis[type] = emoji;
       });
 
-      return respond.reply(
-        message,
-        'good',
-        'Server reply avatar saved. Use `customize mode webhook` to make replies use it.'
-      );
+      return respond.reply(message, 'good', emoji
+        ? `Updated **${type}** reply emoji to ${emoji}.`
+        : `Disabled the **${type}** reply emoji.`);
     }
 
-    if (sub === 'banner') {
-      const url = args[0] || getAttachmentUrl(message);
+    if (sub === 'profile') {
+      const field = (args.shift() || '').toLowerCase();
+      const raw = args.join(' ').trim();
 
-      if (!isUrl(url)) {
-        return respond.reply(message, 'info', 'Send an image URL or attach an image.');
+      if (!['nickname', 'avatar', 'banner', 'bio'].includes(field)) {
+        return respond.reply(message, 'info', 'Use `customize profile <nickname|avatar|banner|bio> <value|reset>`.');
       }
 
-      updateGuildCustomization(message.guild.id, (config) => {
-        config.botProfile.bannerUrl = url;
-      });
-
-      return respond.reply(
-        message,
-        'good',
-        'Server banner saved. I’ll use it in profile-style commands and variables.'
-      );
-    }
-
-    if (sub === 'bio') {
-      const bio = args.join(' ').trim();
-
-      if (!bio) {
-        return respond.reply(message, 'info', 'Send the bio text you want me to save.');
+      const resetProfile = ['reset', 'default', 'none'].includes(raw.toLowerCase());
+      if ((field === 'avatar' || field === 'banner') && !resetProfile && !cleanUrl(raw)) {
+        return respond.reply(message, 'bad', `I need a valid image URL for profile ${field}.`);
       }
 
-      updateGuildCustomization(message.guild.id, (config) => {
-        config.botProfile.bio = bio.slice(0, 500);
-      });
+      const premiumAccess = await getPremiumAccessForMessage(message).catch(() => null);
 
-      return respond.reply(message, 'good', 'Server bio saved.');
-    }
+      await setGuildCustomization(message.guild.id, (config) => {
+        if (field === 'nickname') {
+          config.botProfile.nickname = resetProfile ? null : raw.slice(0, 32);
+        }
 
-    if (sub === 'replycolor') {
-      const type = String(args.shift() || '').toLowerCase();
-      const color = normalizeHex(args.shift());
+        if (field === 'avatar') {
+          config.botProfile.avatarUrl = resetProfile ? null : cleanUrl(raw);
+        }
 
-      if ((!validReplyType(type) && type !== 'all') || !color) {
-        return respond.reply(
-          message,
-          'info',
-          'Use `customize replycolor info|good|bad|alert|list|all #hex`.'
-        );
-      }
+        if (field === 'banner') {
+          config.botProfile.bannerUrl = resetProfile ? null : cleanUrl(raw);
+        }
 
-      updateGuildCustomization(message.guild.id, (config) => {
-        if (type === 'all') {
-          for (const key of REPLY_TYPES) {
-            config.replyColors[key] = color;
-          }
-        } else {
-          config.replyColors[type] = color;
+        if (field === 'bio') {
+          config.botProfile.bio = resetProfile
+            ? null
+            : premiumAccess?.hasServerPremiumBase
+              ? raw.slice(0, 190)
+              : appendSupportInvite(raw);
         }
       });
 
-      return respond.reply(message, 'good', `Reply color updated for **${type}**.`);
-    }
+      const result = await safeApplyProfile(message.guild);
 
-    if (sub === 'replyemoji') {
-      const type = String(args.shift() || '').toLowerCase();
-      const emoji = args.join(' ').trim();
-
-      if ((!validReplyType(type) && type !== 'all') || !emoji) {
-        return respond.reply(
-          message,
-          'info',
-          'Use `customize replyemoji info|good|bad|alert|list|all emoji`.'
-        );
+      if (field === 'nickname' && !message.guild.members.me?.permissions.has(PermissionFlagsBits.ChangeNickname)) {
+        return respond.reply(message, 'alert', 'I saved the nickname setting, but I still need Change Nickname to apply it here.');
       }
 
-      updateGuildCustomization(message.guild.id, (config) => {
-        if (type === 'all') {
-          for (const key of REPLY_TYPES) {
-            config.replyEmojis[key] = emoji;
-          }
-        } else {
-          config.replyEmojis[type] = emoji;
-        }
-      });
+      if (!result.ok) {
+        return respond.reply(message, 'alert', `I saved that customization, but I could not apply it yet: ${result.reason}`);
+      }
 
-      return respond.reply(message, 'good', `Reply emoji updated for **${type}**.`);
+      return respond.reply(message, 'good', `Updated Rumi profile **${field}** for this server.`);
     }
 
     if (sub === 'reset') {
-      const section = String(args[0] || 'all').toLowerCase();
-
-      if (!['theme', 'profile', 'webhooks', 'all'].includes(section)) {
-        return respond.reply(message, 'info', 'Use `customize reset theme|profile|webhooks|all`.');
+      const section = (args.shift() || 'all').toLowerCase();
+      if (!['all', 'theme', 'profile', 'webhooks'].includes(section)) {
+        return respond.reply(message, 'info', 'Use `customize reset <all|theme|profile|webhooks>`.');
       }
 
       resetGuildCustomization(message.guild.id, section);
 
-      return respond.reply(message, 'good', `Reset **${section}** customization for this server.`);
+      if (section === 'all' || section === 'profile') {
+        const result = await safeApplyProfile(message.guild);
+
+        if (!result.ok) {
+          return respond.reply(message, 'alert', `I reset the saved profile settings, but I could not fully apply them yet: ${result.reason}`);
+        }
+      }
+
+      return respond.reply(message, 'good', `Reset customization section **${section}**.`);
     }
 
-    if (sub === 'test') {
-      await respond.reply(message, 'info', 'Info reply test.', { mentionUser: false });
-      await respond.reply(message, 'good', 'Success reply test.', { mentionUser: false });
-      await respond.reply(message, 'bad', 'Error reply test.', { mentionUser: false });
-      await respond.reply(message, 'alert', 'Warning reply test.', { mentionUser: false });
-      await respond.reply(message, 'list', 'List reply test.', { mentionUser: false });
-      return null;
-    }
-
-    return respond.reply(message, 'bad', `Unknown customize action: \`${sub}\`.`);
+    return respond.reply(message, 'info', 'Use `customize view`, `customize mode`, `customize color`, `customize emoji`, `customize profile`, or `customize reset`.');
   }
 };

@@ -1,3 +1,0 @@
-const respond = require('../../utils/respond');
-const db = require('../../services/database');
-module.exports = { name:'health', aliases:['diagnose','diagnostics','diag'], category:'core', description:'I run health checks.', usage:'health', examples:['health'], typing:true, async execute({client,message}){ const dbCheck=await db.dbHealthCheck().catch(e=>({ok:false,latencyMs:0,error:e.message})); return respond.reply(message,dbCheck.ok?'good':'bad',null,{description:`🩺 **Health check**\n**Discord:** online, \`${Math.round(client.ws.ping)}ms\`\n**Supabase:** ${dbCheck.ok?'online':'failed'}, \`${dbCheck.latencyMs}ms\`${dbCheck.error?`\n**DB error:** ${dbCheck.error}`:''}\n**Commands:** \`${client.commands.size}\``}); }};

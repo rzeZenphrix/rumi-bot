@@ -1,6 +1,12 @@
 const { AuditLogEvent, PermissionFlagsBits } = require('discord.js');
-const { getConfig } = require('./simpleStore');
+const db = require('../../services/database');
+const { SECURITY_EVENT_TYPES } = require('../../utils/constants');
 const { sendLog } = require('../logging/logDispatcher');
+const { logSecurityEvent } = require('../logging/auditLog');
+const logger = require('../logging/logger');
+const { probeFakePermission } = require('../permissions/fakePermissions');
+const { getProtectionSettings, isSecuritySystemEnabled } = require('../security/protectionConfig');
+const { manageabilityState, moderatabilityState } = require('../../utils/permissions');
 
 const buckets = new Map();
 
@@ -58,17 +64,32 @@ async function punish(guild, actor, config, eventType, count) {
 
   let result = 'No action taken.';
   if (config.punishment === 'ban') {
-    await member.ban({ reason: `Anti-nuke: ${eventType} threshold hit (${count})` }).then(() => { result = 'Banned actor.'; }).catch(() => null);
+    const manageState = manageabilityState(guild, member);
+    if (!manageState.ok) {
+      result = `Could not ban actor: ${manageState.reason}`;
+    } else {
+      await member.ban({ reason: `Anti-nuke: ${eventType} threshold hit (${count})` }).then(() => { result = 'Banned actor.'; }).catch(() => null);
+    }
   } else if (config.punishment === 'kick') {
-    await member.kick(`Anti-nuke: ${eventType} threshold hit (${count})`).then(() => { result = 'Kicked actor.'; }).catch(() => null);
+    const manageState = manageabilityState(guild, member);
+    if (!manageState.ok) {
+      result = `Could not kick actor: ${manageState.reason}`;
+    } else {
+      await member.kick(`Anti-nuke: ${eventType} threshold hit (${count})`).then(() => { result = 'Kicked actor.'; }).catch(() => null);
+    }
   } else if (config.punishment === 'timeout') {
-    await member.timeout(12 * 60 * 60 * 1000, `Anti-nuke: ${eventType} threshold hit (${count})`).then(() => { result = 'Timed out actor for 12h.'; }).catch(() => null);
+    const moderateState = moderatabilityState(guild, member);
+    if (!moderateState.ok) {
+      result = `Could not timeout actor: ${moderateState.reason}`;
+    } else {
+      await member.timeout(12 * 60 * 60 * 1000, `Anti-nuke: ${eventType} threshold hit (${count})`).then(() => { result = 'Timed out actor for 12h.'; }).catch(() => null);
+    }
   } else {
     const removed = await stripDangerousRoles(member);
     result = `Stripped ${removed} dangerous role(s).`;
   }
 
-  await sendLog(guild, 'antiNuke', {
+  await sendLog(guild, 'antinukeAction', {
     title: 'Anti-nuke triggered',
     description: `${actor} triggered **${eventType}** threshold (**${count}** action(s)). ${result}`,
     userId: actor.id
@@ -76,17 +97,50 @@ async function punish(guild, actor, config, eventType, count) {
 }
 
 async function handleNukeAction(guild, auditType, eventType, targetId) {
-  const config = getConfig(guild.id);
-  if (!config.enabled) return;
+  const protection = await getProtectionSettings(guild.id).catch((error) => {
+    logger.warn({ error, guildId: guild.id }, 'Anti-nuke settings could not be loaded');
+    return null;
+  });
+  if (!protection || !isSecuritySystemEnabled(protection, 'antinuke')) return;
 
-  const threshold = config.thresholds[eventType];
+  const threshold = protection.thresholds?.antiNuke?.[eventType];
   if (!threshold) return;
 
   const actor = await fetchActor(guild, auditType, targetId);
-  if (!actor || actor.bot || config.whitelist.includes(actor.id)) return;
+  if (!actor || actor.bot) return;
+  if (protection.antinuke.whitelist.includes(actor.id)) return;
+  if (await db.isWhitelisted(guild.id, actor.id).catch(() => false)) return;
 
-  const count = recordAction(guild.id, actor.id, eventType, config.thresholds.windowMs || 30000);
-  if (count >= threshold) await punish(guild, actor, config, eventType, count);
+  const member = await guild.members.fetch(actor.id).catch(() => null);
+  if (member) {
+    const specificBypass = await probeFakePermission(guild.id, member, 'RumiBypassAntinuke');
+    const generalBypass = await probeFakePermission(guild.id, member, 'RumiBypass');
+    if (!specificBypass.ok || !generalBypass.ok) return;
+    if (specificBypass.value || generalBypass.value) return;
+  }
+
+  const count = recordAction(
+    guild.id,
+    actor.id,
+    eventType,
+    protection.thresholds?.antiNuke?.windowMs || 30000
+  );
+
+  if (count < threshold) return;
+
+  await logSecurityEvent({
+    guildId: guild.id,
+    actorId: actor.id,
+    eventType: SECURITY_EVENT_TYPES.NUKE_DETECTED,
+    confidence: 90,
+    metadata: {
+      trigger: eventType,
+      count,
+      targetId
+    }
+  }).catch(() => null);
+
+  await punish(guild, actor, protection.antinuke, eventType, count);
 }
 
 module.exports = { handleNukeAction, AuditLogEvent };

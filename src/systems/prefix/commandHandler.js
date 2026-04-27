@@ -2,7 +2,41 @@ const logger = require('../logging/logger');
 const { matchPrefix } = require('./prefixManager');
 const respond = require('../../utils/respond');
 const { isBotOwner } = require('../owner/ownerManager');
+const db = require('../../services/database');
 const { checkCooldown, setCooldown, formatRemaining } = require('../cooldowns/cooldownManager.js');
+const { PermissionFlagsBits } = require('discord.js');
+const { runCustomCommand } = require('../customCommands/runner');
+
+function permissionLabel(permission) {
+  const match = Object.entries(PermissionFlagsBits).find(([, value]) => value === permission);
+  return match?.[0]?.replace(/([a-z])([A-Z])/g, '$1 $2') || permission.toString();
+}
+
+async function safeReply(message, type, action, options = {}) {
+  try {
+    return await respond.reply(message, type, action, options);
+  } catch (error) {
+    const code = Number(error?.code || error?.rawError?.code || 0);
+    const status = Number(error?.status || 0);
+
+    if (code === 50013 || status === 403) {
+      logger.warn(
+        {
+          guildId: message.guild?.id,
+          channelId: message.channel?.id,
+          userId: message.author?.id,
+          replyType: type,
+          replyAction: action
+        },
+        'Could not send prefix reply because Discord denied channel permissions'
+      );
+
+      return null;
+    }
+
+    throw error;
+  }
+}
 
 function parseArgs(input) {
   const args = [];
@@ -24,6 +58,46 @@ async function withTyping(message, command, fn) {
   return fn();
 }
 
+async function memberHasNativeOrFake(message, permission) {
+  if (!message.guild || !message.member) return false;
+  if (message.member.permissions?.has(permission)) return true;
+
+  try {
+    return await db.hasFakePermission(message.guild.id, message.member, permission.toString());
+  } catch (error) {
+    logger.warn(
+      {
+        error,
+        guildId: message.guild.id,
+        userId: message.author.id,
+        permission: permission.toString()
+      },
+      'Fake permission check failed; falling back to native permissions only'
+    );
+
+    return false;
+  }
+}
+
+async function userHasRequiredPermissions(message, permissions = []) {
+  if (!permissions.length) return null;
+
+  for (const permission of permissions) {
+    const allowed = await memberHasNativeOrFake(message, permission);
+    if (!allowed) return permission;
+  }
+
+  return null;
+}
+
+function botHasRequiredPermissions(message, permissions = []) {
+  if (!message.guild || !permissions.length) return null;
+  const me = message.guild.members.me;
+  const permissionsInChannel = me?.permissionsIn?.(message.channel) || me?.permissions;
+  if (!permissionsInChannel) return permissions[0];
+  return permissions.find((permission) => !permissionsInChannel.has(permission)) || null;
+}
+
 async function handlePrefixCommand(client, message) {
   if (!message.content) return false;
   if (message.author.bot) return false;
@@ -42,27 +116,40 @@ async function handlePrefixCommand(client, message) {
   const command = client.commands.get(commandName);
 
   if (!command) {
-    await respond.reply(message, 'bad', `I don’t know \`${commandName}\`. Try \`${prefix}help\`.`);
+    const custom = await runCustomCommand({ message, commandName });
+    if (custom.handled) {
+      if (custom.error) await safeReply(message, 'bad', custom.error);
+      return true;
+    }
+
+    await safeReply(message, 'bad', `I don't know \`${commandName}\`. Try \`${prefix}help\`.`);
     return true;
   }
 
   if (command.ownerOnly && !isBotOwner(message.author.id)) {
-    await respond.reply(message, 'bad', 'That command is only available to my owner.');
+    await safeReply(message, 'bad', 'That command is only available to my owner.');
     return true;
   }
 
   if (command.guildOnly && !message.guild) {
-    await respond.reply(message, 'bad', 'That command only works inside a server.');
+    await safeReply(message, 'bad', 'That command only works inside a server.');
     return true;
   }
 
-  if (message.guild && command.permissions?.length) {
-    const allowed = command.permissions.every((permission) => {
-      return message.member?.permissions?.has(permission);
-    });
+  if (message.guild && command.permissions?.length && !isBotOwner(message.author.id)) {
+    const missing = await userHasRequiredPermissions(message, command.permissions);
 
-    if (!allowed && !isBotOwner(message.author.id)) {
-      await respond.reply(message, 'bad', 'You don’t have the required permissions for that.');
+    if (missing) {
+      await safeReply(message, 'bad', `You need ${permissionLabel(missing)} to use that.`);
+      return true;
+    }
+  }
+
+  if (message.guild && command.botPermissions?.length) {
+    const missing = botHasRequiredPermissions(message, command.botPermissions);
+
+    if (missing) {
+      await safeReply(message, 'bad', `I couldn't do that because I'm missing ${permissionLabel(missing)}.`);
       return true;
     }
   }
@@ -78,7 +165,7 @@ async function handlePrefixCommand(client, message) {
     });
 
     if (!cooldown.ok) {
-      await respond.reply(
+      await safeReply(
         message,
         'alert',
         `That command is on cooldown. Try again in **${formatRemaining(cooldown.remainingMs)}**.`
@@ -115,7 +202,7 @@ async function handlePrefixCommand(client, message) {
       'Prefix command failed'
     );
 
-    await respond.reply(
+    await safeReply(
       message,
       'bad',
       `Something broke while running \`${command.name}\`. I logged the error.`
@@ -127,5 +214,7 @@ async function handlePrefixCommand(client, message) {
 
 module.exports = {
   handlePrefixCommand,
-  parseArgs
+  parseArgs,
+  userHasRequiredPermissions,
+  botHasRequiredPermissions
 };

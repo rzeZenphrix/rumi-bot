@@ -1,4 +1,4 @@
-const { readStore, writeStore } = require('../storage/jsonStore');
+const db = require('../../services/database');
 
 const DEFAULT_EVENTS = [
   'all',
@@ -31,7 +31,8 @@ const DEFAULT_EVENTS = [
   'threadUpdate',
   'voiceStateUpdate',
   'hardbanReapply',
-  'antinukeAction'
+  'antinukeAction',
+  'automodAction'
 ];
 
 function defaultGuildConfig() {
@@ -63,28 +64,17 @@ function normalizeConfig(config) {
   return output;
 }
 
-function getAll() {
-  return readStore('logConfig', { guilds: {} });
+async function getGuildLogConfig(guildId) {
+  const row = await db.getKv('logging:config', guildId, null);
+  return normalizeConfig(row);
 }
 
-function saveAll(store) {
-  return writeStore('logConfig', store);
-}
-
-function getGuildLogConfig(guildId) {
-  const store = getAll();
-  store.guilds[guildId] = normalizeConfig(store.guilds[guildId]);
-  saveAll(store);
-  return store.guilds[guildId];
-}
-
-function updateGuildLogConfig(guildId, updater) {
-  const store = getAll();
-  store.guilds[guildId] = normalizeConfig(store.guilds[guildId]);
-  updater(store.guilds[guildId]);
-  store.guilds[guildId] = normalizeConfig(store.guilds[guildId]);
-  saveAll(store);
-  return store.guilds[guildId];
+async function updateGuildLogConfig(guildId, updater) {
+  const current = await getGuildLogConfig(guildId);
+  updater(current);
+  const normalized = normalizeConfig(current);
+  await db.setKv('logging:config', guildId, normalized);
+  return normalized;
 }
 
 module.exports = {

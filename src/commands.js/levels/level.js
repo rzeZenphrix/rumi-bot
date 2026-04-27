@@ -12,7 +12,7 @@ module.exports = {
   async execute({ message }) {
     const user = message.mentions.users.first() || message.author;
     const member = message.guild.members.cache.get(user.id);
-    const data = getUserLevel(message.guild.id, user.id);
+    const data = await getUserLevel(message.guild.id, user.id);
     const next = neededXp(data.level + 1);
 
     const card = await makeRankCard({

@@ -7,7 +7,7 @@ module.exports = {
     if (reaction.partial) reaction = await reaction.fetch().catch(() => reaction);
     const guild = reaction.message.guild;
     if (!guild) return;
-    const roleId = findRoleForReaction(guild.id, reaction.message.id, reaction.emoji);
+    const roleId = await findRoleForReaction(guild.id, reaction.message.id, reaction.emoji);
     if (!roleId) return;
     const member = await guild.members.fetch(user.id).catch(() => null);
     if (!member) return;

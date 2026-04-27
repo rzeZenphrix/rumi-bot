@@ -4,7 +4,7 @@ const { lockdownGuild } = require('../../systems/security/lockdownManager');
 
 module.exports = {
   name: 'lockdown',
-  aliases: ['lock'],
+  aliases: ['serverlockdown', 'raidlock'],
   category: 'security',
   description: 'Lock all text-based channels by denying send/thread permissions for @everyone.',
   usage: 'lockdown [reason]',
@@ -30,10 +30,6 @@ module.exports = {
       return respond.reply(message, 'bad', result.reason || 'I could not lockdown this server.');
     }
 
-    return respond.reply(
-      message,
-      'good',
-      `I locked \`${result.channelCount}\` channel(s). Failed: \`${result.failedCount}\`. Reason: ${reason}`
-    );
+    return respond.reply(message, result.channelCount > 0 ? 'good' : 'alert', `I locked \`${result.channelCount}\` channel(s). Failed: \`${result.failedCount}\`. Reason: ${reason}`);
   }
 };

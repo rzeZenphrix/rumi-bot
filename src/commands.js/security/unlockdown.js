@@ -4,7 +4,7 @@ const { unlockdownGuild } = require('../../systems/security/lockdownManager');
 
 module.exports = {
   name: 'unlockdown',
-  aliases: ['unlock'],
+  aliases: ['endlockdown', 'serverunlockdown'],
   category: 'security',
   description: 'Restore channel permissions from the latest lockdown snapshot.',
   usage: 'unlockdown [reason]',

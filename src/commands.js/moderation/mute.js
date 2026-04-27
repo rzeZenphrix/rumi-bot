@@ -1,7 +1,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const { resolveMember } = require('../../utils/resolveUser');
-const { canModerateMember } = require('../../utils/permissions');
+const { moderatabilityState } = require('../../utils/permissions');
 const { parseDuration, humanDuration, MAX_TIMEOUT_MS } = require('../../utils/duration');
 const { logModerationAction } = require('../../systems/logging/auditLog');
 
@@ -34,8 +34,9 @@ module.exports = {
       return respond.reply(message, 'bad', 'I could not find that member.');
     }
 
-    if (!canModerateMember(message.guild, member)) {
-      return respond.reply(message, 'bad', 'I cannot timeout that member. Check my role position and permissions.');
+    const moderateState = moderatabilityState(message.guild, member);
+    if (!moderateState.ok) {
+      return respond.reply(message, 'bad', `I couldn't timeout that member. ${moderateState.reason}`);
     }
 
     const durationMs = parseDuration(durationInput, {

@@ -1,15 +1,17 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
+const db = require('../../services/database');
 const { extractId } = require('../../utils/resolveUser');
-const { readStore, writeStore } = require('../../systems/storage/jsonStore');
 const { fetchBuffer, firstAttachment } = require('../../utils/media');
+const { getRoleAutomationConfig, updateRoleAutomationConfig } = require('../../systems/automation/serverRoles');
+const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
 
-function roleStore() {
-  return readStore('roleSnapshots', { guilds: {} });
+async function roleStore() {
+  return db.getKv('moderation:roleSnapshots', 'global', { guilds: {} });
 }
 
-function saveRoleStore(store) {
-  return writeStore('roleSnapshots', store);
+async function saveRoleStore(store) {
+  return db.setKv('moderation:roleSnapshots', 'global', store);
 }
 
 async function findRole(guild, input) {
@@ -33,8 +35,210 @@ function parseHex(input) {
   return Number.parseInt(raw, 16);
 }
 
-function snapshotRole(guild, role, reason = 'manual snapshot') {
-  const store = roleStore();
+function formatRoleList(guild, roleIds = []) {
+  if (!roleIds.length) return 'none';
+  return roleIds
+    .map((roleId) => guild.roles.cache.get(roleId))
+    .filter(Boolean)
+    .map((role) => role.toString())
+    .join(', ') || 'none';
+}
+
+async function handleJoinRoles(message, args) {
+  const action = String(args.shift() || 'list').toLowerCase();
+  const access = await getPremiumAccessForMessage(message).catch(() => null);
+  const limit = access?.limits?.joinRoles || 10;
+  const config = await getRoleAutomationConfig(message.guild.id);
+
+  if (action === 'list' || action === 'view') {
+    return respond.reply(message, 'info', null, {
+      mentionUser: false,
+      title: 'Join Roles',
+      description: [
+        `**Configured:** ${config.joinRoles.length}/${limit}`,
+        '',
+        formatRoleList(message.guild, config.joinRoles)
+      ].join('\n')
+    });
+  }
+
+  if (action === 'clear' || action === 'reset') {
+    await updateRoleAutomationConfig(message.guild.id, (current) => ({
+      ...current,
+      joinRoles: []
+    }));
+    return respond.reply(message, 'good', 'Cleared all join roles for this server.');
+  }
+
+  const role = await findRole(message.guild, args.join(' '));
+  if (!role) {
+    return respond.reply(message, 'info', 'Usage: `role join <add|remove|list|clear> <role>`.');
+  }
+
+  if (action === 'add') {
+    if (config.joinRoles.includes(role.id)) {
+      return respond.reply(message, 'info', `**${role.name}** is already a join role.`);
+    }
+    if (config.joinRoles.length >= limit) {
+      return respond.reply(
+        message,
+        'bad',
+        access?.hasServerPremiumBase
+          ? `You already used all ${limit} join-role slots.`
+          : 'Free servers can configure up to 10 join roles. Server premium raises that to 25.'
+      );
+    }
+
+    await updateRoleAutomationConfig(message.guild.id, (current) => ({
+      ...current,
+      joinRoles: [...new Set([...(current.joinRoles || []), role.id])]
+    }));
+    return respond.reply(message, 'good', `Added ${role} to the join-role list.`);
+  }
+
+  if (action === 'remove' || action === 'delete') {
+    await updateRoleAutomationConfig(message.guild.id, (current) => ({
+      ...current,
+      joinRoles: (current.joinRoles || []).filter((roleId) => roleId !== role.id)
+    }));
+    return respond.reply(message, 'good', `Removed ${role} from the join-role list.`);
+  }
+
+  return respond.reply(message, 'info', 'Usage: `role join <add|remove|list|clear> <role>`.');
+}
+
+function resolveConnectionRoles(message, args) {
+  const mentioned = [...message.mentions.roles.values()];
+  if (mentioned.length >= 2) {
+    return {
+      parentRole: mentioned[0],
+      childRole: mentioned[1]
+    };
+  }
+
+  return {
+    parentInput: args.shift() || '',
+    childInput: args.join(' ')
+  };
+}
+
+function describeConnections(guild, config) {
+  const parents = Object.entries(config.roleConnections || {});
+  if (!parents.length) return 'none';
+  return parents
+    .map(([parentId, childIds]) => {
+      const parent = guild.roles.cache.get(parentId);
+      const children = formatRoleList(guild, childIds);
+      return `${parent ? parent.toString() : `\`${parentId}\``} -> ${children}`;
+    })
+    .join('\n')
+    .slice(0, 4000);
+}
+
+async function handleRoleConnections(message, args) {
+  const action = String(args.shift() || 'list').toLowerCase();
+  const access = await getPremiumAccessForMessage(message).catch(() => null);
+  const config = await getRoleAutomationConfig(message.guild.id);
+  const parentLimit = access?.limits?.roleConnectionParents || 5;
+  const childLimit = access?.limits?.roleConnectionChildren || 10;
+
+  if (action === 'list' || action === 'view') {
+    return respond.reply(message, 'info', null, {
+      mentionUser: false,
+      title: 'Role Connections',
+      description: [
+        `**Parent roles:** ${Object.keys(config.roleConnections || {}).length}/${parentLimit}`,
+        `**Child links per parent:** ${childLimit}`,
+        '',
+        describeConnections(message.guild, config)
+      ].join('\n')
+    });
+  }
+
+  const roleInputs = resolveConnectionRoles(message, [...args]);
+  const parentRole = roleInputs.parentRole || await findRole(message.guild, roleInputs.parentInput);
+  const childRole = roleInputs.childRole || await findRole(message.guild, roleInputs.childInput);
+
+  if (action === 'clear' || action === 'reset') {
+    if (!parentRole) {
+      return respond.reply(message, 'info', 'Usage: `role connect clear <parent-role>`.');
+    }
+
+    await updateRoleAutomationConfig(message.guild.id, (current) => {
+      const next = { ...(current.roleConnections || {}) };
+      delete next[parentRole.id];
+      return {
+        ...current,
+        roleConnections: next
+      };
+    });
+    return respond.reply(message, 'good', `Cleared all role connections for ${parentRole}.`);
+  }
+
+  if (!parentRole || !childRole) {
+    return respond.reply(message, 'info', 'Usage: `role connect <add|remove|list|clear> <parent-role> <child-role>`.');
+  }
+
+  if (parentRole.id === childRole.id) {
+    return respond.reply(message, 'bad', 'A role cannot be connected to itself.');
+  }
+
+  const currentChildren = config.roleConnections?.[parentRole.id] || [];
+
+  if (action === 'add') {
+    if (!config.roleConnections?.[parentRole.id] && Object.keys(config.roleConnections || {}).length >= parentLimit) {
+      return respond.reply(
+        message,
+        'bad',
+        access?.hasServerPremiumBase
+          ? `You already used all ${parentLimit} parent-role connection slots.`
+          : 'Free servers can configure up to 5 parent roles. Server premium raises that to 15.'
+      );
+    }
+
+    if (currentChildren.includes(childRole.id)) {
+      return respond.reply(message, 'info', `${childRole} is already connected to ${parentRole}.`);
+    }
+
+    if (currentChildren.length >= childLimit) {
+      return respond.reply(
+        message,
+        'bad',
+        access?.hasServerPremiumBase
+          ? `You already used all ${childLimit} connected-role slots for ${parentRole}.`
+          : 'Free servers can configure up to 10 child role connections per parent. Server premium raises that to 15.'
+      );
+    }
+
+    await updateRoleAutomationConfig(message.guild.id, (current) => {
+      const next = { ...(current.roleConnections || {}) };
+      next[parentRole.id] = [...new Set([...(next[parentRole.id] || []), childRole.id])];
+      return {
+        ...current,
+        roleConnections: next
+      };
+    });
+    return respond.reply(message, 'good', `Connected ${childRole} to ${parentRole}.`);
+  }
+
+  if (action === 'remove' || action === 'delete') {
+    await updateRoleAutomationConfig(message.guild.id, (current) => {
+      const next = { ...(current.roleConnections || {}) };
+      next[parentRole.id] = (next[parentRole.id] || []).filter((roleId) => roleId !== childRole.id);
+      if (!next[parentRole.id].length) delete next[parentRole.id];
+      return {
+        ...current,
+        roleConnections: next
+      };
+    });
+    return respond.reply(message, 'good', `Removed the ${childRole} connection from ${parentRole}.`);
+  }
+
+  return respond.reply(message, 'info', 'Usage: `role connect <add|remove|list|clear> <parent-role> <child-role>`.');
+}
+
+async function snapshotRole(guild, role, reason = 'manual snapshot') {
+  const store = await roleStore();
   store.guilds[guild.id] ||= [];
   store.guilds[guild.id].unshift({
     roleId: role.id,
@@ -50,7 +254,7 @@ function snapshotRole(guild, role, reason = 'manual snapshot') {
     createdAt: new Date().toISOString()
   });
   store.guilds[guild.id] = store.guilds[guild.id].slice(0, 20);
-  saveRoleStore(store);
+  await saveRoleStore(store);
 }
 
 async function bulkRemoveRole(guild, role, predicate) {
@@ -89,11 +293,13 @@ module.exports = {
   name: 'role',
   aliases: ['r'],
   category: 'moderation',
-  description: 'Manage roles, role colors, role icons, role assignment, and role restore snapshots.',
-  usage: 'role <add|remove|color|cancel|restore|hoist|delete|info|bots remove|humans remove|icon> ...',
+  description: 'Manage roles, join roles, role connections, role colors, role icons, role assignment, and role restore snapshots.',
+  usage: 'role <add|remove|join|connect|color|cancel|restore|hoist|delete|info|bots remove|humans remove|icon> ...',
   examples: [
     'role add @user Member',
     'role remove @user Muted',
+    'role join add @Member',
+    'role connect add @Verified @Announcements',
     'role color Staff #ff3366',
     'role hoist Staff true',
     'role bots remove Muted',
@@ -108,13 +314,21 @@ module.exports = {
 
   async execute({ message, args }) {
     const sub = (args.shift() || '').toLowerCase();
-    if (!sub) return respond.reply(message, 'info', 'Usage: `role <add|remove|color|hoist|delete|info|bots remove|humans remove|icon|restore> ...`.');
+    if (!sub) return respond.reply(message, 'info', 'Usage: `role <add|remove|join|connect|color|hoist|delete|info|bots remove|humans remove|icon|restore> ...`.');
+
+    if (sub === 'join' || sub === 'autorole') {
+      return handleJoinRoles(message, args);
+    }
+
+    if (sub === 'connect' || sub === 'connection' || sub === 'connections') {
+      return handleRoleConnections(message, args);
+    }
 
     if (sub === 'restore' || sub === 'cancel') {
-      const store = roleStore();
+      const store = await roleStore();
       const snap = store.guilds[message.guild.id]?.shift();
       if (!snap) return respond.reply(message, 'bad', 'No role snapshot is available to restore.');
-      saveRoleStore(store);
+      await saveRoleStore(store);
 
       const restored = await message.guild.roles.create({
         name: snap.name,
@@ -157,7 +371,7 @@ module.exports = {
       const role = await findRole(message.guild, roleArg);
       const color = parseHex(args.shift());
       if (!role || color === null) return respond.reply(message, 'info', 'Usage: `role color <role> <#hex>`.');
-      snapshotRole(message.guild, role, 'before color change');
+      await snapshotRole(message.guild, role, 'before color change');
       await role.setColor(color, `Role color changed by ${message.author.tag}`);
       return respond.reply(message, 'good', `Changed **${role.name}** color to **#${color.toString(16).padStart(6, '0')}**.`);
     }
@@ -167,7 +381,7 @@ module.exports = {
       const role = await findRole(message.guild, roleArg);
       const value = /^(true|yes|on|show|1)$/i.test(args[0] || '');
       if (!role) return respond.reply(message, 'info', 'Usage: `role hoist <role> <true|false>`.');
-      snapshotRole(message.guild, role, 'before hoist change');
+      await snapshotRole(message.guild, role, 'before hoist change');
       await role.setHoist(value, `Role hoist changed by ${message.author.tag}`);
       return respond.reply(message, 'good', `${value ? 'Hoisted' : 'Unhoisted'} **${role.name}**.`);
     }
@@ -175,7 +389,7 @@ module.exports = {
     if (sub === 'delete') {
       const role = await findRole(message.guild, args.join(' '));
       if (!role) return respond.reply(message, 'info', 'Usage: `role delete <role>`.');
-      snapshotRole(message.guild, role, 'before delete');
+      await snapshotRole(message.guild, role, 'before delete');
       const name = role.name;
       await role.delete(`Role deleted by ${message.author.tag}`);
       return respond.reply(message, 'good', `Deleted **${name}**. A restore snapshot was saved. Use \`role restore\` if needed.`);
@@ -201,7 +415,7 @@ module.exports = {
       const roleArg = args.shift();
       const role = await findRole(message.guild, roleArg);
       if (!role) return respond.reply(message, 'info', 'Usage: `role icon <role> <url|emoji|attachment|clear>`.');
-      snapshotRole(message.guild, role, 'before icon change');
+      await snapshotRole(message.guild, role, 'before icon change');
       return setRoleIcon(message, role, args);
     }
 

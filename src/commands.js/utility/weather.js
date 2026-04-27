@@ -1,2 +1,29 @@
-const respond=require('../../utils/respond');
-module.exports={name:'weather',aliases:['forecast'],category:'utility',description:'I fetch current weather using Open-Meteo.',usage:'weather <city>',examples:['weather London'],typing:true,async execute({message,args}){const city=args.join(' ').trim(); if(!city)return respond.reply(message,'info','send a city name.'); const geo=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`).then(r=>r.json()).catch(()=>null); const loc=geo?.results?.[0]; if(!loc)return respond.reply(message,'bad','I could not find that location.'); const w=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m`).then(r=>r.json()).catch(()=>null); const c=w?.current; return respond.reply(message,'info',null,{description:`🌦️ **Weather: ${loc.name}, ${loc.country}**\n**Temperature:** \`${c?.temperature_2m}°C\`\n**Humidity:** \`${c?.relative_humidity_2m}%\`\n**Wind:** \`${c?.wind_speed_10m} km/h\``});}};
+const respond = require('../../utils/respond');
+const { geocodeLocation, getCurrentWeather } = require('../../services/weather/openMeteo');
+
+module.exports = {
+  name: 'weather',
+  aliases: [],
+  category: 'utility',
+  description: 'I fetch current weather using Open-Meteo.',
+  usage: 'weather <city>',
+  examples: ['weather London'],
+  typing: true,
+
+  async execute({ message, args }) {
+    const city = args.join(' ').trim();
+    if (!city) return respond.reply(message, 'info', 'Send a city name.');
+
+    const loc = await geocodeLocation(city);
+    if (!loc) return respond.reply(message, 'bad', 'I could not find that location.');
+
+    const payload = await getCurrentWeather(loc);
+    const current = payload?.current;
+    if (!current) return respond.reply(message, 'bad', 'Weather data is unavailable right now.');
+
+    return respond.reply(message, 'info', null, {
+      description: `**Weather: ${loc.name}, ${loc.country}**\n**Temperature:** \`${current.temperature_2m}°C\`\n**Humidity:** \`${current.relative_humidity_2m}%\`\n**Wind:** \`${current.wind_speed_10m} km/h\`\n**Timezone:** \`${payload.timezone || 'auto'}\``,
+      mentionUser: false
+    });
+  }
+};

@@ -9,11 +9,26 @@ module.exports = {
   name: Events.MessageCreate,
 
   async execute(client, message) {
-    if (!message.guild) return;
     if (message.author.bot) return;
 
+    if (!message.guild) {
+      try {
+        await handlePrefixCommand(client, message);
+      } catch (error) {
+        logger.error(
+          {
+            error,
+            channelId: message.channel?.id,
+            userId: message.author?.id
+          },
+          'DM prefix command pipeline failed'
+        );
+      }
+      return;
+    }
+
     await handleLevelXp(client, message).catch(() => null);
-    incrementFromContent(message.author.id, message.content);
+    await incrementFromContent(message.author.id, message.content).catch(() => null);
 
     try {
       const handledCommand = await handlePrefixCommand(client, message);

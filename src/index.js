@@ -1,17 +1,21 @@
 require('dotenv').config();
 
+const path = require('node:path');
 const { Collection } = require('discord.js');
 const { startShards } = require('./core/shardManager');
 const { loadCommands } = require('./core/loader');
 const { startApiServer } = require('./services/api/server');
 const logger = require('./systems/logging/logger');
 
+process.chdir(path.join(__dirname, '..'));
+
 process.on('uncaughtException', (error) => {
-  console.error('[rumi] uncaught exception:', error);
+  logger.fatal({ error }, 'Uncaught startup exception');
+  if (process.env.EXIT_ON_UNCAUGHT_EXCEPTION !== 'false') process.exit(1);
 });
 
 process.on('unhandledRejection', (error) => {
-  console.error('[rumi] unhandled rejection:', error);
+  logger.error({ error }, 'Unhandled startup rejection');
 });
 
 async function startDashboardApiOnly() {
@@ -24,31 +28,36 @@ async function startDashboardApiOnly() {
 
   loadCommands(apiClient);
   startApiServer(apiClient);
+
+  if (process.env.STARTUP_LOGS !== 'false') {
+    console.log(`[rumi] dashboard API started on port ${process.env.API_PORT || 3001}`);
+  }
 }
 
 async function main() {
-  if (process.env.NO_SHARDS === 'true') {
-    console.log('[rumi] starting in single-client debug mode');
-    process.env.ENABLE_API = process.env.ENABLE_API || 'true';
+  const mode = String(process.env.BOT_MODE || (process.env.NO_SHARDS === 'true' ? 'single' : 'shard')).toLowerCase();
+
+  if (process.env.STARTUP_LOGS !== 'false') {
+    console.log(`[rumi] starting in ${mode} mode`);
+  }
+
+  if (mode === 'single' || mode === 'local' || mode === 'debug') {
     require('./core/client');
     return;
   }
 
-  console.log('[rumi] starting in shard mode');
-
   await startDashboardApiOnly();
-
   process.env.ENABLE_API = 'false';
 
   await startShards();
+
+  if (process.env.STARTUP_LOGS !== 'false') {
+    console.log('[rumi] shard manager started');
+  }
 }
 
 main().catch((error) => {
+  logger.fatal({ error }, 'Failed to start Rumi');
   console.error('[rumi] failed to start:', error);
-
-  if (logger && typeof logger.fatal === 'function') {
-    logger.fatal({ error }, 'Failed to start Rumi');
-  }
-
   process.exit(1);
 });

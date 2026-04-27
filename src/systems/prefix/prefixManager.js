@@ -15,9 +15,24 @@ function normalizePrefix(prefix) {
   return cleaned;
 }
 
+function isDefaultPrefixEnabled(settings) {
+  const json = settings?.settings_json || {};
+  if (json.default_prefix_enabled === false) return false;
+  if (json.defaultPrefixEnabled === false) return false;
+  return true;
+}
+
+function guildPersonalPrefix(settings, userId) {
+  const json = settings?.settings_json || {};
+  const scoped = json.personal_prefixes || json.personalPrefixes || {};
+  return normalizePrefix(scoped?.[userId]);
+}
+
 async function getPrefixesForMessage(message) {
   let guildPrefix = DEFAULT_PREFIX;
+  let defaultPrefixEnabled = true;
   let userPrefix = null;
+  let scopedUserPrefix = null;
 
   try {
     userPrefix = await db.getUserPrefix(message.author.id);
@@ -27,7 +42,7 @@ async function getPrefixesForMessage(message) {
         error,
         userId: message.author.id
       },
-      'Could not fetch user prefix; falling back to default prefix'
+      'Could not fetch user prefix; falling back to guild/default prefix'
     );
   }
 
@@ -35,6 +50,8 @@ async function getPrefixesForMessage(message) {
     try {
       const settings = await db.getGuildSettings(message.guild.id);
       guildPrefix = settings.prefix || DEFAULT_PREFIX;
+      defaultPrefixEnabled = isDefaultPrefixEnabled(settings);
+      scopedUserPrefix = guildPersonalPrefix(settings, message.author.id);
     } catch (error) {
       logger.warn(
         {
@@ -46,11 +63,14 @@ async function getPrefixesForMessage(message) {
     }
   }
 
-  return uniquePrefixes([
-    userPrefix,
-    guildPrefix,
-    DEFAULT_PREFIX
-  ]);
+  const prefixes = [];
+
+  if (scopedUserPrefix) prefixes.push(scopedUserPrefix);
+  if (userPrefix) prefixes.push(userPrefix);
+  if (guildPrefix && guildPrefix !== DEFAULT_PREFIX) prefixes.push(guildPrefix);
+  if (defaultPrefixEnabled) prefixes.push(DEFAULT_PREFIX);
+
+  return uniquePrefixes(prefixes);
 }
 
 function uniquePrefixes(prefixes) {
@@ -74,5 +94,7 @@ module.exports = {
   DEFAULT_PREFIX,
   normalizePrefix,
   getPrefixesForMessage,
-  matchPrefix
+  matchPrefix,
+  isDefaultPrefixEnabled,
+  guildPersonalPrefix
 };

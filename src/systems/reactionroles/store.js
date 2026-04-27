@@ -1,4 +1,4 @@
-const { readStore, writeStore } = require('../storage/jsonStore');
+const db = require('../../services/database');
 
 function emojiKey(emoji) {
   if (!emoji) return null;
@@ -9,59 +9,59 @@ function emojiKey(emoji) {
   return emoji.id || emoji.name;
 }
 
-function getStore() {
-  return readStore('reactionRoles', { guilds: {} });
+async function getGuild(guildId) {
+  return db.getKv('reactionroles:guilds', guildId, { messages: {} });
 }
 
-function saveStore(store) {
-  return writeStore('reactionRoles', store);
+async function saveGuild(guildId, guild) {
+  return db.setKv('reactionroles:guilds', guildId, guild);
 }
 
-function getGuild(guildId) {
-  const store = getStore();
-  store.guilds[guildId] ||= { messages: {} };
-  saveStore(store);
-  return store.guilds[guildId];
+async function addReactionRole(guildId, channelId, messageId, emoji, roleId) {
+  const guild = await getGuild(guildId);
+  guild.messages ||= {};
+  guild.messages[messageId] ||= { channelId, items: {} };
+  guild.messages[messageId].channelId = channelId;
+  guild.messages[messageId].items[emojiKey(emoji)] = roleId;
+  await saveGuild(guildId, guild);
 }
 
-function addReactionRole(guildId, channelId, messageId, emoji, roleId) {
-  const store = getStore();
-  store.guilds[guildId] ||= { messages: {} };
-  store.guilds[guildId].messages[messageId] ||= { channelId, items: {} };
-  store.guilds[guildId].messages[messageId].channelId = channelId;
-  store.guilds[guildId].messages[messageId].items[emojiKey(emoji)] = roleId;
-  saveStore(store);
-}
-
-function removeReactionRole(guildId, messageId, keyOrRoleId) {
-  const store = getStore();
-  const msg = store.guilds[guildId]?.messages?.[messageId];
+async function removeReactionRole(guildId, messageId, keyOrRoleId) {
+  const guild = await getGuild(guildId);
+  const msg = guild.messages?.[messageId];
   if (!msg) return false;
   const key = emojiKey(keyOrRoleId);
   if (msg.items[key]) delete msg.items[key];
   else {
-    for (const [emoji, roleId] of Object.entries(msg.items)) {
+    for (const [emoji, roleId] of Object.entries(msg.items || {})) {
       if (roleId === keyOrRoleId) delete msg.items[emoji];
     }
   }
-  if (!Object.keys(msg.items).length) delete store.guilds[guildId].messages[messageId];
-  saveStore(store);
+  if (!Object.keys(msg.items || {}).length) delete guild.messages[messageId];
+  await saveGuild(guildId, guild);
   return true;
 }
 
-function clearReactionRoles(guildId, messageId) {
-  const store = getStore();
-  if (store.guilds[guildId]?.messages?.[messageId]) {
-    delete store.guilds[guildId].messages[messageId];
-    saveStore(store);
+async function clearReactionRoles(guildId, messageId) {
+  const guild = await getGuild(guildId);
+  if (guild.messages?.[messageId]) {
+    delete guild.messages[messageId];
+    await saveGuild(guildId, guild);
     return true;
   }
   return false;
 }
 
-function findRoleForReaction(guildId, messageId, emoji) {
-  const store = getStore();
-  return store.guilds[guildId]?.messages?.[messageId]?.items?.[emojiKey(emoji)] || null;
+async function findRoleForReaction(guildId, messageId, emoji) {
+  const guild = await getGuild(guildId);
+  return guild.messages?.[messageId]?.items?.[emojiKey(emoji)] || null;
 }
 
-module.exports = { emojiKey, getGuild, addReactionRole, removeReactionRole, clearReactionRoles, findRoleForReaction };
+module.exports = {
+  emojiKey,
+  getGuild,
+  addReactionRole,
+  removeReactionRole,
+  clearReactionRoles,
+  findRoleForReaction
+};

@@ -71,7 +71,7 @@ module.exports = {
     const sub = (args.shift() || 'view').toLowerCase();
 
     if (sub === 'enable') {
-      updateGuildLogConfig(message.guild.id, (config) => {
+      await updateGuildLogConfig(message.guild.id, (config) => {
         config.enabled = true;
       });
 
@@ -79,7 +79,7 @@ module.exports = {
     }
 
     if (sub === 'disable') {
-      updateGuildLogConfig(message.guild.id, (config) => {
+      await updateGuildLogConfig(message.guild.id, (config) => {
         config.enabled = false;
       });
 
@@ -94,7 +94,7 @@ module.exports = {
     }
 
     if (sub === 'view') {
-      const config = getGuildLogConfig(message.guild.id);
+      const config = await getGuildLogConfig(message.guild.id);
 
       const channels = Object.entries(config.channels || {})
         .map(([event, id]) => `**${event}:** <#${id}>`)
@@ -135,7 +135,7 @@ module.exports = {
 
       const webhook = await createLogWebhook(channel, message.author);
 
-      updateGuildLogConfig(message.guild.id, (config) => {
+      await updateGuildLogConfig(message.guild.id, (config) => {
         config.enabled = true;
         config.channels[eventType] = channel.id;
         config.webhooks[eventType] = {
@@ -154,7 +154,7 @@ module.exports = {
 
       if (!target) return respond.reply(message, 'info', 'Usage: `logs remove <event|#channel>`.');
 
-      updateGuildLogConfig(message.guild.id, (config) => {
+      await updateGuildLogConfig(message.guild.id, (config) => {
         const id = channelId(target);
 
         if (id) {
@@ -179,7 +179,7 @@ module.exports = {
 
       if (!eventType || !color) return respond.reply(message, 'info', 'Usage: `logs color <event|all> <#hex>`.');
 
-      updateGuildLogConfig(message.guild.id, (config) => {
+      await updateGuildLogConfig(message.guild.id, (config) => {
         config.colors[eventType] = color;
       });
 
@@ -190,7 +190,7 @@ module.exports = {
       const action = (args.shift() || 'list').toLowerCase();
 
       if (action === 'list') {
-        const config = getGuildLogConfig(message.guild.id);
+        const config = await getGuildLogConfig(message.guild.id);
 
         return respond.reply(message, 'info', null, {
           title: 'Logging ignore list',
@@ -212,7 +212,7 @@ module.exports = {
 
       const key = `${type}s`;
 
-      updateGuildLogConfig(message.guild.id, (config) => {
+      await updateGuildLogConfig(message.guild.id, (config) => {
         config.ignores[key] ||= [];
 
         if (action === 'add' && !config.ignores[key].includes(id)) {

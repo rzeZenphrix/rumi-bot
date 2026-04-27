@@ -1,7 +1,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const { resolveMember } = require('../../utils/resolveUser');
-const { canModerateMember } = require('../../utils/permissions');
+const { moderatabilityState } = require('../../utils/permissions');
 const { logModerationAction } = require('../../systems/logging/auditLog');
 
 module.exports = {
@@ -31,8 +31,9 @@ module.exports = {
       return respond.reply(message, 'bad', 'I could not find that member.');
     }
 
-    if (!canModerateMember(message.guild, member)) {
-      return respond.reply(message, 'bad', 'I cannot remove timeout from that member. Check my role position and permissions.');
+    const moderateState = moderatabilityState(message.guild, member);
+    if (!moderateState.ok) {
+      return respond.reply(message, 'bad', `I couldn't remove timeout from that member. ${moderateState.reason}`);
     }
 
     const reason = args.join(' ') || 'Manual unmute';

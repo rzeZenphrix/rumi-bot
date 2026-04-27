@@ -12,20 +12,30 @@ const { loadCommands, loadEvents } = require('./loader');
 const { startApiServer } = require('../services/api/server');
 const { startReminderRunner } = require('../systems/tasks/reminderRunner');
 const { applySavedPresence } = require('../systems/customization/presenceManager');
-
-require('../services/database');
+const { isCustomizationEnabled, hydrateCustomizationStore } = require('../systems/customization/customizationStore');
+const { applyGuildProfilesOnStartup } = require('../systems/customization/profileManager');
+const { classifyNetworkError } = require('../systems/network/errorClassifier');
+const { syncDashboardBackend } = require('../services/dashboardSync');
+const { startAutoJailScheduler } = require('../systems/autojail/engine');
+const database = require('../services/database');
+const { runSchemaAudit } = require('../systems/database/schemaAudit');
+const { startKeepAlive } = require('../systems/runtime/keepAlive');
+const { startMarketAlertRunner } = require('../systems/monetization/marketAlerts');
 
 function shouldStartApi() {
   if (process.env.ENABLE_API === 'false') return false;
 
   const shardList = process.env.SHARD_LIST;
-
   if (!shardList) return true;
 
   return shardList
     .split(',')
     .map((id) => id.trim())
     .includes('0');
+}
+
+function requiredToken() {
+  return process.env.DISCORD_TOKEN || process.env.BOT_TOKEN || '';
 }
 
 const client = new Client({
@@ -51,6 +61,9 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+client.runtimeState = {
+  schemaAudit: null
+};
 
 loadCommands(client);
 loadEvents(client);
@@ -60,11 +73,69 @@ if (shouldStartApi()) {
 }
 
 client.once('clientReady', async () => {
-  await applySavedPresence(client).catch((error) => {
-    logger.error({ error }, 'Failed to apply saved presence');
+  await runSchemaAudit(database, { force: true }).then((audit) => {
+    client.runtimeState.schemaAudit = audit;
+  }).catch((error) => {
+    logger.warn({ error }, 'Schema audit failed during startup');
   });
 
-  startReminderRunner(client);
+  if (isCustomizationEnabled()) {
+    await hydrateCustomizationStore(client).catch((error) => {
+      logger.warn({ error }, 'Customization hydration failed; continuing startup');
+    });
+
+    await applySavedPresence(client).catch((error) => {
+      logger.warn({ error }, 'Saved presence failed; continuing startup');
+    });
+
+    await applyGuildProfilesOnStartup(client).catch((error) => {
+      logger.warn({ error }, 'Guild profile customization failed during startup');
+    });
+  } else {
+    logger.info('Customization is disabled; skipping startup customization systems.');
+  }
+
+  try {
+    startReminderRunner(client);
+  } catch (error) {
+    logger.warn({ error }, 'Reminder runner failed to start; continuing startup');
+  }
+
+  try {
+    startMarketAlertRunner(client);
+  } catch (error) {
+    logger.warn({ error }, 'Market alert runner failed to start; continuing startup');
+  }
+
+  try {
+    startAutoJailScheduler(client);
+  } catch (error) {
+    logger.warn({ error }, 'AutoJail scheduler failed to start; continuing startup');
+  }
+
+  await syncDashboardBackend(client).catch((error) => {
+    logger.warn({ error }, 'Dashboard backend sync failed; continuing startup');
+  });
+
+  const dashboardSyncMs = Number(process.env.DASHBOARD_SYNC_INTERVAL_MS || 300000);
+  if (dashboardSyncMs > 0) {
+    setInterval(() => {
+      syncDashboardBackend(client).catch((error) => {
+        logger.warn({ error }, 'Dashboard backend sync failed during interval');
+      });
+    }, dashboardSyncMs).unref?.();
+  }
+
+  const schemaAuditMs = Math.max(60000, Number(process.env.SCHEMA_AUDIT_INTERVAL_MS || 300000));
+  setInterval(() => {
+    runSchemaAudit(database, { force: true }).then((audit) => {
+      client.runtimeState.schemaAudit = audit;
+    }).catch((error) => {
+      logger.warn({ error }, 'Schema audit refresh failed');
+    });
+  }, schemaAuditMs).unref?.();
+
+  startKeepAlive();
 
   if (process.env.STARTUP_LOGS !== 'false') {
     console.log(`[rumi] logged in as ${client.user.tag}`);
@@ -82,22 +153,32 @@ client.once('clientReady', async () => {
 });
 
 process.on('unhandledRejection', (error) => {
-  console.error('[rumi] unhandled rejection:', error);
   logger.error({ error }, 'Unhandled rejection');
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('[rumi] uncaught exception:', error);
   logger.fatal({ error }, 'Uncaught exception');
-  process.exit(1);
+  if (process.env.EXIT_ON_UNCAUGHT_EXCEPTION !== 'false') process.exit(1);
 });
 
-if (process.env.STARTUP_LOGS !== 'false') {
-  console.log(`[rumi] shard client starting${client.shard?.ids?.length ? ` for shard ${client.shard.ids.join(',')}` : ''}`);
+const token = requiredToken();
+
+if (!token) {
+  throw new Error('Missing DISCORD_TOKEN or BOT_TOKEN in .env.');
 }
 
-client.login(process.env.DISCORD_TOKEN).catch((error) => {
-  console.error('[rumi] failed to login:', error);
-  logger.fatal({ error }, 'Failed to login');
+client.login(token).catch((error) => {
+  const classified = classifyNetworkError(error.cause || error);
+  logger.fatal(
+    {
+      classification: classified.type,
+      reason: classified.userMessage,
+      error
+    },
+    'Failed to login to Discord'
+  );
+  console.error(`[rumi] failed to login to Discord: ${classified.userMessage}`);
   process.exit(1);
 });
+
+module.exports = client;

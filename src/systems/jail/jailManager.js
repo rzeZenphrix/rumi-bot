@@ -1,7 +1,8 @@
 const db = require('../../services/database');
 const { logModerationAction } = require('../logging/auditLog');
-const { canManageMember } = require('../../utils/permissions');
+const { manageabilityState } = require('../../utils/permissions');
 const { ensureJailInfrastructure } = require('./roleHandler');
+const { getProtectionSettings, isSecuritySystemEnabled } = require('../security/protectionConfig');
 
 async function jailMember(options) {
   const {
@@ -13,18 +14,20 @@ async function jailMember(options) {
   } = options;
 
   const settings = await db.getGuildSettings(guild.id);
+  const protection = await getProtectionSettings(guild.id).catch(() => null);
 
-  if (!settings.jail_enabled) {
+  if (!settings.jail_enabled || (protection && !isSecuritySystemEnabled(protection, 'autojail', settings.jail_enabled !== false))) {
     return {
       ok: false,
       reason: 'Jail system is disabled'
     };
   }
 
-  if (!canManageMember(guild, member)) {
+  const manageState = manageabilityState(guild, member);
+  if (!manageState.ok) {
     return {
       ok: false,
-      reason: 'I cannot manage this member'
+      reason: manageState.reason
     };
   }
 
@@ -106,10 +109,11 @@ async function unjailMember(options) {
     };
   }
 
-  if (!canManageMember(guild, member)) {
+  const manageState = manageabilityState(guild, member);
+  if (!manageState.ok) {
     return {
       ok: false,
-      reason: 'I cannot manage this member'
+      reason: manageState.reason
     };
   }
 

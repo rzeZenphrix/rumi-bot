@@ -1,6 +1,15 @@
 const { PermissionFlagsBits, WebhookClient } = require('discord.js');
 const respond = require('../../utils/respond');
 
+function isWebhookUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && /(^|\.)discord(?:app)?\.com$/i.test(url.hostname) && /\/api\/webhooks\/\d+\/[^/]+$/i.test(url.pathname);
+  } catch (_error) {
+    return false;
+  }
+}
+
 module.exports = {
   name: 'webhook',
   aliases: ['hook'],
@@ -16,6 +25,8 @@ module.exports = {
     const sub = (args.shift() || '').toLowerCase();
     const url = args.shift();
     if (!['send', 'edit', 'delete'].includes(sub) || !url) return respond.reply(message, 'info', 'Use `webhook <send|edit|delete> <webhookUrl> ...`.');
+    if (!isWebhookUrl(url)) return respond.reply(message, 'bad', 'I need a valid Discord webhook URL.');
+
     const webhook = new WebhookClient({ url });
 
     if (sub === 'send') {

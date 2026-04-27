@@ -23,7 +23,7 @@ try {
           }
         : undefined,
     base: {
-      service: 'rumi-bot'
+      service: 'rumi'
     }
   });
 } catch (error) {

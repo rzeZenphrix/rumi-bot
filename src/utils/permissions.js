@@ -1,18 +1,30 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { DANGEROUS_PERMISSIONS } = require('./constants');
 
-function canManageMember(guild, member) {
-  if (!guild?.members?.me || !member) return false;
-  if (member.id === guild.ownerId) return false;
+function manageabilityState(guild, member) {
+  const me = guild?.members?.me;
+  if (!me || !member) return { ok: false, reason: 'I could not resolve the member or my own server profile.' };
+  if (member.id === guild.ownerId) return { ok: false, reason: 'I cannot manage the server owner.' };
+  if (member.id === me.id) return { ok: false, reason: 'I cannot target myself.' };
+  if (!member.manageable) return { ok: false, reason: 'Their highest role is above mine, or I am missing the required Discord permissions.' };
+  return { ok: true, reason: null };
+}
 
-  return member.manageable;
+function moderatabilityState(guild, member) {
+  const me = guild?.members?.me;
+  if (!me || !member) return { ok: false, reason: 'I could not resolve the member or my own server profile.' };
+  if (member.id === guild.ownerId) return { ok: false, reason: 'I cannot moderate the server owner.' };
+  if (member.id === me.id) return { ok: false, reason: 'I cannot target myself.' };
+  if (!member.moderatable) return { ok: false, reason: 'Their highest role is above mine, or I am missing Moderate Members.' };
+  return { ok: true, reason: null };
+}
+
+function canManageMember(guild, member) {
+  return manageabilityState(guild, member).ok;
 }
 
 function canModerateMember(guild, member) {
-  if (!guild?.members?.me || !member) return false;
-  if (member.id === guild.ownerId) return false;
-
-  return member.moderatable;
+  return moderatabilityState(guild, member).ok;
 }
 
 function hasAnyDangerousPermission(role) {
@@ -38,6 +50,8 @@ function isStaffLike(member) {
 module.exports = {
   canManageMember,
   canModerateMember,
+  manageabilityState,
+  moderatabilityState,
   hasAnyDangerousPermission,
   isStaffLike
 };
