@@ -1,12 +1,26 @@
 const logger = require('../systems/logging/logger');
 const { getCommandCatalog } = require('./api/commandCatalog');
 
+function normalizeServiceUrl(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+
+  const normalizedProtocol = value.replace(/^(https?):(?!\/\/)/i, '$1://');
+
+  try {
+    return new URL(normalizedProtocol).toString().replace(/\/$/, '');
+  } catch (_error) {
+    return '';
+  }
+}
+
 function getBackendUrl() {
-  return (
+  return normalizeServiceUrl(
     process.env.RUMI_DASHBOARD_BACKEND_URL ||
     process.env.DASHBOARD_BACKEND_URL ||
-    ''
-  ).replace(/\/$/, '');
+    process.env.DASHBOARD_URL ||
+    process.env.DASHBOARD_PUBLIC_URL
+  );
 }
 
 async function postJson(url, payload) {

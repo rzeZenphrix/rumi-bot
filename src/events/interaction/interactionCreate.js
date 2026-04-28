@@ -3,10 +3,23 @@ const { handleTicketInteraction } = require('../../systems/tickets/ticketManager
 const helpCommand = require('../../commands.js/misc/help');
 const serverPremiumCommand = require('../../commands.js/core/serverpremium');
 const variablesCommand = require('../../commands.js/utility/variables');
+const { handleSlashCommandInteraction } = require('../../systems/slashCommands');
 
 module.exports = {
   name: Events.InteractionCreate,
   async execute(_client, interaction) {
+    if (interaction.isChatInputCommand?.()) {
+      if (await handleSlashCommandInteraction(interaction).catch(() => false)) {
+        return;
+      }
+
+      await interaction.reply({
+        content: 'That slash command is not deployed yet.',
+        ephemeral: true
+      }).catch(() => null);
+      return;
+    }
+
     if (await handleTicketInteraction(interaction).catch(() => false)) {
       return;
     }
@@ -23,7 +36,6 @@ module.exports = {
       return;
     }
 
-    // Slash commands intentionally disabled for the MVP.
     // Prefix commands are handled in messageCreate.
   }
 };

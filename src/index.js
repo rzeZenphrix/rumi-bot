@@ -35,7 +35,8 @@ async function startDashboardApiOnly() {
 }
 
 async function main() {
-  const mode = String(process.env.BOT_MODE || (process.env.NO_SHARDS === 'true' ? 'single' : 'shard')).toLowerCase();
+  const configuredMode = String(process.env.BOT_MODE || '').trim().toLowerCase();
+  const mode = configuredMode || (process.env.NO_SHARDS === 'true' || process.env.NODE_ENV === 'production' ? 'single' : 'shard');
 
   if (process.env.STARTUP_LOGS !== 'false') {
     console.log(`[rumi] starting in ${mode} mode`);

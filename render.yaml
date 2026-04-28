@@ -14,7 +14,11 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
+      - key: BOT_MODE
+        value: single
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: ENABLE_API
         value: "true"
+      - key: RUMI_DASHBOARD_BACKEND_URL
+        value: https://rumi.rocks

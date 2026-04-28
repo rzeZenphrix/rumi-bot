@@ -122,6 +122,20 @@ async function reply(message, type, action, options = {}) {
     guildId: message.guild?.id
   });
 
+  if (message.interaction?.isChatInputCommand?.()) {
+    if (message.interaction.deferred && !message.interaction.replied) {
+      await message.interaction.editReply(payload).catch(() => null);
+      return message.interaction.fetchReply().catch(() => null);
+    }
+
+    if (message.interaction.replied) {
+      return message.interaction.followUp(payload).catch(() => null);
+    }
+
+    await message.interaction.reply(payload).catch(() => null);
+    return message.interaction.fetchReply().catch(() => null);
+  }
+
   if (message.guild && options.useWebhook !== false) {
     const webhookResult = await sendWithGuildWebhook(message.channel, payload).catch(() => null);
 

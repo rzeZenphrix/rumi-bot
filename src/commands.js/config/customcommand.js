@@ -2,7 +2,7 @@ const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const db = require('../../services/database');
 const { validateEmbedScript } = require('../../systems/embedScript/parser');
-const { normalizeName } = require('../../systems/customCommands/runner');
+const { normalizeName } = require('../../systems/customcommands/runner');
 const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
 
 module.exports = {

@@ -11,6 +11,7 @@
     "start:single": "node -e \"process.env.BOT_MODE='single'; require('./src/index.js')\"",
     "dev:single": "node -e \"process.env.BOT_MODE='single'; require('./src/index.js')\"",
     "start:shards": "node -e \"process.env.BOT_MODE='shard'; require('./src/index.js')\"",
+    "deploy:commands": "node src/deployCommands.js",
     "check": "node scripts/check.js",
     "install:next30": "node scripts/install-next-30.js",
     "migrate:print": "node -e \"const fs=require('fs'); for (const f of fs.readdirSync('supabase/migrations').filter(f=>f.endsWith('.sql')).sort()) console.log('-- '+f+'\\n'+fs.readFileSync('supabase/migrations/'+f,'utf8'))\""

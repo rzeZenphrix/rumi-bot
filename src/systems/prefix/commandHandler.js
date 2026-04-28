@@ -5,7 +5,7 @@ const { isBotOwner } = require('../owner/ownerManager');
 const db = require('../../services/database');
 const { checkCooldown, setCooldown, formatRemaining } = require('../cooldowns/cooldownManager.js');
 const { PermissionFlagsBits } = require('discord.js');
-const { runCustomCommand } = require('../customCommands/runner');
+const { runCustomCommand } = require('../customcommands/runner');
 
 function permissionLabel(permission) {
   const match = Object.entries(PermissionFlagsBits).find(([, value]) => value === permission);
