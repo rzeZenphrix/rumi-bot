@@ -66,7 +66,7 @@ async function resolveSource(message, fallbackUrl) {
 
 module.exports = {
   name: 'savegif',
-  aliases: ['gifsave', 'gifgallery'],
+  aliases: ['gifsave', 'gifgallery', 'gifstore '],
   category: 'utility',
   description: 'Save personal GIFs and media clips in a reusable gallery.',
   usage: 'savegif <name> | savegif <add|list|send|remove> ...',

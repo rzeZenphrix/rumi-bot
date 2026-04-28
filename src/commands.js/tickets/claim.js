@@ -3,7 +3,7 @@ module.exports = {
   aliases: [],
   category: 'tickets',
   description: 'Claim the current ticket.',
-  usage: '',
+  usage: 'claim',
   examples: ['claim'],
   guildOnly: true,
 

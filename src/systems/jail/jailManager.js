@@ -1,8 +1,75 @@
+const { PermissionFlagsBits } = require('discord.js');
 const db = require('../../services/database');
 const { logModerationAction } = require('../logging/auditLog');
 const { manageabilityState } = require('../../utils/permissions');
-const { ensureJailInfrastructure } = require('./roleHandler');
 const { getProtectionSettings, isSecuritySystemEnabled } = require('../security/protectionConfig');
+
+async function getJailSetupState(guild, settings) {
+  const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
+  if (!me) {
+    return {
+      ok: false,
+      reason: 'I could not resolve my own member record in this server.',
+      reasonCode: 'member_unavailable'
+    };
+  }
+
+  if (!settings.jail_role_id) {
+    return {
+      ok: false,
+      reason: 'Jail is not set up yet. Run `jailsetup` before enabling AutoJail enforcement.',
+      reasonCode: 'setup_required'
+    };
+  }
+
+  const jailRole = guild.roles.cache.get(settings.jail_role_id) || await guild.roles.fetch(settings.jail_role_id).catch(() => null);
+  if (!jailRole) {
+    return {
+      ok: false,
+      reason: 'The configured jail role no longer exists. Run `jailsetup` again.',
+      reasonCode: 'setup_required'
+    };
+  }
+
+  if (!settings.jail_channel_id) {
+    return {
+      ok: false,
+      reason: 'The jail channel is not configured yet. Run `jailsetup` before using AutoJail.',
+      reasonCode: 'setup_required'
+    };
+  }
+
+  const jailChannel = guild.channels.cache.get(settings.jail_channel_id) || await guild.channels.fetch(settings.jail_channel_id).catch(() => null);
+  if (!jailChannel) {
+    return {
+      ok: false,
+      reason: 'The configured jail channel no longer exists. Run `jailsetup` again.',
+      reasonCode: 'setup_required'
+    };
+  }
+
+  if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    return {
+      ok: false,
+      reason: 'I need Manage Roles to apply the jail role.',
+      reasonCode: 'missing_permissions'
+    };
+  }
+
+  if (!jailRole.editable) {
+    return {
+      ok: false,
+      reason: 'The jail role is above me in the role list, so I cannot assign it.',
+      reasonCode: 'missing_permissions'
+    };
+  }
+
+  return {
+    ok: true,
+    jailRole,
+    jailChannel
+  };
+}
 
 async function jailMember(options) {
   const {
@@ -19,7 +86,17 @@ async function jailMember(options) {
   if (!settings.jail_enabled || (protection && !isSecuritySystemEnabled(protection, 'autojail', settings.jail_enabled !== false))) {
     return {
       ok: false,
-      reason: 'Jail system is disabled'
+      reason: 'Jail system is disabled',
+      reasonCode: 'disabled'
+    };
+  }
+
+  const jailState = await getJailSetupState(guild, settings);
+  if (!jailState.ok) {
+    return {
+      ok: false,
+      reason: jailState.reason,
+      reasonCode: jailState.reasonCode
     };
   }
 
@@ -27,7 +104,8 @@ async function jailMember(options) {
   if (!manageState.ok) {
     return {
       ok: false,
-      reason: manageState.reason
+      reason: manageState.reason,
+      reasonCode: 'manageability'
     };
   }
 
@@ -41,7 +119,7 @@ async function jailMember(options) {
     };
   }
 
-  const { jailRole } = await ensureJailInfrastructure(guild);
+  const { jailRole } = jailState;
 
   const previousRoleIds = member.roles.cache
     .filter((role) => role.id !== guild.id && role.id !== jailRole.id)

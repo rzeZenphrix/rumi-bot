@@ -1,7 +1,7 @@
 const respond = require('../../utils/respond');
 const musicService = require('../../services/musicService');
 const spotifyClient = require('../../services/spotify/client');
-const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
+const { requireSharedPremium } = require('../../systems/monetization/access');
 const { isMusicReady, MUSIC_NOT_READY } = require('../../systems/runtime/featureGates');
 
 function compactNumber(value) {
@@ -140,13 +140,12 @@ module.exports = {
   description: 'Use Spotify search or proxy live Spotify/music service controls.',
   usage: 'spotify [link|unlink|status|play|queue|playlist|device|resolve|track|artist|album|playlist] ...',
   examples: ['spotify pink pony club', 'spotify play pink pony club', 'spotify queue add saturn', 'spotify resolve spotify:track:...', 'spotify device set desktop'],
+  premium: { scope: 'shared', tier: 'base' },
 
   async execute({ message, args }) {
     const parsed = parsePrefixSpotify([...args]);
-    const access = await getPremiumAccessForMessage(message).catch(() => null);
-    if (!access?.sharedPremium) {
-      return respond.reply(message, 'bad', 'Spotify needs user premium or server premium in this server.');
-    }
+    const access = await requireSharedPremium(message, 'Spotify').catch(() => null);
+    if (!access) return null;
 
     if (!parsed.command && !parsed.query) {
       return respond.reply(message, 'info', 'Use `spotify <query>`, `spotify play <query>`, `spotify resolve <query>`, or `spotify device set <name>`.');

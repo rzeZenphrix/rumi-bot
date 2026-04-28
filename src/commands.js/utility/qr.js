@@ -4,18 +4,33 @@ module.exports = {
   name: 'qr',
   aliases: ['qrcode'],
   category: 'utility',
-  description: 'Generate a QR code.',
-  usage: 'qr <text|url>',
+  description: 'Generate a QR code with size controls.',
+  usage: 'qr <text|url> [--size 512] [--margin 1]',
+  examples: ['qr https://rumi.rocks', 'qr hello world --size 256'],
 
   async execute({ message, args }) {
-    const text = args.join(' ').trim();
-    if (!text) return respond.reply(message, 'info', 'Use `qr <text|url>`.');
+    const sizeIndex = args.indexOf('--size');
+    const marginIndex = args.indexOf('--margin');
+    const size = Math.max(128, Math.min(1024, Number(args[sizeIndex + 1]) || 512));
+    const margin = Math.max(0, Math.min(10, Number(args[marginIndex + 1]) || 1));
+    const text = args
+      .filter((value, index) => ![sizeIndex, sizeIndex + 1, marginIndex, marginIndex + 1].includes(index))
+      .join(' ')
+      .trim();
 
-    const image = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(text)}`;
+    if (!text) return respond.reply(message, 'info', 'Use `qr <text|url> [--size 512]`.');
+
+    const image = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=${margin}&data=${encodeURIComponent(text)}`;
     return respond.reply(message, 'info', null, {
       mentionUser: false,
-      description: `QR code for:\n\`${text.slice(0, 120)}\``,
-      image
+      title: 'QR code',
+      allowTitle: true,
+      description: `Encoded text:\n\`${text.slice(0, 180)}\``,
+      image,
+      fields: [
+        { name: 'Size', value: `${size}px`, inline: true },
+        { name: 'Margin', value: String(margin), inline: true }
+      ]
     });
   }
 };

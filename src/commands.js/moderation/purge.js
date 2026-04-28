@@ -229,7 +229,7 @@ async function collectAttachmentFiles(messages) {
 
 module.exports = {
   name: 'purge',
-  aliases: ['clear', 'prune', 'clean', 'p'],
+  aliases: ['prune'],
   category: 'moderation',
   description: 'Bulk delete recent messages using filters and export a transcript.',
   usage: 'purge [messages|bots|user|webhooks|links|embeds|attachments|stickers|emojis|contains <keyword>|before <id>|after <id>|mentions|humans|reactions|files|invites|images] <amount|all>',

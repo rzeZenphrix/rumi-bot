@@ -42,11 +42,9 @@ async function applyGuildProfile(guild, options = {}) {
   const config = options.config || getGuildCustomization(guild.id);
   const state = profileState(config);
   const patchResults = [];
+  const skipped = [];
 
   try {
-    const avatarBuffer = await resolveAsset(state.avatar);
-    const bannerBuffer = await resolveAsset(state.banner);
-
     if (options.includeNickname !== false) {
       try {
         if (!me.permissions.has(PermissionFlagsBits.ChangeNickname)) {
@@ -71,14 +69,22 @@ async function applyGuildProfile(guild, options = {}) {
     }
 
     const patchQueue = [
-      { field: 'avatar', patch: { avatar: avatarBuffer } },
-      { field: 'banner', patch: { banner: bannerBuffer } },
-      { field: 'bio', patch: { bio: state.bio } }
+      { field: 'avatar', supported: true },
+      { field: 'banner', supported: false, reason: 'Discord does not expose a stable per-server banner update route for bots here yet.' },
+      { field: 'bio', supported: false, reason: 'Discord does not expose a stable per-server bio update route for bots here yet.' }
     ];
 
     for (const entry of patchQueue) {
+      if (!entry.supported) {
+        if (state[entry.field]) {
+          skipped.push({ field: entry.field, reason: entry.reason });
+        }
+        continue;
+      }
+
       try {
-        await guild.members.editMe(entry.patch);
+        const assetBuffer = await resolveAsset(state[entry.field]);
+        await guild.members.editMe({ [entry.field]: assetBuffer });
         patchResults.push({ field: entry.field, ok: true });
       } catch (error) {
         patchResults.push({
@@ -88,7 +94,7 @@ async function applyGuildProfile(guild, options = {}) {
         });
 
         logger.warn(
-          { error, guildId: guild.id, field: entry.field, patchKeys: Object.keys(entry.patch) },
+          { error, guildId: guild.id, field: entry.field, patchKeys: [entry.field] },
           'Failed to apply one guild profile customization field'
         );
       }
@@ -104,11 +110,12 @@ async function applyGuildProfile(guild, options = {}) {
       ok: false,
       applied: state,
       failed,
+      skipped,
       reason: failed.map((entry) => `${entry.field}: ${entry.reason}`).join(' | ')
     };
   }
 
-  return { ok: true, applied: state };
+  return { ok: true, applied: state, skipped };
 }
 
 async function applyGuildProfilesOnStartup(client) {

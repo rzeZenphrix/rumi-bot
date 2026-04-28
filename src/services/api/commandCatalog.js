@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { DEFAULT_PREFIX } = require('../../systems/prefix/prefixManager');
+const { isSlashSupported } = require('../../systems/slashManifest');
 
 const PERMISSION_LABELS = {
   AddReactions: 'Add Reactions',
@@ -109,11 +110,40 @@ function deriveFlags(source = {}) {
   return [];
 }
 
-function deriveInformation(source, commandCategory, permissions, botPermissions) {
+function premiumLabel(premium) {
+  if (!premium) return null;
+  if (premium === true) return 'Premium';
+  if (typeof premium === 'string') return premium;
+
+  const scope = String(premium.scope || '').toLowerCase();
+  const tier = String(premium.tier || 'base').toLowerCase();
+
+  if (scope === 'user') return 'User Premium';
+  if (scope === 'shared') return 'User Premium or Server Premium';
+  if (scope === 'server') {
+    if (tier === 'tier1') return 'Server Premium Tier 1';
+    if (tier === 'tier2') return 'Server Premium Tier 2';
+    if (tier === 'tier3') return 'Server Premium Tier 3';
+    return 'Server Premium';
+  }
+
+  return 'Premium';
+}
+
+function slashSupportLabel(source = {}, commandName = '') {
+  if (source?.slash?.supported === false) return 'Prefix only';
+  if (source?.slash?.supported === true || source?.slash === true || isSlashSupported(commandName)) {
+    return 'Prefix + slash';
+  }
+  return 'Prefix only';
+}
+
+function deriveInformation(source, commandCategory, permissions, botPermissions, commandName) {
   const parts = [];
   if (permissions.length) parts.push(permissions.join(', '));
-  if (source.premium) parts.push('Premium');
+  if (source.premium) parts.push(premiumLabel(source.premium));
   if (source.nsfw) parts.push('NSFW');
+  parts.push(slashSupportLabel(source, commandName));
   if (botPermissions.length) parts.push(`Bot: ${botPermissions.join(', ')}`);
   if (source.guildOnly) parts.push('Guild only');
   if (commandCategory) parts.push(`Module ${String(commandCategory).toLowerCase()}`);
@@ -128,8 +158,17 @@ function serializeEntry(command, prefix, sub = null) {
   const botPermissions = Array.isArray(command.botPermissions)
     ? command.botPermissions.flatMap(permissionToNames).filter(Boolean)
     : [];
-  const usage = normalizeUsage(sub?.usage || command.usage || fullName, fullName);
+  const rawUsage = normalizeUsage(sub?.usage || command.usage || fullName, fullName);
+  const usage = sub && rawUsage && !rawUsage.toLowerCase().startsWith(fullName.toLowerCase())
+    ? `${fullName} ${rawUsage}`
+    : rawUsage;
   const examples = deriveExamples(prefix, sub?.examples || command.examples, usage);
+  const slashSupported = (sub?.slash?.supported ?? command?.slash?.supported) === false
+    ? false
+    : isSlashSupported(command.name) ||
+      command?.slash?.supported === true ||
+      command?.slash === true ||
+      sub?.slash?.supported === true;
 
   return {
     id: fullName.toLowerCase().replace(/\s+/g, ':'),
@@ -150,8 +189,12 @@ function serializeEntry(command, prefix, sub = null) {
     botPermissions,
     flags: deriveFlags(sub || command),
     premium: Boolean(sub?.premium ?? command.premium),
+    premiumRequirement: sub?.premium ?? command.premium ?? null,
+    premiumLabel: premiumLabel(sub?.premium ?? command.premium ?? null),
     nsfw: Boolean(sub?.nsfw ?? command.nsfw),
-    information: deriveInformation(sub || command, command.category, permissions, botPermissions)
+    slashSupported,
+    slashLabel: slashSupported ? 'Prefix + slash' : 'Prefix only',
+    information: deriveInformation(sub || command, command.category, permissions, botPermissions, command.name)
   };
 }
 

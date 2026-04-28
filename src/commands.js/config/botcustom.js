@@ -177,6 +177,11 @@ module.exports = {
         return respond.reply(message, 'alert', `I saved that customization, but I could not apply it yet: ${result.reason}`);
       }
 
+      const skippedField = (result.skipped || []).find((entry) => entry.field === field);
+      if (skippedField) {
+        return respond.reply(message, 'alert', `I saved that customization, but it is not fully applicable in Discord yet: ${skippedField.reason}`);
+      }
+
       return respond.reply(message, 'good', `Updated Rumi profile **${field}** for this server.`);
     }
 

@@ -24,17 +24,17 @@ module.exports = {
       mentionUser: false,
       description: `${user}`,
       fields: [
-        { name: 'Cash', value: `\`${settings.currencyIcon} ${formatCoins(account.cash)}\``, inline: true },
-        { name: 'Bank', value: `\`${settings.currencyIcon} ${formatCoins(account.bank)}\``, inline: true },
-        { name: 'Net Worth', value: `\`${settings.currencyIcon} ${formatCoins(totalWealth(account))}\``, inline: true },
+        { name: 'Cash', value: `${settings.currencyIcon} ${formatCoins(account.cash)}`, inline: true },
+        { name: 'Bank', value: `${settings.currencyIcon} ${formatCoins(account.bank)}`, inline: true },
+        { name: 'Net Worth', value: `${settings.currencyIcon} ${formatCoins(totalWealth(account))}`, inline: true },
         { name: 'Items', value: `\`${account.inventory?.filter((item) => item.status !== 'sold').length || 0}\``, inline: true },
-        { name: 'Earned', value: `\`${settings.currencyIcon} ${formatCoins(account.totalEarned)}\``, inline: true },
-        { name: 'Spent', value: `\`${settings.currencyIcon} ${formatCoins(account.totalSpent)}\``, inline: true },
+        { name: 'Earned', value: `${settings.currencyIcon} ${formatCoins(account.totalEarned)}`, inline: true },
+        { name: 'Spent', value: `${settings.currencyIcon} ${formatCoins(account.totalSpent)}`, inline: true },
         {
           name: 'Recent Activity',
           value: transactions.length
             ? transactions
-                .map((entry) => `- ${entry.type} \`${settings.currencyIcon} ${formatCoins(entry.amount)}\``)
+                .map((entry) => `- ${entry.type} ${settings.currencyIcon} ${formatCoins(entry.amount)}`)
                 .join('\n')
             : 'No recent activity yet.',
           inline: false

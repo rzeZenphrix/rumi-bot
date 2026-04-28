@@ -28,7 +28,7 @@ module.exports = {
       visible.map(async (entry, index) => {
         const member = await message.guild.members.fetch(entry.userId).catch(() => null);
         const label = member?.user?.tag || `Unknown User (${entry.userId})`;
-        return `${index + 1}. **${label}** - \`${settings.currencyIcon} ${formatCoins(totalWealth(entry.account))}\``;
+        return `${index + 1}. **${label}** - ${settings.currencyIcon} ${formatCoins(totalWealth(entry.account))}`;
       })
     );
 

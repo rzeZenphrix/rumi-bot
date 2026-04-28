@@ -7,6 +7,17 @@ const FEATURE_TABLES = Object.freeze({
   tasks: ['scheduled_tasks', 'todos', 'bookmarks', 'calendar_events'],
   economy: ['economy_accounts', 'economy_transactions', 'economy_guild_settings'],
   social: ['social_profiles'],
+  tickets: [
+    'ticket_panels',
+    'ticket_types',
+    'tickets',
+    'ticket_logs',
+    'ticket_transcripts',
+    'ticket_form_questions',
+    'ticket_form_answers',
+    'ticket_cooldowns',
+    'ticket_participants'
+  ],
   monetization: [
     'premium_plan_catalog',
     'premium_orders',

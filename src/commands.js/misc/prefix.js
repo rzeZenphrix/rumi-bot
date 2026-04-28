@@ -21,6 +21,13 @@ module.exports = {
   usage: 'prefix <view|set|reset|default on|default off>',
   examples: ['prefix view', 'prefix set !', 'prefix default off', 'prefix reset'],
   guildOnly: true,
+  slash: { supported: true },
+  subcommands: [
+    { name: 'view', aliases: ['status'], description: 'Show the current prefix and fallback state.', usage: 'prefix view', examples: ['prefix view'], slash: { supported: true } },
+    { name: 'set', description: 'Set a custom prefix for this server.', usage: 'prefix set <prefix>', examples: ['prefix set !'], slash: { supported: true } },
+    { name: 'default', description: 'Enable or disable the default fallback prefix.', usage: 'prefix default <on|off>', examples: ['prefix default off'], slash: { supported: true } },
+    { name: 'reset', description: 'Reset this server prefix back to the default fallback.', usage: 'prefix reset', examples: ['prefix reset'], slash: { supported: true } }
+  ],
 
   async execute({ message, args }) {
     const subcommand = (args[0] || 'view').toLowerCase();

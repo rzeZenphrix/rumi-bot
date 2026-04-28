@@ -96,12 +96,12 @@ function navRow(ownerId, query, page, pageCount) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`help:${ownerId}:${Math.max(1, page - 1)}:${encode}`)
-      .setLabel('<')
+      .setLabel('Back')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId(`help:${ownerId}:${Math.min(pageCount, page + 1)}:${encode}`)
-      .setLabel('>')
+      .setLabel('Next')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(page >= pageCount)
   );
@@ -143,6 +143,16 @@ function formatEntryPage(prefix, entry, currentPage, pageCount, moduleName) {
     { name: 'Information', value: entry.information || 'n/a', inline: false },
     { name: 'Usage', value: usageBlock(prefix, entry), inline: false }
   ];
+
+  if (entry.premiumLabel) {
+    fields.splice(3, 0, { name: 'Premium', value: entry.premiumLabel, inline: false });
+  }
+
+  fields.splice(entry.premiumLabel ? 4 : 3, 0, {
+    name: 'Slash Support',
+    value: entry.slashLabel || 'Prefix only',
+    inline: false
+  });
 
   if (entry.flags?.length) {
     fields.push({ name: 'Flags', value: entry.flags.join(', '), inline: false });

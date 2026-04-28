@@ -19,7 +19,7 @@ module.exports = {
   aliases: ['an', 'antin', 'nukeguard'],
   category: 'security',
   description: 'Configure anti-nuke status, punishment, thresholds, and bypasses.',
-  usage: 'antinuke <status|enable|disable|punishment|threshold|whitelist>',
+  usage: 'antinuke',
   examples: [
     'antinuke enable',
     'antinuke punishment strip',

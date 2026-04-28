@@ -120,6 +120,30 @@ async function maybeAutoJailMember(member, mode = 'join') {
     }
   }).catch((error) => ({ ok: false, error, reason: error?.message || 'unknown error' }));
 
+  if (result?.ok || result?.alreadyJailed) {
+    logger.info(
+      {
+        guildId: member.guild.id,
+        userId: member.id,
+        mode,
+        reasons
+      },
+      'AutoJail action completed'
+    );
+  } else if (result?.reasonCode === 'setup_required' || result?.reasonCode === 'missing_permissions') {
+    logger.warn(
+      {
+        guildId: member.guild.id,
+        userId: member.id,
+        mode,
+        reasons,
+        reason: result.reason,
+        reasonCode: result.reasonCode
+      },
+      'AutoJail could not enforce because jail setup is incomplete'
+    );
+  }
+
   return {
     ...result,
     reasons,
@@ -143,9 +167,11 @@ async function runScheduledAutoJailScan(client) {
     if (!members) continue;
 
     let matched = 0;
+    let setupBlocked = 0;
     for (const member of members.values()) {
       const result = await maybeAutoJailMember(member, 'scheduled').catch(() => ({ ok: false }));
       if (result?.ok || result?.alreadyJailed) matched += 1;
+      if (result?.reasonCode === 'setup_required') setupBlocked += 1;
     }
 
     await updateAutoJailConfig(guild.id, (current) => ({
@@ -157,6 +183,10 @@ async function runScheduledAutoJailScan(client) {
 
     if (matched > 0) {
       logger.info({ guildId: guild.id, matched }, 'AutoJail scheduled scan matched members');
+    }
+
+    if (setupBlocked > 0) {
+      logger.warn({ guildId: guild.id, setupBlocked }, 'AutoJail scheduled scan skipped members because jail setup is incomplete');
     }
   }
 }

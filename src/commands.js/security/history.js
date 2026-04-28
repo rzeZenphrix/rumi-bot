@@ -1,7 +1,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const db = require('../../services/database');
-const { requireServerPremium } = require('../../systems/monetization/access');
+const { requireServerPremium, requireServerTier } = require('../../systems/monetization/access');
 const { resolveUser } = require('../../utils/resolveUser');
 
 async function resolveTarget(client, token) {
@@ -17,14 +17,43 @@ module.exports = {
   usage: 'history <@user|userId> | history <pardon|clear> <@user|userId>',
   guildOnly: true,
   permissions: [PermissionFlagsBits.ModerateMembers],
+  subcommands: [
+    {
+      name: 'view',
+      description: 'Show recent stored flags and the current risk score for a user.',
+      usage: 'history <@user|userId>',
+      examples: ['history @user']
+    },
+    {
+      name: 'pardon',
+      description: "Mark this server's stored flags as resolved for a user.",
+      usage: 'history pardon <@user|userId>',
+      examples: ['history pardon @user'],
+      premium: { scope: 'server', tier: 'base' }
+    },
+    {
+      name: 'clear',
+      description: "Permanently delete this server's stored flags for a user.",
+      usage: 'history clear <@user|userId> confirm',
+      examples: ['history clear @user confirm'],
+      premium: { scope: 'server', tier: 'tier2' }
+    }
+  ],
 
   async execute({ client, message, args }) {
     const sub = String(args[0] || '').toLowerCase();
 
-    if (sub === 'pardon' || sub === 'clear') {
-      const access = await requireServerPremium(message, 'History moderation').catch(() => null);
+    if (sub === 'pardon') {
+      const access = await requireServerPremium(message, 'History flag pardons').catch(() => null);
       if (!access) return null;
+    }
 
+    if (sub === 'clear') {
+      const access = await requireServerTier(message, 'tier2', 'History deletion').catch(() => null);
+      if (!access) return null;
+    }
+
+    if (sub === 'pardon' || sub === 'clear') {
       const user = await resolveTarget(client, args[1]);
       if (!user) {
         return respond.reply(message, 'bad', 'I could not find that user.');
@@ -35,12 +64,20 @@ module.exports = {
         if (!rows) {
           return respond.reply(message, 'bad', 'I could not pardon those flags right now.');
         }
-        return respond.reply(message, 'good', `Marked **${rows.length}** flag(s) as resolved for **${user.tag}** in this server.`);
+        return respond.reply(
+          message,
+          'good',
+          `Marked **${rows.length}** flag(s) as resolved for **${user.tag}** in this server.`
+        );
       }
 
       const confirm = String(args[2] || '').toLowerCase();
       if (confirm !== 'confirm') {
-        return respond.reply(message, 'alert', 'Use `history clear <@user|userId> confirm` to permanently delete this server\'s flags for that user.');
+        return respond.reply(
+          message,
+          'alert',
+          "Use `history clear <@user|userId> confirm` to permanently delete this server's flags for that user."
+        );
       }
 
       const rows = await db.deleteUserFlags(user.id, message.guild.id).catch(() => null);
@@ -48,12 +85,20 @@ module.exports = {
         return respond.reply(message, 'bad', 'I could not delete those flags right now.');
       }
 
-      return respond.reply(message, 'good', `Deleted **${rows.length}** flag(s) for **${user.tag}** in this server.`);
+      return respond.reply(
+        message,
+        'good',
+        `Deleted **${rows.length}** flag(s) for **${user.tag}** in this server.`
+      );
     }
 
     const target = args.shift();
     if (!target) {
-      return respond.reply(message, 'info', 'Usage: `history <@user|userId>`, `history pardon <@user|userId>`, or `history clear <@user|userId> confirm`.');
+      return respond.reply(
+        message,
+        'info',
+        'Usage: `history <@user|userId>`, `history pardon <@user|userId>`, or `history clear <@user|userId> confirm`.'
+      );
     }
 
     const user = await resolveTarget(client, target);
@@ -68,9 +113,9 @@ module.exports = {
       return respond.reply(message, 'info', `${user.tag} has no stored flags.`);
     }
 
-    const lines = flags.map((flag) => {
-      return `- ${flag.type} | ${flag.confidence}/100 | guild ${flag.guild_id} | resolved: ${flag.resolved ? 'yes' : 'no'} | ${new Date(flag.created_at).toLocaleString()}`;
-    });
+    const lines = flags.map((flag) =>
+      `- ${flag.type} | ${flag.confidence}/100 | guild ${flag.guild_id} | resolved: ${flag.resolved ? 'yes' : 'no'} | ${new Date(flag.created_at).toLocaleString()}`
+    );
 
     return respond.reply(
       message,

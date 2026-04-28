@@ -133,10 +133,10 @@ module.exports = {
   aliases: ['ai', 'rumi'],
   category: 'ai',
   description: 'Ask Rumi a conversational question.',
-  usage: '<question>',
+  usage: 'rumi [question]',
   examples: [
     'rumi meow for me',
-    'ai what is a cat?'
+    'ai what is a noob?'
   ],
 
   async execute({ client, message, args }) {

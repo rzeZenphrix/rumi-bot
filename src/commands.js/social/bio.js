@@ -1,5 +1,5 @@
 const respond = require('../../utils/respond');
-const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
+const { getPremiumAccessForMessage, requireUserPremium } = require('../../systems/monetization/access');
 const { getProfile, updateProfile } = require('../../systems/social/store');
 
 module.exports = {
@@ -8,6 +8,20 @@ module.exports = {
   category: 'social',
   description: 'Set or view profile bio.',
   usage: 'bio <set|view|clear|leaderboard> [text]',
+  examples: ['bio view', 'bio set hello there', 'bio leaderboard hide'],
+  subcommands: [
+    { name: 'view', description: 'Show your saved bio and leaderboard visibility.', usage: 'bio view', examples: ['bio view'] },
+    { name: 'set', description: 'Set your saved bio text.', usage: 'bio set <text>', examples: ['bio set hello there'] },
+    { name: 'clear', description: 'Clear your saved bio text.', usage: 'bio clear', examples: ['bio clear'] },
+    {
+      name: 'leaderboard',
+      aliases: ['mask'],
+      description: 'View or change your leaderboard visibility.',
+      usage: 'bio leaderboard <hide|show|view>',
+      examples: ['bio leaderboard hide', 'bio leaderboard show'],
+      premium: { scope: 'user', tier: 'base' }
+    }
+  ],
 
   async execute({ message, args }) {
     const sub = (args.shift() || 'view').toLowerCase();
@@ -38,7 +52,8 @@ module.exports = {
 
       const access = await getPremiumAccessForMessage(message).catch(() => null);
       if (action === 'hide' && !access?.hasUserPremium) {
-        return respond.reply(message, 'bad', 'Hiding your leaderboard presence needs user premium.');
+        const allowed = await requireUserPremium(message, 'Leaderboard masking', access).catch(() => null);
+        if (!allowed) return null;
       }
 
       await updateProfile(message.author.id, (next) => {

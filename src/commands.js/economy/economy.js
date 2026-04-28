@@ -2,7 +2,7 @@ const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const { getEconomySettings, updateEconomySettings, resetEconomySettings, logEconomyAudit, listEconomyAudit } = require('../../systems/economy/settings');
 const { formatCoins, updateAccount, listGuildTransactions } = require('../../systems/economy/store');
-const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
+const { getPremiumAccessForMessage, requireServerPremium, requireServerTier } = require('../../systems/monetization/access');
 
 function parseAmount(input) {
   const value = Math.floor(Number(input));
@@ -155,7 +155,8 @@ module.exports = {
 
         const access = await getPremiumAccessForMessage(message).catch(() => null);
         if (!access?.hasServerPremiumBase) {
-          return respond.reply(message, 'bad', 'Custom economy cooldowns need server premium.');
+          const allowed = await requireServerPremium(message, 'Custom economy cooldowns', access).catch(() => null);
+          if (!allowed) return null;
         }
 
         const next = await updateEconomySettings(message.guild.id, (current) => {
@@ -174,7 +175,8 @@ module.exports = {
 
         const access = await getPremiumAccessForMessage(message).catch(() => null);
         if (!access?.economy?.canDisableVoterBoost) {
-          return respond.reply(message, 'bad', 'Only server premium tier 1 or higher can disable voter boosts.');
+          const allowed = await requireServerTier(message, 'tier1', 'Voter boost toggles', access).catch(() => null);
+          if (!allowed) return null;
         }
 
         const next = await updateEconomySettings(message.guild.id, (current) => {

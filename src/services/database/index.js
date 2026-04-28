@@ -177,6 +177,10 @@ async function executeQuery(query, context) {
   }
 }
 
+function hasDatabaseConfigured() {
+  return isSupabaseConfigured();
+}
+
 function mergeThresholds(custom = {}) {
   const safeCustom = custom || {};
 
@@ -1445,9 +1449,11 @@ async function setLegacyGuildPlan(guildId, tier) {
 module.exports = {
   DatabaseUnavailableError,
   isSupabaseConfigured,
+  hasDatabaseConfigured,
   isConfigured: isSupabaseConfigured,
   getSupabaseConfigIssue,
   getCircuitState: breaker.getState,
+  runQuery: executeQuery,
   dbHealthCheck,
   getKv,
   setKv,

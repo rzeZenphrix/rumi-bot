@@ -1,6 +1,6 @@
 const respond = require('../../utils/respond');
 const musicService = require('../../services/musicService');
-const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
+const { requireSharedPremium } = require('../../systems/monetization/access');
 const { isMusicReady, MUSIC_NOT_READY } = require('../../systems/runtime/featureGates');
 
 function parseMusicCommand(args) {
@@ -68,6 +68,7 @@ module.exports = {
   usage: 'music [status|play|queue|skip|pause|resume|stop|leave|volume|seek|loop|shuffle|remove|move|clear|history|stats|lyrics|autoplay|filter|panel|export|import|settings]',
   examples: ['music', 'music play pink pony club', 'music queue', 'music loop track', 'music settings volume 80'],
   guildOnly: true,
+  premium: { scope: 'shared', tier: 'base' },
 
   async execute({ message, args }) {
     const parsed = parseMusicCommand([...args]);
@@ -75,10 +76,8 @@ module.exports = {
       return respond.reply(message, 'info', 'Use `music play <query>`, `music queue`, `music skip`, `music panel`, or `music settings ...`.');
     }
 
-    const access = await getPremiumAccessForMessage(message).catch(() => null);
-    if (!access?.sharedPremium) {
-      return respond.reply(message, 'bad', 'Music needs user premium or server premium in this server.');
-    }
+    const access = await requireSharedPremium(message, 'Music').catch(() => null);
+    if (!access) return null;
 
     if (!isMusicReady()) {
       return respond.reply(message, 'info', MUSIC_NOT_READY);

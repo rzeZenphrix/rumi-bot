@@ -21,6 +21,7 @@ const database = require('../services/database');
 const { runSchemaAudit } = require('../systems/database/schemaAudit');
 const { startKeepAlive } = require('../systems/runtime/keepAlive');
 const { startMarketAlertRunner } = require('../systems/monetization/marketAlerts');
+const { syncApplicationCommands } = require('../systems/slashCommands');
 
 function shouldStartApi() {
   if (process.env.ENABLE_API === 'false') return false;
@@ -115,6 +116,10 @@ client.once('clientReady', async () => {
 
   await syncDashboardBackend(client).catch((error) => {
     logger.warn({ error }, 'Dashboard backend sync failed; continuing startup');
+  });
+
+  await syncApplicationCommands(client).catch((error) => {
+    logger.warn({ error }, 'Slash command sync failed during startup');
   });
 
   const dashboardSyncMs = Number(process.env.DASHBOARD_SYNC_INTERVAL_MS || 300000);

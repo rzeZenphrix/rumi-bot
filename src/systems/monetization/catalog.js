@@ -156,10 +156,19 @@ const PERKS = Object.freeze([
     commandRefs: ['botcustom']
   },
   {
-    id: 'history_flag_management',
-    label: 'History deletion and flag pardons',
-    description: 'Premium moderation control for flag history cleanup.',
+    id: 'history_flag_pardons',
+    label: 'History flag pardons',
+    description: 'Mark stored flags as resolved inside a premium server.',
     filters: { serverPremium: 'base' },
+    live: true,
+    scope: 'server',
+    commandRefs: ['history']
+  },
+  {
+    id: 'history_flag_deletion',
+    label: 'History flag deletion',
+    description: 'Delete stored flag history in Tier 2 premium servers.',
+    filters: { serverPremium: 'tier2' },
     live: true,
     scope: 'server',
     commandRefs: ['history']
@@ -275,7 +284,7 @@ const CATALOG = Object.freeze([
       'bot_bio_ad_removal',
       'custom_economy_cooldowns',
       'selfprefix',
-      'history_flag_management',
+      'history_flag_pardons',
       'dashboard_hotload',
       'premium_regex_builder',
       'join_roles_premium',
@@ -309,7 +318,7 @@ const CATALOG = Object.freeze([
     paymentMethods: PAYMENT_METHODS,
     live: true,
     description: 'Six-month derived server premium tier.',
-    perks: ['voter_boost_toggle']
+    perks: ['voter_boost_toggle', 'history_flag_deletion']
   },
   {
     planId: 'server_premium_tier3',

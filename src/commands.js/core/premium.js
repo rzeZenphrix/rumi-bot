@@ -21,20 +21,23 @@ module.exports = {
   description: 'Show premium status and live perk availability.',
   usage: 'premium [status|features]',
   examples: ['premium', 'premium status', 'premium features'],
+  slash: { supported: true },
   subcommands: [
     {
       name: 'status',
       aliases: ['state'],
       description: 'Show active user and server premium plans.',
       usage: 'premium status',
-      examples: ['premium status']
+      examples: ['premium status'],
+      slash: { supported: true }
     },
     {
       name: 'features',
       aliases: ['perks'],
       description: 'Show active premium perks for the current context.',
       usage: 'premium features',
-      examples: ['premium features']
+      examples: ['premium features'],
+      slash: { supported: true }
     }
   ],
 

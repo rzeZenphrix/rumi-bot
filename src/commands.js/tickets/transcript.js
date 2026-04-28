@@ -3,7 +3,7 @@ module.exports = {
   aliases: ['tickettranscript'],
   category: 'tickets',
   description: 'Generate a transcript for the current ticket.',
-  usage: '',
+  usage: 'transcript',
   examples: ['transcript'],
   guildOnly: true,
 

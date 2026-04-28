@@ -3,7 +3,7 @@ module.exports = {
   aliases: [],
   category: 'tickets',
   description: 'Close the current ticket.',
-  usage: '[reason]',
+  usage: 'close [reason]',
   examples: ['close issue resolved'],
   guildOnly: true,
 

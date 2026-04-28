@@ -2,7 +2,7 @@ const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const { createDashboardUrl } = require('../../systems/dashboard/session');
 const { isDashboardReady, DASHBOARD_NOT_READY } = require('../../systems/runtime/featureGates');
-const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
+const { requireServerPremium } = require('../../systems/monetization/access');
 const { syncDashboardBackend } = require('../../services/dashboardSync');
 
 const FALLBACK_DASHBOARD_URL =
@@ -20,15 +20,31 @@ module.exports = {
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageGuild],
   typing: true,
+  slash: { supported: true },
+  subcommands: [
+    {
+      name: 'open',
+      description: 'Open the public dashboard landing flow for this server.',
+      usage: 'dashboard',
+      examples: ['dashboard']
+    },
+    {
+      name: 'hotload',
+      aliases: ['sync'],
+      description: 'Push a fresh runtime sync to the dashboard backend.',
+      usage: 'dashboard hotload',
+      examples: ['dashboard hotload'],
+      premium: { scope: 'server', tier: 'base' },
+      slash: { supported: true }
+    }
+  ],
 
   async execute({ message, args }) {
     const sub = String(args?.[0] || '').toLowerCase();
 
     if (sub === 'hotload' || sub === 'sync') {
-      const access = await getPremiumAccessForMessage(message).catch(() => null);
-      if (!access?.hasServerPremiumBase) {
-        return respond.reply(message, 'bad', 'Dashboard hotload needs server premium in this server.');
-      }
+      const access = await requireServerPremium(message, 'Dashboard hotload').catch(() => null);
+      if (!access) return null;
 
       const synced = await syncDashboardBackend(message.client).catch(() => false);
       return respond.reply(

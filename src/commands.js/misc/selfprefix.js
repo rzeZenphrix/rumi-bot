@@ -1,6 +1,6 @@
 const db = require('../../services/database');
 const respond = require('../../utils/respond');
-const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
+const { getPremiumAccessForMessage, requireSharedPremium } = require('../../systems/monetization/access');
 const { normalizePrefix, guildPersonalPrefix } = require('../../systems/prefix/prefixManager');
 
 function nextSettingsJson(settings = {}) {
@@ -15,13 +15,22 @@ function nextSettingsJson(settings = {}) {
 module.exports = {
   name: 'selfprefix',
   aliases: ['myprefix', 'sp'],
+  category: 'core',
   description: 'Set or reset your personal command prefix.',
   usage: 'selfprefix set <prefix> | selfprefix reset | selfprefix view',
+  examples: ['selfprefix view', 'selfprefix set ?', 'selfprefix reset'],
+  premium: { scope: 'shared', tier: 'base' },
+  subcommands: [
+    { name: 'view', description: 'Show your current personal prefix.', usage: 'selfprefix view', examples: ['selfprefix view'] },
+    { name: 'set', description: 'Set a personal prefix for yourself.', usage: 'selfprefix set <prefix>', examples: ['selfprefix set ?'] },
+    { name: 'reset', description: 'Remove your personal prefix.', usage: 'selfprefix reset', examples: ['selfprefix reset'] }
+  ],
 
   async execute({ message, args }) {
     const access = await getPremiumAccessForMessage(message).catch(() => null);
     if (!access?.hasUserPremium && !access?.hasServerPremiumBase) {
-      return respond.reply(message, 'bad', 'Self prefix needs user premium or a premium server.');
+      const allowed = await requireSharedPremium(message, 'Self prefix', access).catch(() => null);
+      if (!allowed) return null;
     }
 
     const subcommand = (args[0] || 'view').toLowerCase();

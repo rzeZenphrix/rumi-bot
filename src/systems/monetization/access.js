@@ -3,7 +3,18 @@ const { getPremiumStatus } = require('./service');
 
 const CACHE_TTL_MS = Math.max(5000, Number(process.env.PREMIUM_ACCESS_CACHE_TTL_MS || 15000));
 const VOTER_BOOST_MULTIPLIER = Math.max(1, Number(process.env.VOTER_EARN_MULTIPLIER || 1.25));
+const PREMIUM_URL =
+  process.env.PREMIUM_URL ||
+  process.env.DASHBOARD_PUBLIC_URL ||
+  process.env.DASHBOARD_URL ||
+  'https://rumi.rocks/plans';
 const cache = new Map();
+const SERVER_TIER_LABELS = Object.freeze({
+  base: 'Server Premium',
+  tier1: 'Server Premium Tier 1',
+  tier2: 'Server Premium Tier 2',
+  tier3: 'Server Premium Tier 3'
+});
 
 function cacheKey(userId, guildId) {
   return `${userId || 'anon'}:${guildId || 'dm'}`;
@@ -105,45 +116,142 @@ function sharedPremiumRequiredText(feature) {
   return `${feature} needs user premium or a premium server.`;
 }
 
-async function requireSharedPremium(message, feature, access = null) {
+function normalizeRequirement(requirement) {
+  if (!requirement) {
+    return {
+      scope: 'shared',
+      tier: 'base'
+    };
+  }
+
+  if (typeof requirement === 'string') {
+    if (requirement === 'user') return { scope: 'user', tier: 'base' };
+    if (requirement === 'server') return { scope: 'server', tier: 'base' };
+    if (requirement.startsWith('server:')) {
+      return {
+        scope: 'server',
+        tier: requirement.split(':')[1] || 'base'
+      };
+    }
+    return { scope: 'shared', tier: 'base' };
+  }
+
+  return {
+    scope: requirement.scope || 'shared',
+    tier: requirement.tier || 'base',
+    label: requirement.label || null
+  };
+}
+
+function describeRequirement(requirement) {
+  const normalized = normalizeRequirement(requirement);
+  if (normalized.label) return normalized.label;
+  if (normalized.scope === 'user') return 'User Premium';
+  if (normalized.scope === 'server') {
+    return SERVER_TIER_LABELS[normalized.tier] || 'Server Premium';
+  }
+  return 'User Premium or Server Premium';
+}
+
+function describeCurrentAccess(access = null) {
+  if (!access) return 'No premium access detected yet.';
+
+  const summary = [];
+  summary.push(`User Premium: ${access.hasUserPremium ? 'active' : 'inactive'}`);
+
+  if (access.guildId) {
+    summary.push(`Server Premium: ${access.hasServerPremiumBase ? access.serverTier : 'inactive'}`);
+  }
+
+  if (access.hasVoter) {
+    summary.push('Voter perks: active');
+  }
+
+  return summary.join(' | ');
+}
+
+function meetsRequirement(access, requirement) {
+  const normalized = normalizeRequirement(requirement);
+
+  if (!access) return false;
+
+  if (normalized.scope === 'user') {
+    return access.hasUserPremium;
+  }
+
+  if (normalized.scope === 'server') {
+    if (normalized.tier === 'base') return access.hasServerPremiumBase;
+    if (normalized.tier === 'tier1') return access.hasServerTier1;
+    if (normalized.tier === 'tier2') return access.hasServerTier2;
+    if (normalized.tier === 'tier3') return access.hasServerTier3;
+    return access.hasServerPremiumBase;
+  }
+
+  return access.sharedPremium;
+}
+
+function requirementErrorText(feature, requirement) {
+  return `${feature} needs ${describeRequirement(requirement)}.`;
+}
+
+async function replyPremiumDenied(message, feature, requirement, access = null) {
+  const normalized = normalizeRequirement(requirement);
+  const title = `${feature} requires premium`;
+  const redeemTarget = normalized.scope === 'server'
+    ? '`serverpremium redeem <code> <server-id|invite>`'
+    : '`userpremium redeem <code>`';
+
+  await respond.reply(message, 'alert', null, {
+    mentionUser: false,
+    allowTitle: true,
+    title,
+    description: [
+      requirementErrorText(feature, normalized),
+      '',
+      `Required: **${describeRequirement(normalized)}**`,
+      `Current access: ${describeCurrentAccess(access)}`,
+      '',
+      `Buy a plan: ${PREMIUM_URL}`,
+      `Redeem a code: ${redeemTarget}`,
+      'You can also check `premium`, `userpremium status`, or `serverpremium status`.'
+    ].join('\n')
+  });
+}
+
+async function requirePremium(message, requirement, feature, access = null) {
   const premium = access || await getPremiumAccessForMessage(message);
-  if (premium.sharedPremium) return premium;
-  await respond.reply(message, 'bad', sharedPremiumRequiredText(feature));
+  if (meetsRequirement(premium, requirement)) return premium;
+  await replyPremiumDenied(message, feature, requirement, premium);
   return null;
+}
+
+async function requireSharedPremium(message, feature, access = null) {
+  return requirePremium(message, { scope: 'shared', tier: 'base' }, feature, access);
 }
 
 async function requireUserPremium(message, feature, access = null) {
-  const premium = access || await getPremiumAccessForMessage(message);
-  if (premium.hasUserPremium) return premium;
-  await respond.reply(message, 'bad', `${feature} needs user premium.`);
-  return null;
+  return requirePremium(message, { scope: 'user', tier: 'base' }, feature, access);
 }
 
 async function requireServerPremium(message, feature, access = null) {
-  const premium = access || await getPremiumAccessForMessage(message);
-  if (premium.hasServerPremiumBase) return premium;
-  await respond.reply(message, 'bad', `${feature} needs server premium in this server.`);
-  return null;
+  return requirePremium(message, { scope: 'server', tier: 'base' }, feature, access);
 }
 
 async function requireServerTier(message, tier, feature, access = null) {
-  const premium = access || await getPremiumAccessForMessage(message);
-  const allowed =
-    (tier === 'tier1' && premium.hasServerTier1) ||
-    (tier === 'tier2' && premium.hasServerTier2) ||
-    (tier === 'tier3' && premium.hasServerTier3);
-
-  if (allowed) return premium;
-
-  await respond.reply(message, 'bad', `${feature} needs server premium ${tier}.`);
-  return null;
+  return requirePremium(message, { scope: 'server', tier }, feature, access);
 }
 
 module.exports = {
+  PREMIUM_URL,
   VOTER_BOOST_MULTIPLIER,
   getPremiumAccess,
   getPremiumAccessForMessage,
   invalidatePremiumAccess,
+  normalizeRequirement,
+  describeRequirement,
+  meetsRequirement,
+  replyPremiumDenied,
+  requirePremium,
   requireSharedPremium,
   requireUserPremium,
   requireServerPremium,

@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
+const db = require('../../services/database');
 const { getAutoJailConfig, updateAutoJailConfig, maybeAutoJailMember, normalizeAutoJailConfig } = require('../../systems/autojail/engine');
 
 function parseBool(input) {
@@ -40,6 +41,10 @@ module.exports = {
     }
 
     if (sub === 'status') {
+      const settings = await db.getGuildSettings(message.guild.id).catch(() => null);
+      const setupHint = !settings?.jail_role_id || !settings?.jail_channel_id
+        ? '\n**Setup:** `jailsetup` still needs to be run before AutoJail can enforce.'
+        : '';
       return respond.reply(message, 'info', null, {
         mentionUser: false,
         description: [
@@ -50,7 +55,7 @@ module.exports = {
           `**No avatar trigger:** \`${config.noAvatar}\``,
           `**Keywords:** ${config.keywords.length ? config.keywords.join(', ') : 'none'}`,
           `**NSFW avatar scan:** \`${config.nsfwAvatarPremium ? 'configured (premium-only)' : 'off'}\``
-        ].join('\n')
+        ].join('\n') + setupHint
       });
     }
 
@@ -150,12 +155,42 @@ module.exports = {
       }
 
       let matched = 0;
+      let setupBlocked = 0;
+      let permissionBlocked = 0;
+      let failed = 0;
+      let lastProblem = null;
       for (const member of members.values()) {
         const result = await maybeAutoJailMember(member, config.mode).catch(() => null);
         if (result?.ok || result?.alreadyJailed) matched += 1;
+        else if (result?.reasonCode === 'setup_required') {
+          setupBlocked += 1;
+          lastProblem ||= result.reason;
+        } else if (result?.reasonCode === 'missing_permissions' || result?.reasonCode === 'manageability') {
+          permissionBlocked += 1;
+          lastProblem ||= result.reason;
+        } else if (result?.reasonCode && !['disabled', 'mode', 'bypass', 'clean'].includes(result.reasonCode)) {
+          failed += 1;
+          lastProblem ||= result.reason;
+        }
       }
 
-      return respond.reply(message, 'good', `AutoJail scan finished. Matched **${matched}** member(s).`);
+      if (setupBlocked > 0) {
+        return respond.reply(
+          message,
+          'alert',
+          `AutoJail scan stopped because jail setup is incomplete. Run \`jailsetup\` first.\n\nMatched **${matched}** member(s) before the blocker.\n${lastProblem || 'The jail role or jail channel is missing.'}`
+        );
+      }
+
+      if (permissionBlocked > 0) {
+        return respond.reply(
+          message,
+          'alert',
+          `AutoJail scan found matches, but I am missing something needed to jail people cleanly.\n\nMatched **${matched}** member(s)\nPermission/setup blocks: **${permissionBlocked}**\n${lastProblem || 'Check the jail role position and my Manage Roles permission.'}`
+        );
+      }
+
+      return respond.reply(message, 'good', `AutoJail scan finished. Matched **${matched}** member(s).${failed ? ` Other failures: **${failed}**.` : ''}`);
     }
 
     return respond.reply(message, 'info', 'Use `autojail <status|enable|disable|mode|interval|age|avatar|keyword|nsfwavatar|scan>`.');

@@ -690,7 +690,7 @@ module.exports = {
   aliases: ['tickets'],
   category: 'tickets',
   description: 'Create and manage ticket panels, ticket types, and ticket channels.',
-  usage: '<panel|type|settings|open|claim|unclaim|close|reopen|add|remove|transcript|delete>',
+  usage: 'ticket <panel|type|settings|open|claim|unclaim|close|reopen|add|remove|transcript|delete>',
   examples: [
     'ticket panel create',
     'ticket type add support Support',
@@ -698,6 +698,20 @@ module.exports = {
     'ticket settings staffrole support @Staff',
     'ticket panel publish #support',
     'ticket open support'
+  ],
+  subcommands: [
+    { name: 'panel', description: 'Create, preview, validate, and publish ticket panels.', usage: 'ticket panel <create|list|use|view|message|color|image|thumbnail|mode|preview|validate|publish> [input]', examples: ['ticket panel create', 'ticket panel publish #support'] },
+    { name: 'type', description: 'Create, list, enable, disable, view, and remove ticket types.', usage: 'ticket type <add|list|view|remove|enable|disable> [input]', examples: ['ticket type add support Support', 'ticket type enable support'] },
+    { name: 'settings', aliases: ['setting'], description: 'Change category, staff roles, cooldowns, limits, and ticket messages.', usage: 'ticket settings <category|staffrole|logchannel|transcriptchannel|maxopen|cooldown|channelname|welcome> <type> <value>', examples: ['ticket settings category support 123456789012345678', 'ticket settings staffrole support @Staff'] },
+    { name: 'open', description: 'Open a new ticket from a configured ticket type.', usage: 'ticket open <type>', examples: ['ticket open support'] },
+    { name: 'claim', description: 'Claim the current ticket.', usage: 'ticket claim', examples: ['ticket claim'] },
+    { name: 'unclaim', description: 'Remove the current claim from a ticket.', usage: 'ticket unclaim', examples: ['ticket unclaim'] },
+    { name: 'close', description: 'Close the current ticket with an optional reason.', usage: 'ticket close [reason]', examples: ['ticket close issue resolved'] },
+    { name: 'reopen', description: 'Reopen the current ticket.', usage: 'ticket reopen', examples: ['ticket reopen'] },
+    { name: 'add', description: 'Add a member to the current ticket.', usage: 'ticket add <@user|userId>', examples: ['ticket add @user'] },
+    { name: 'remove', description: 'Remove a member from the current ticket.', usage: 'ticket remove <@user|userId>', examples: ['ticket remove @user'] },
+    { name: 'transcript', description: 'Generate a transcript for the current ticket.', usage: 'ticket transcript', examples: ['ticket transcript'] },
+    { name: 'delete', description: 'Delete the current ticket channel after marking it deleted.', usage: 'ticket delete', examples: ['ticket delete'] }
   ],
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageGuild],
@@ -711,21 +725,33 @@ module.exports = {
   ],
 
   async execute({ message, args }) {
-    const sub = (args.shift() || 'panel').toLowerCase();
+    try {
+      const sub = (args.shift() || 'panel').toLowerCase();
 
-    if (sub === 'panel') return cmdPanel({ message, args });
-    if (sub === 'type') return cmdType({ message, args });
-    if (sub === 'settings' || sub === 'setting') return cmdSettings({ message, args });
-    if (sub === 'open') return cmdOpen({ message, args });
-    if (sub === 'claim') return cmdClaim({ message });
-    if (sub === 'unclaim') return cmdUnclaim({ message });
-    if (sub === 'close') return cmdClose({ message, args });
-    if (sub === 'reopen') return cmdReopen({ message });
-    if (sub === 'add') return cmdAddRemove({ message, args, mode: 'add' });
-    if (sub === 'remove') return cmdAddRemove({ message, args, mode: 'remove' });
-    if (sub === 'transcript') return cmdTranscript({ message });
-    if (sub === 'delete') return cmdDelete({ message });
+      if (sub === 'panel') return cmdPanel({ message, args });
+      if (sub === 'type') return cmdType({ message, args });
+      if (sub === 'settings' || sub === 'setting') return cmdSettings({ message, args });
+      if (sub === 'open') return cmdOpen({ message, args });
+      if (sub === 'claim') return cmdClaim({ message });
+      if (sub === 'unclaim') return cmdUnclaim({ message });
+      if (sub === 'close') return cmdClose({ message, args });
+      if (sub === 'reopen') return cmdReopen({ message });
+      if (sub === 'add') return cmdAddRemove({ message, args, mode: 'add' });
+      if (sub === 'remove') return cmdAddRemove({ message, args, mode: 'remove' });
+      if (sub === 'transcript') return cmdTranscript({ message });
+      if (sub === 'delete') return cmdDelete({ message });
 
-    return send(message, 'info', 'Usage: `ticket <panel|type|settings|open|claim|unclaim|close|reopen|add|remove|transcript|delete>`.');
+      return send(message, 'info', 'Usage: `ticket <panel|type|settings|open|claim|unclaim|close|reopen|add|remove|transcript|delete>`.');
+    } catch (error) {
+      if (
+        error instanceof db.DatabaseUnavailableError ||
+        error?.code === 'DATABASE_CIRCUIT_OPEN' ||
+        /ticket/i.test(String(error?.message || ''))
+      ) {
+        return send(message, 'alert', 'Ticket storage is temporarily unavailable right now. Please try again in a moment.');
+      }
+
+      throw error;
+    }
   }
 };

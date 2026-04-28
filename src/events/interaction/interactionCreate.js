@@ -4,6 +4,9 @@ const helpCommand = require('../../commands.js/misc/help');
 const serverPremiumCommand = require('../../commands.js/core/serverpremium');
 const variablesCommand = require('../../commands.js/utility/variables');
 const { handleSlashCommandInteraction } = require('../../systems/slashCommands');
+const { handlePagedMessageInteraction } = require('../../utils/pagedMessages');
+const minesCommand = require('../../commands.js/fun/mines');
+const tictactoeCommand = require('../../commands.js/fun/tictactoe');
 
 module.exports = {
   name: Events.InteractionCreate,
@@ -14,13 +17,25 @@ module.exports = {
       }
 
       await interaction.reply({
-        content: 'That slash command is not deployed yet.',
+        content: 'This slash command is currently unavailable. Try syncing commands again, or use the prefix version for now.',
         ephemeral: true
       }).catch(() => null);
       return;
     }
 
     if (await handleTicketInteraction(interaction).catch(() => false)) {
+      return;
+    }
+
+    if (await handlePagedMessageInteraction(interaction).catch(() => false)) {
+      return;
+    }
+
+    if (await minesCommand.handleMinesInteraction?.(interaction).catch(() => false)) {
+      return;
+    }
+
+    if (await tictactoeCommand.handleTicTacToeInteraction?.(interaction).catch(() => false)) {
       return;
     }
 

@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Collection } = require('discord.js');
 const logger = require('../systems/logging/logger');
+const { normalizeCommandMeta } = require('../utils/normalizeCommandMeta');
 
 function walkJsFiles(directory) {
   if (!fs.existsSync(directory)) return [];
@@ -39,7 +40,7 @@ function loadCommands(client) {
       try {
         delete require.cache[require.resolve(file)];
 
-        const command = require(file);
+        const command = normalizeCommandMeta(require(file));
 
         if (!command?.name || typeof command.execute !== 'function') {
           logger.warn(
