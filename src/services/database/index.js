@@ -1231,6 +1231,25 @@ async function saveMediaReference(row) {
   return requireData(supabase.from('media_references').insert(row).select().single(), 'saveMediaReference');
 }
 
+async function listFunPromptEntries(promptType, options = {}) {
+  let query = supabase
+    .from('fun_prompt_entries')
+    .select('*')
+    .eq('prompt_type', String(promptType || '').toLowerCase())
+    .eq('enabled', true)
+    .order('weight', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(Math.max(1, Math.min(250, Number(options.limit || 100))));
+
+  if (options.nsfwOnly) {
+    query = query.eq('nsfw', true);
+  } else if (options.includeNsfw !== true) {
+    query = query.eq('nsfw', false);
+  }
+
+  return requireData(query, 'listFunPromptEntries');
+}
+
 async function upsertPremiumPlanCatalog(rows = []) {
   if (!Array.isArray(rows) || !rows.length) return [];
   return requireData(
@@ -1492,6 +1511,7 @@ module.exports = {
   updateCalendarEvent,
   deleteCalendarEvent,
   saveMediaReference,
+  listFunPromptEntries,
   upsertPremiumPlanCatalog,
   listPremiumPlanCatalog,
   createPremiumOrder,
