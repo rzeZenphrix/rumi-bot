@@ -34,10 +34,11 @@ function cleanUrl(value) {
   }
 }
 
-async function safeApplyProfile(guild) {
+async function safeApplyProfile(guild, fields = null) {
   try {
     return await applyGuildProfile(guild, {
-      config: getGuildCustomization(guild.id)
+      config: getGuildCustomization(guild.id),
+      fields: Array.isArray(fields) && fields.length ? fields : undefined
     });
   } catch (error) {
     return {
@@ -167,7 +168,7 @@ module.exports = {
         }
       });
 
-      const result = await safeApplyProfile(message.guild);
+      const result = await safeApplyProfile(message.guild, [field]);
 
       if (field === 'nickname' && !message.guild.members.me?.permissions.has(PermissionFlagsBits.ChangeNickname)) {
         return respond.reply(message, 'alert', 'I saved the nickname setting, but I still need Change Nickname to apply it here.');

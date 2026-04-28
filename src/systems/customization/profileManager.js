@@ -18,7 +18,9 @@ function classifyProfileError(error) {
 
   if (text.includes('missing permissions')) return 'I am missing permission to change that part of my server profile.';
   if (text.includes('request entity too large') || text.includes('file too large')) return 'That image is too large for Discord to accept.';
-  if (text.includes('invalid form body')) return 'Discord rejected that profile value.';
+  if (text.includes('invalid form body')) {
+    return 'Discord rejected that profile value. The field may be unavailable here, or the image URL may not resolve to a supported image.';
+  }
   return error?.message || 'Discord rejected the profile update.';
 }
 
@@ -90,8 +92,16 @@ async function applyGuildProfile(guild, options = {}) {
   const skipped = [];
 
   try {
-    const fields = ['avatar', 'banner', 'bio'];
-    if (options.includeNickname !== false && (state.nick !== null || me.nickname)) {
+    const requestedFields = Array.isArray(options.fields) && options.fields.length
+      ? [...new Set(options.fields.map((field) => String(field || '').trim()).filter(Boolean))]
+      : null;
+
+    const fields = requestedFields || ['avatar', 'banner', 'bio'];
+    if (
+      !requestedFields
+      && options.includeNickname !== false
+      && (state.nick !== null || me.nickname)
+    ) {
       fields.unshift('nickname');
     }
 
