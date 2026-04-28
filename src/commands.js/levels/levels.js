@@ -1,6 +1,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const { getGuildLevels, updateGuildLevels } = require('../../systems/levels/levelStore');
+const { syncGuildLevelRoles } = require('../../systems/levels/levelEngine');
 
 function idFromMention(value) {
   return String(value || '').match(/\d{17,20}/)?.[0] || null;
@@ -11,7 +12,28 @@ module.exports = {
   aliases: ['levelsetup', 'xpsetup'],
   category: 'levels',
   description: 'Configure the XP and leveling system.',
-  usage: 'levels <enable|disable|settings|message|channel|multiplier|stackroles|role|roleclear|ignore|unignore|rolemultiplier>',
+  usage: 'levels <enable|disable|settings|message|channel|multiplier|stackroles|role|roleclear|ignore|unignore|rolemultiplier|sync>',
+  examples: [
+    'levels settings',
+    'levels role 10 @Veteran',
+    'levels stackroles on',
+    'levels sync'
+  ],
+  subcommands: [
+    { name: 'enable', description: 'Enable leveling for this server.' },
+    { name: 'disable', description: 'Disable leveling for this server.' },
+    { name: 'settings', description: 'Show the current leveling configuration.' },
+    { name: 'message', description: 'Set the level-up message template.' },
+    { name: 'channel', description: 'Choose where level-up messages are sent.' },
+    { name: 'multiplier', description: 'Set the base XP multiplier for the server.' },
+    { name: 'stackroles', description: 'Choose whether reward roles stack or replace each other.' },
+    { name: 'role', description: 'Set a reward role for a level milestone.' },
+    { name: 'roleclear', description: 'Remove a configured reward role from a level milestone.' },
+    { name: 'ignore', description: 'Ignore a channel for XP gain.' },
+    { name: 'unignore', description: 'Remove a channel from XP ignores.' },
+    { name: 'rolemultiplier', description: 'Set an XP multiplier for members with a role.' },
+    { name: 'sync', description: 'Re-apply level reward roles to members using the current config.' }
+  ],
   permissions: [PermissionFlagsBits.ManageGuild],
 
   async execute({ message, args }) {
@@ -162,6 +184,32 @@ module.exports = {
       });
 
       return respond.reply(message, 'good', `XP multiplier for <@&${roleId}> set to **${value}x**.`);
+    }
+
+    if (sub === 'sync') {
+      const config = await getGuildLevels(message.guild.id);
+
+      if (!Object.keys(config.levelRoles || {}).length) {
+        return respond.reply(message, 'info', 'There are no level reward roles to sync yet.');
+      }
+
+      const summary = await syncGuildLevelRoles(message.guild, config);
+      const details = [
+        `Scanned **${summary.members}** member${summary.members === 1 ? '' : 's'}.`,
+        `Updated **${summary.updated}** member${summary.updated === 1 ? '' : 's'}.`,
+        `Added **${summary.added}** role assignment${summary.added === 1 ? '' : 's'}.`,
+        `Removed **${summary.removed}** role assignment${summary.removed === 1 ? '' : 's'}.`
+      ];
+
+      if (summary.blocked) {
+        details.push(`Skipped **${summary.blocked}** member${summary.blocked === 1 ? '' : 's'} because one of the reward roles is above my highest role or otherwise not editable.`);
+      }
+
+      if (summary.failed) {
+        details.push(`A few members still failed to update: **${summary.failed}**.`);
+      }
+
+      return respond.reply(message, 'good', details.join('\n'));
     }
 
     return respond.reply(message, 'info', 'Use `levels settings` to view configuration.');

@@ -14,28 +14,129 @@ function resolveTemplate(template, message, levelData) {
 }
 
 async function applyLevelRoles(message, config, level) {
-  const entries = Object.entries(config.levelRoles || {})
+  await syncLevelRolesForMember(message.member, config, level).catch(() => null);
+}
+
+function getEligibleLevelEntries(config, level) {
+  return Object.entries(config.levelRoles || {})
     .map(([lvl, roleId]) => [Number(lvl), roleId])
-    .filter(([lvl]) => lvl <= level)
+    .filter(([lvl]) => Number.isFinite(lvl) && lvl <= level)
     .sort((a, b) => a[0] - b[0]);
+}
 
-  if (!entries.length) return;
+function getConfiguredRewardRoleIds(config) {
+  return [...new Set(Object.values(config.levelRoles || {}).filter(Boolean))];
+}
 
-  const member = message.member;
-
-  if (config.stackRoles) {
-    for (const [, roleId] of entries) {
-      await member.roles.add(roleId).catch(() => null);
-    }
-
-    return;
+async function syncLevelRolesForMember(member, config, level) {
+  const allRewardRoles = getConfiguredRewardRoleIds(config);
+  if (!allRewardRoles.length) {
+    return {
+      changed: false,
+      added: 0,
+      removed: 0,
+      blocked: false
+    };
   }
 
-  const latest = entries[entries.length - 1][1];
-  const allRewardRoles = Object.values(config.levelRoles || {});
+  const eligibleEntries = getEligibleLevelEntries(config, level);
+  const desiredRoleIds = config.stackRoles
+    ? eligibleEntries.map(([, roleId]) => roleId)
+    : eligibleEntries.length
+      ? [eligibleEntries[eligibleEntries.length - 1][1]]
+      : [];
 
-  await member.roles.remove(allRewardRoles.filter((id) => id !== latest)).catch(() => null);
-  await member.roles.add(latest).catch(() => null);
+  const desiredSet = new Set(desiredRoleIds);
+  const currentRewardRoleIds = allRewardRoles.filter((roleId) => member.roles.cache.has(roleId));
+
+  if (!config.stackRoles && desiredRoleIds.length) {
+    const desiredRole = member.guild.roles.cache.get(desiredRoleIds[0]);
+    if (desiredRole && !desiredRole.editable) {
+      return {
+        changed: false,
+        added: 0,
+        removed: 0,
+        blocked: true,
+        blockedRoleId: desiredRole.id
+      };
+    }
+  }
+
+  const toRemove = currentRewardRoleIds.filter((roleId) => {
+    const role = member.guild.roles.cache.get(roleId);
+    return role?.editable && !desiredSet.has(roleId);
+  });
+
+  const toAdd = desiredRoleIds.filter((roleId) => {
+    const role = member.guild.roles.cache.get(roleId);
+    return role?.editable && !member.roles.cache.has(roleId);
+  });
+
+  if (!toAdd.length && !toRemove.length) {
+    return {
+      changed: false,
+      added: 0,
+      removed: 0,
+      blocked: false
+    };
+  }
+
+  if (toRemove.length) {
+    await member.roles.remove(toRemove);
+  }
+
+  if (toAdd.length) {
+    await member.roles.add(toAdd);
+  }
+
+  return {
+    changed: true,
+    added: toAdd.length,
+    removed: toRemove.length,
+    blocked: false
+  };
+}
+
+async function syncGuildLevelRoles(guild, config = null) {
+  const activeConfig = config || await getGuildLevels(guild.id);
+  const members = await guild.members.fetch();
+  const summary = {
+    members: 0,
+    updated: 0,
+    added: 0,
+    removed: 0,
+    blocked: 0,
+    skippedBots: 0,
+    failed: 0
+  };
+
+  for (const member of members.values()) {
+    if (member.user.bot) {
+      summary.skippedBots += 1;
+      continue;
+    }
+
+    summary.members += 1;
+
+    try {
+      const level = Number(activeConfig.users?.[member.id]?.level || 0);
+      const result = await syncLevelRolesForMember(member, activeConfig, level);
+
+      if (result.changed) {
+        summary.updated += 1;
+        summary.added += result.added;
+        summary.removed += result.removed;
+      }
+
+      if (result.blocked) {
+        summary.blocked += 1;
+      }
+    } catch {
+      summary.failed += 1;
+    }
+  }
+
+  return summary;
 }
 
 function getMultiplier(message, config) {
@@ -97,5 +198,7 @@ async function handleLevelXp(client, message) {
 }
 
 module.exports = {
-  handleLevelXp
+  handleLevelXp,
+  syncLevelRolesForMember,
+  syncGuildLevelRoles
 };

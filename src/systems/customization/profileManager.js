@@ -31,6 +31,51 @@ function profileState(config = {}) {
   };
 }
 
+async function buildProfileFieldPatch(field, value) {
+  if (field === 'nickname') return { nick: value || null };
+  if (field === 'bio') return { bio: value || null };
+  if (field === 'avatar') return { avatar: (await resolveAsset(value)) || null };
+  if (field === 'banner') return { banner: (await resolveAsset(value)) || null };
+  return null;
+}
+
+async function applyProfileField(guild, me, state, field) {
+  if (field === 'nickname' && !me.permissions.has(PermissionFlagsBits.ChangeNickname)) {
+    return {
+      field,
+      ok: false,
+      reason: 'I am missing Change Nickname.'
+    };
+  }
+
+  let patch = null;
+
+  try {
+    patch = await buildProfileFieldPatch(field, state[field]);
+    if (!patch) {
+      return {
+        field,
+        ok: false,
+        reason: 'That profile field is not supported.'
+      };
+    }
+
+    await guild.members.editMe(patch);
+    return { field, ok: true };
+  } catch (error) {
+    logger.warn(
+      { error, guildId: guild.id, field, patchKeys: Object.keys(patch || {}) },
+      'Failed to apply one guild profile customization field'
+    );
+
+    return {
+      field,
+      ok: false,
+      reason: classifyProfileError(error)
+    };
+  }
+}
+
 async function applyGuildProfile(guild, options = {}) {
   if (!guild || !isCustomizationEnabled()) {
     return { ok: false, reason: 'Customization disabled or guild missing.' };
@@ -45,59 +90,14 @@ async function applyGuildProfile(guild, options = {}) {
   const skipped = [];
 
   try {
-    if (options.includeNickname !== false) {
-      try {
-        if (!me.permissions.has(PermissionFlagsBits.ChangeNickname)) {
-          patchResults.push({
-            field: 'nickname',
-            ok: false,
-            reason: 'I am missing Change Nickname.'
-          });
-        } else {
-          await me.edit({ nick: state.nick });
-          patchResults.push({ field: 'nickname', ok: true });
-        }
-      } catch (error) {
-        patchResults.push({
-          field: 'nickname',
-          ok: false,
-          reason: classifyProfileError(error)
-        });
-
-        logger.warn({ error, guildId: guild.id, field: 'nickname' }, 'Failed to apply guild nickname customization');
-      }
+    const fields = ['avatar', 'banner', 'bio'];
+    if (options.includeNickname !== false && (state.nick !== null || me.nickname)) {
+      fields.unshift('nickname');
     }
 
-    const patchQueue = [
-      { field: 'avatar', supported: true },
-      { field: 'banner', supported: false, reason: 'Discord does not expose a stable per-server banner update route for bots here yet.' },
-      { field: 'bio', supported: false, reason: 'Discord does not expose a stable per-server bio update route for bots here yet.' }
-    ];
-
-    for (const entry of patchQueue) {
-      if (!entry.supported) {
-        if (state[entry.field]) {
-          skipped.push({ field: entry.field, reason: entry.reason });
-        }
-        continue;
-      }
-
-      try {
-        const assetBuffer = await resolveAsset(state[entry.field]);
-        await guild.members.editMe({ [entry.field]: assetBuffer });
-        patchResults.push({ field: entry.field, ok: true });
-      } catch (error) {
-        patchResults.push({
-          field: entry.field,
-          ok: false,
-          reason: classifyProfileError(error)
-        });
-
-        logger.warn(
-          { error, guildId: guild.id, field: entry.field, patchKeys: [entry.field] },
-          'Failed to apply one guild profile customization field'
-        );
-      }
+    for (const field of fields) {
+      const result = await applyProfileField(guild, me, state, field);
+      patchResults.push(result);
     }
   } catch (error) {
     logger.warn({ error, guildId: guild.id }, 'Failed to fetch customization asset');

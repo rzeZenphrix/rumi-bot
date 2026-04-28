@@ -308,6 +308,84 @@ module.exports = {
     'role delete OldRole',
     'role restore'
   ],
+  subcommands: [
+    {
+      name: 'add',
+      description: 'Add a role to a member.',
+      usage: 'role add <@member|id|name> <role>',
+      examples: ['role add @user Member', 'role add 123456789012345678 Member']
+    },
+    {
+      name: 'remove',
+      description: 'Remove a role from a member.',
+      usage: 'role remove <@member|id|name> <role>',
+      examples: ['role remove @user Muted', 'role remove username Muted']
+    },
+    {
+      name: 'join',
+      description: 'Manage automatic join roles for new members.',
+      usage: 'role join <add|remove|list|clear> [role]',
+      examples: ['role join add @Member', 'role join list'],
+      premium: { scope: 'server', tier: 'base' }
+    },
+    {
+      name: 'connect',
+      aliases: ['connection', 'connections'],
+      description: 'Manage parent and child role connections.',
+      usage: 'role connect <add|remove|list|clear> <parent-role> [child-role]',
+      examples: ['role connect add @Verified @Announcements', 'role connect list'],
+      premium: { scope: 'server', tier: 'base' }
+    },
+    {
+      name: 'restore',
+      aliases: ['cancel'],
+      description: 'Restore the most recent saved role snapshot.',
+      usage: 'role restore',
+      examples: ['role restore']
+    },
+    {
+      name: 'bots',
+      description: 'Bulk remove a role from bots.',
+      usage: 'role bots remove <role>',
+      examples: ['role bots remove Muted']
+    },
+    {
+      name: 'humans',
+      description: 'Bulk remove a role from human members.',
+      usage: 'role humans remove <role>',
+      examples: ['role humans remove Muted']
+    },
+    {
+      name: 'color',
+      description: 'Change a role color.',
+      usage: 'role color <role> <#hex>',
+      examples: ['role color Staff #ff3366']
+    },
+    {
+      name: 'hoist',
+      description: 'Toggle whether a role is shown separately.',
+      usage: 'role hoist <role> <true|false>',
+      examples: ['role hoist Staff true']
+    },
+    {
+      name: 'delete',
+      description: 'Delete a role and save a restore snapshot first.',
+      usage: 'role delete <role>',
+      examples: ['role delete OldRole']
+    },
+    {
+      name: 'info',
+      description: 'Show information about a role.',
+      usage: 'role info <role>',
+      examples: ['role info Staff']
+    },
+    {
+      name: 'icon',
+      description: 'Set, replace, or clear a role icon.',
+      usage: 'role icon <role> <url|emoji|attachment|clear>',
+      examples: ['role icon Booster clear', 'role icon Booster https://example.com/icon.png']
+    }
+  ],
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageRoles],
   botPermissions: [PermissionFlagsBits.ManageRoles],
