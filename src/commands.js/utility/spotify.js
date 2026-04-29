@@ -52,6 +52,18 @@ function formatEntity(type, item) {
   return null;
 }
 
+function failureText(payload, fallback) {
+  if (!payload) {
+    return fallback;
+  }
+
+  if (payload.detail) {
+    return `${payload.error || fallback}\n${payload.detail}`;
+  }
+
+  return payload.error || fallback;
+}
+
 function parsePrefixSpotify(args) {
   const sub = String(args.shift() || '').toLowerCase();
   const direct = new Set(['link', 'unlink', 'status', 'nowplaying', 'play', 'pause', 'resume', 'skip', 'previous', 'liked', 'recommendations', 'volume', 'shuffle', 'repeat', 'sync', 'autosync', 'follow', 'priority', 'resolve', 'cache', 'debug']);
@@ -162,12 +174,8 @@ module.exports = {
 
     if (parsed.command === 'link') {
       const payload = await musicService.linkSpotify(message.author.id);
-      if (!payload) {
-        return respond.reply(message, 'bad', 'I could not reach the Spotify link service right now.');
-      }
-
-      if (!payload.ok) {
-        return respond.reply(message, 'bad', payload.error || 'I could not start the Spotify link flow.');
+      if (!payload?.ok) {
+        return respond.reply(message, 'bad', failureText(payload, 'I could not reach the Spotify link service right now.'));
       }
 
       const components = payload.authorizeUrl
@@ -190,13 +198,15 @@ module.exports = {
 
     if (parsed.command === 'unlink') {
       const payload = await musicService.unlinkSpotify(message.author.id);
-      if (!payload) return respond.reply(message, 'bad', 'I could not reach the Spotify link service right now.');
+      if (!payload?.ok) {
+        return respond.reply(message, 'bad', failureText(payload, 'I could not reach the Spotify link service right now.'));
+      }
       return respond.reply(message, 'good', payload.ok ? 'Removed your Spotify link state.' : 'There was no Spotify link to remove.');
     }
 
     const payload = await musicService.runCommand(message.guild.id, parsed.command, buildMusicOptions(message, parsed));
-    if (!payload) {
-      return respond.reply(message, 'bad', 'I could not reach the music service right now.');
+    if (!payload?.ok) {
+      return respond.reply(message, 'bad', failureText(payload, 'I could not reach the music service right now.'));
     }
 
     return respond.reply(message, 'info', null, {

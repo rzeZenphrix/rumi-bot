@@ -143,7 +143,7 @@ function startApiServer(client) {
     const guildId = req.query.guildId;
     if (!guildId) return res.status(400).json({ ok: false, error: 'I need a guildId.' });
     const payload = await musicService.getState(guildId);
-    if (!payload) return res.status(503).json({ ok: false, error: 'I could not reach the music service.' });
+    if (!payload?.ok) return res.status(503).json(payload || { ok: false, error: 'I could not reach the music service.' });
     res.json(payload);
   });
 
@@ -154,7 +154,7 @@ function startApiServer(client) {
     const options = req.body?.options || {};
     if (!guildId || !command) return res.status(400).json({ ok: false, error: 'I need a guildId and command.' });
     const payload = await musicService.runCommand(guildId, command, options);
-    if (!payload) return res.status(503).json({ ok: false, error: 'I could not reach the music service.' });
+    if (!payload?.ok) return res.status(503).json(payload || { ok: false, error: 'I could not reach the music service.' });
     res.json(payload);
   });
 
@@ -163,7 +163,7 @@ function startApiServer(client) {
     const userId = req.body?.userId;
     if (!userId) return res.status(400).json({ ok: false, error: 'I need a userId.' });
     const payload = await musicService.linkSpotify(userId, req.body || {});
-    if (!payload) return res.status(503).json({ ok: false, error: 'I could not reach the music service.' });
+    if (!payload?.ok) return res.status(503).json(payload || { ok: false, error: 'I could not reach the music service.' });
     res.json(payload);
   });
 
@@ -172,7 +172,7 @@ function startApiServer(client) {
     const userId = req.body?.userId;
     if (!userId) return res.status(400).json({ ok: false, error: 'I need a userId.' });
     const payload = await musicService.unlinkSpotify(userId);
-    if (!payload) return res.status(503).json({ ok: false, error: 'I could not reach the music service.' });
+    if (!payload?.ok) return res.status(503).json(payload || { ok: false, error: 'I could not reach the music service.' });
     res.json(payload);
   });
 

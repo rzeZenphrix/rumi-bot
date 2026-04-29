@@ -1,4 +1,5 @@
 const DEFAULT_URL = 'http://127.0.0.1:3025';
+const DEFAULT_TIMEOUT_MS = Math.max(2000, Number(process.env.MUSIC_SERVICE_TIMEOUT_MS || 8000));
 
 function baseUrl() {
   return (process.env.RUMI_MUSIC_SERVICE_URL || DEFAULT_URL).replace(/\/+$/, '');
@@ -13,20 +14,45 @@ function headers() {
 }
 
 async function request(path, options = {}) {
+  const controller = new AbortController();
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   const response = await fetch(`${baseUrl()}${path}`, {
     ...options,
+    signal: controller.signal,
     headers: {
       ...headers(),
       ...(options.headers || {})
     }
-  }).catch(() => null);
+  }).catch((error) => ({ __networkError: error }));
 
-  if (!response) return null;
+  clearTimeout(timeout);
+
+  if (!response || response.__networkError) {
+    return {
+      ok: false,
+      code: 'music_service_unreachable',
+      error: 'I could not reach the embedded music service.',
+      detail: response?.__networkError?.name === 'AbortError'
+        ? `The embedded music service did not respond within ${timeoutMs}ms.`
+        : 'The embedded music service did not accept the connection.'
+    };
+  }
+
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    return payload || { ok: false, error: `Music service returned ${response.status}.` };
+    return payload || {
+      ok: false,
+      code: 'music_service_error',
+      error: `Music service returned ${response.status}.`
+    };
   }
   return payload;
+}
+
+async function health() {
+  return request('/health', { method: 'GET', timeoutMs: 5000 });
 }
 
 async function getState(guildId) {
@@ -63,6 +89,7 @@ async function unlinkSpotify(userId) {
 
 module.exports = {
   baseUrl,
+  health,
   getState,
   runCommand,
   linkSpotify,

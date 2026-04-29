@@ -59,6 +59,18 @@ function buildOptions(message, parsed) {
   return options;
 }
 
+function failureText(payload) {
+  if (!payload) {
+    return 'I could not reach the embedded music service right now.';
+  }
+
+  if (payload.detail) {
+    return `${payload.error || 'Music is unavailable right now.'}\n${payload.detail}`;
+  }
+
+  return payload.error || 'I could not reach the embedded music service right now.';
+}
+
 module.exports = {
   name: 'music',
   aliases: ['musicstatus'],
@@ -82,8 +94,8 @@ module.exports = {
       ? await musicService.getState(message.guild.id)
       : await musicService.runCommand(message.guild.id, parsed.command, buildOptions(message, parsed));
 
-    if (!payload) {
-      return respond.reply(message, 'bad', 'I could not reach the music service right now.');
+    if (!payload?.ok) {
+      return respond.reply(message, 'bad', failureText(payload));
     }
 
     return respond.reply(message, 'info', null, {
