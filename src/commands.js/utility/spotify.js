@@ -1,7 +1,7 @@
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const respond = require('../../utils/respond');
 const musicService = require('../../services/musicService');
 const spotifyClient = require('../../services/spotify/client');
-const { requireSharedPremium } = require('../../systems/monetization/access');
 const { isMusicReady, MUSIC_NOT_READY } = require('../../systems/runtime/featureGates');
 
 function compactNumber(value) {
@@ -140,12 +140,9 @@ module.exports = {
   description: 'Use Spotify search or proxy live Spotify/music service controls.',
   usage: 'spotify [link|unlink|status|play|queue|playlist|device|resolve|track|artist|album|playlist] ...',
   examples: ['spotify pink pony club', 'spotify play pink pony club', 'spotify queue add saturn', 'spotify resolve spotify:track:...', 'spotify device set desktop'],
-  premium: { scope: 'shared', tier: 'base' },
 
   async execute({ message, args }) {
     const parsed = parsePrefixSpotify([...args]);
-    const access = await requireSharedPremium(message, 'Spotify').catch(() => null);
-    if (!access) return null;
 
     if (!parsed.command && !parsed.query) {
       return respond.reply(message, 'info', 'Use `spotify <query>`, `spotify play <query>`, `spotify resolve <query>`, or `spotify device set <name>`.');
@@ -164,13 +161,31 @@ module.exports = {
     }
 
     if (parsed.command === 'link') {
-      const payload = await musicService.linkSpotify(message.author.id, {
-        spotifyUserId: `spotify-user-${message.author.id}`,
-        refreshToken: 'placeholder-refresh-token',
-        accessToken: 'placeholder-access-token'
+      const payload = await musicService.linkSpotify(message.author.id);
+      if (!payload) {
+        return respond.reply(message, 'bad', 'I could not reach the Spotify link service right now.');
+      }
+
+      if (!payload.ok) {
+        return respond.reply(message, 'bad', payload.error || 'I could not start the Spotify link flow.');
+      }
+
+      const components = payload.authorizeUrl
+        ? [
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setLabel('Open Spotify link')
+                .setStyle(ButtonStyle.Link)
+                .setURL(payload.authorizeUrl)
+            )
+          ]
+        : [];
+
+      return respond.reply(message, 'info', null, {
+        title: 'Spotify link',
+        description: payload.message || 'Open the link below to finish connecting your Spotify account.',
+        components
       });
-      if (!payload) return respond.reply(message, 'bad', 'I could not reach the Spotify link service right now.');
-      return respond.reply(message, 'good', `Spotify link state saved as \`${payload.linkedAs || 'linked'}\`.`);
     }
 
     if (parsed.command === 'unlink') {
@@ -187,7 +202,11 @@ module.exports = {
     return respond.reply(message, 'info', null, {
       mentionUser: false,
       title: payload.title || 'Spotify',
-      description: payload.description || 'The Spotify service returned an empty response.'
+      description: payload.description || 'The Spotify service returned an empty response.',
+      fields: Array.isArray(payload.fields) ? payload.fields : [],
+      thumbnail: payload.thumbnail || null,
+      footer: payload.footer ? { text: payload.footer } : undefined,
+      color: Number.isFinite(Number(payload.color)) ? Number(payload.color) : undefined
     });
   }
 };

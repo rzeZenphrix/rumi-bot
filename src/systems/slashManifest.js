@@ -100,16 +100,29 @@ const SUPPORTED_SLASH_COMMANDS = Object.freeze([
 
 const supportedSet = new Set(SUPPORTED_SLASH_COMMANDS);
 
+function musicSlashOwnedBySidecar() {
+  const raw = String(process.env.MUSIC_SLASH_OWNER || '').trim().toLowerCase();
+  return raw === 'sidecar' || raw === 'music-service' || raw === 'java';
+}
+
 function isSlashSupported(commandName) {
-  return supportedSet.has(String(commandName || '').toLowerCase());
+  const normalized = String(commandName || '').toLowerCase();
+  if (musicSlashOwnedBySidecar() && (normalized === 'music' || normalized === 'spotify')) {
+    return false;
+  }
+  return supportedSet.has(normalized);
 }
 
 function listSupportedSlashCommands() {
-  return [...SUPPORTED_SLASH_COMMANDS];
+  if (!musicSlashOwnedBySidecar()) {
+    return [...SUPPORTED_SLASH_COMMANDS];
+  }
+  return SUPPORTED_SLASH_COMMANDS.filter((name) => name !== 'music' && name !== 'spotify');
 }
 
 module.exports = {
   SUPPORTED_SLASH_COMMANDS,
+  musicSlashOwnedBySidecar,
   isSlashSupported,
   listSupportedSlashCommands
 };

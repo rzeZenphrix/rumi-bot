@@ -1,22 +1,38 @@
 services:
   - type: worker
     name: rumi-bot-worker
-    env: node
+    env: docker
+    rootDir: ..
+    dockerfilePath: ./rumi/Dockerfile.worker
     plan: starter
-    buildCommand: npm ci
-    startCommand: npm run start:worker
     autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      - key: LOG_LEVEL
+        value: info
       - key: BOT_MODE
         value: single
       - key: NO_SHARDS
         value: "true"
       - key: ENABLE_API
         value: "false"
-      - key: LOG_LEVEL
-        value: info
+      - key: MUSIC_READY
+        value: "true"
+      - key: MUSIC_SLASH_OWNER
+        value: sidecar
+      - key: RUMI_MUSIC_REGISTER_SLASH
+        value: "true"
+      - key: RUMI_MUSIC_LISTEN_SLASH
+        value: "true"
+      - key: RUMI_MUSIC_SERVICE_PORT
+        value: "3025"
+      - key: RUMI_MUSIC_SERVICE_URL
+        value: http://127.0.0.1:3025
+      - key: LAVALINK_URL
+        value: http://127.0.0.1:2333
+      - key: LAVALINK_PASSWORD
+        value: youshallnotpass
       - key: DISCORD_TOKEN
         sync: false
       - key: DISCORD_CLIENT_ID
@@ -45,10 +61,8 @@ services:
         sync: false
       - key: REMOVE_BG_API_KEY
         sync: false
-      - key: LAVALINK_URL
-        sync: false
-      - key: LAVALINK_PASSWORD
-        sync: false
+      - key: LAVALINK_RESUME_KEY
+        value: rumi-music
       - key: RUMI_DASHBOARD_BACKEND_URL
         value: https://rumi.rocks
       - key: DASHBOARD_URL

@@ -14,7 +14,15 @@ function isDashboardReady() {
 }
 
 function isMusicReady() {
-  return envFlag('MUSIC_READY', false);
+  const explicit = String(process.env.MUSIC_READY ?? '').trim().toLowerCase();
+  if (explicit) {
+    return envFlag('MUSIC_READY', false);
+  }
+
+  return Boolean(
+    String(process.env.RUMI_MUSIC_SERVICE_URL || '').trim() ||
+    envFlag('MUSIC_SIDECAR_ENABLED', false)
+  );
 }
 
 function dashboardNotReadyPayload() {

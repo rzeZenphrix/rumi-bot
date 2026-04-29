@@ -7,11 +7,16 @@ const { handleSlashCommandInteraction } = require('../../systems/slashCommands')
 const { handlePagedMessageInteraction } = require('../../utils/pagedMessages');
 const minesCommand = require('../../commands.js/fun/mines');
 const tictactoeCommand = require('../../commands.js/fun/tictactoe');
+const { musicSlashOwnedBySidecar } = require('../../systems/slashManifest');
 
 module.exports = {
   name: Events.InteractionCreate,
   async execute(_client, interaction) {
     if (interaction.isChatInputCommand?.()) {
+      if (musicSlashOwnedBySidecar() && ['music', 'spotify'].includes(interaction.commandName)) {
+        return;
+      }
+
       if (await handleSlashCommandInteraction(interaction).catch(() => false)) {
         return;
       }

@@ -1,6 +1,5 @@
 const respond = require('../../utils/respond');
 const musicService = require('../../services/musicService');
-const { requireSharedPremium } = require('../../systems/monetization/access');
 const { isMusicReady, MUSIC_NOT_READY } = require('../../systems/runtime/featureGates');
 
 function parseMusicCommand(args) {
@@ -68,16 +67,12 @@ module.exports = {
   usage: 'music [status|play|queue|skip|pause|resume|stop|leave|volume|seek|loop|shuffle|remove|move|clear|history|stats|lyrics|autoplay|filter|panel|export|import|settings]',
   examples: ['music', 'music play pink pony club', 'music queue', 'music loop track', 'music settings volume 80'],
   guildOnly: true,
-  premium: { scope: 'shared', tier: 'base' },
 
   async execute({ message, args }) {
     const parsed = parseMusicCommand([...args]);
     if (!parsed.command || parsed.options.query === '') {
       return respond.reply(message, 'info', 'Use `music play <query>`, `music queue`, `music skip`, `music panel`, or `music settings ...`.');
     }
-
-    const access = await requireSharedPremium(message, 'Music').catch(() => null);
-    if (!access) return null;
 
     if (!isMusicReady()) {
       return respond.reply(message, 'info', MUSIC_NOT_READY);
@@ -94,7 +89,11 @@ module.exports = {
     return respond.reply(message, 'info', null, {
       mentionUser: false,
       title: payload.title || 'Music',
-      description: payload.description || 'The music service returned an empty response.'
+      description: payload.description || 'The music service returned an empty response.',
+      fields: Array.isArray(payload.fields) ? payload.fields : [],
+      thumbnail: payload.thumbnail || null,
+      footer: payload.footer ? { text: payload.footer } : undefined,
+      color: Number.isFinite(Number(payload.color)) ? Number(payload.color) : undefined
     });
   }
 };

@@ -33,6 +33,35 @@ async function resolveTarget(guild, input) {
   return null;
 }
 
+function shortenId(id) {
+  const value = String(id || '');
+  return value.length <= 10 ? value : value.slice(0, 8);
+}
+
+function resolveEntryReference(entries, input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+
+  if (/^\d+$/.test(raw)) {
+    const index = Number(raw);
+    if (index >= 1 && index <= entries.length) {
+      return entries[index - 1];
+    }
+  }
+
+  const lowered = raw.toLowerCase();
+  const exactId = entries.find((entry) => String(entry.id) === raw);
+  if (exactId) return exactId;
+
+  const prefixMatches = entries.filter((entry) => String(entry.id || '').toLowerCase().startsWith(lowered));
+  if (prefixMatches.length === 1) return prefixMatches[0];
+
+  const exactTrigger = entries.find((entry) => String(entry.trigger_text || '').toLowerCase() === lowered);
+  if (exactTrigger) return exactTrigger;
+
+  return null;
+}
+
 module.exports = {
   name: 'autoreaction',
   aliases: ['autorea', 'autoreact'],
@@ -41,7 +70,7 @@ module.exports = {
   usage: 'autoreaction <add|list|remove|exclusive> ...',
   examples: [
     'autoreaction add "good morning" ☀️ ❤️ --startswith',
-    'autoreaction exclusive set <id> #general'
+    'autoreaction exclusive set 1 #general'
   ],
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageGuild],
@@ -84,19 +113,19 @@ module.exports = {
         created_by: message.author.id
       });
 
-      return respond.reply(message, 'good', `Saved autoreaction \`${saved.id}\`.`);
+      return respond.reply(message, 'good', `Saved autoreaction \`#${entries.length + 1}\` (\`${shortenId(saved.id)}\`).`);
     }
 
     if (action === 'list' || action === 'view') {
       const entries = await listAutoreactions(message.guild.id).catch(() => []);
       const description = entries.length
         ? entries
-            .map((entry) => {
+            .map((entry, index) => {
               const flags = [
                 entry.match_mode,
                 entry.within_seconds ? `within ${entry.within_seconds}s` : null
               ].filter(Boolean).join(' | ');
-              return `**${entry.id}**\nTrigger: \`${entry.trigger_text}\`\nReactions: ${(entry.reactions_json || []).join(' ')}\nMode: ${flags}`;
+              return `**#${index + 1}** \`${shortenId(entry.id)}\`\nTrigger: \`${entry.trigger_text}\`\nReactions: ${(entry.reactions_json || []).join(' ')}\nMode: ${flags}`;
             })
             .join('\n\n')
             .slice(0, 4096)
@@ -111,22 +140,37 @@ module.exports = {
     }
 
     if (action === 'remove' || action === 'delete') {
-      const entryId = String(args.shift() || '').trim();
-      if (!entryId) {
-        return respond.reply(message, 'info', 'Use `autoreaction remove <id>`.', { mentionUser: false });
+      const entryRef = String(args.shift() || '').trim();
+      if (!entryRef) {
+        return respond.reply(message, 'info', 'Use `autoreaction remove <slot|id|trigger>`.', { mentionUser: false });
       }
-      await removeAutoreaction(message.guild.id, entryId).catch(() => null);
-      return respond.reply(message, 'good', `Removed autoreaction \`${entryId}\`.`);
+      const entries = await listAutoreactions(message.guild.id).catch(() => []);
+      const entry = resolveEntryReference(entries, entryRef);
+      if (!entry) {
+        return respond.reply(message, 'bad', 'That autoreaction reference could not be found.');
+      }
+      await removeAutoreaction(message.guild.id, entry.id).catch(() => null);
+      return respond.reply(message, 'good', `Removed autoreaction \`#${entries.indexOf(entry) + 1}\` (\`${shortenId(entry.id)}\`).`);
     }
 
     if (action === 'exclusive') {
       const sub = String(args.shift() || 'list').toLowerCase();
 
       if (sub === 'list' || sub === 'view') {
-        const entryId = String(args.shift() || '').trim();
-        const exclusives = await listAutoreactionExclusives(message.guild.id, entryId || null).catch(() => []);
+        const entryRef = String(args.shift() || '').trim();
+        const entries = await listAutoreactions(message.guild.id).catch(() => []);
+        const entry = entryRef ? resolveEntryReference(entries, entryRef) : null;
+        if (entryRef && !entry) {
+          return respond.reply(message, 'bad', 'That autoreaction reference could not be found.');
+        }
+
+        const exclusives = await listAutoreactionExclusives(message.guild.id, entry?.id || null).catch(() => []);
         const description = exclusives.length
-          ? exclusives.map((entry) => `**${entry.autoreaction_id}** - ${entry.target_type}: \`${entry.target_id}\``).join('\n')
+          ? exclusives.map((exclusive) => {
+            const owner = entries.find((item) => item.id === exclusive.autoreaction_id);
+            const slot = owner ? `#${entries.indexOf(owner) + 1}` : shortenId(exclusive.autoreaction_id);
+            return `**${slot}** - ${exclusive.target_type}: \`${exclusive.target_id}\``;
+          }).join('\n')
           : 'No autoreaction exclusives are configured.';
         return respond.reply(message, 'info', null, {
           allowTitle: true,
@@ -136,27 +180,31 @@ module.exports = {
         });
       }
 
-      const entryId = String(args.shift() || '').trim();
-      const entry = await getAutoreaction(message.guild.id, entryId).catch(() => null);
+      const entryRef = String(args.shift() || '').trim();
+      const entries = await listAutoreactions(message.guild.id).catch(() => []);
+      const resolved = resolveEntryReference(entries, entryRef);
+      const entry = resolved
+        ? await getAutoreaction(message.guild.id, resolved.id).catch(() => null)
+        : null;
       if (!entry) {
-        return respond.reply(message, 'bad', 'That autoreaction ID could not be found.');
+        return respond.reply(message, 'bad', 'That autoreaction reference could not be found.');
       }
 
       const target = await resolveTarget(message.guild, args.join(' '));
       if (!target) {
-        return respond.reply(message, 'info', 'Use `autoreaction exclusive <set|remove> <id> <role|channel|user>`.', {
+        return respond.reply(message, 'info', 'Use `autoreaction exclusive <set|remove> <slot|id|trigger> <role|channel|user>`.', {
           mentionUser: false
         });
       }
 
       if (sub === 'set' || sub === 'add') {
         await addAutoreactionExclusive(message.guild.id, entry.id, target.type, target.id);
-        return respond.reply(message, 'good', `Added an exclusive ${target.type} target for \`${entry.id}\`: ${target.label}`);
+        return respond.reply(message, 'good', `Added an exclusive ${target.type} target for \`#${entries.indexOf(resolved) + 1}\`: ${target.label}`);
       }
 
       if (sub === 'remove' || sub === 'delete') {
         await removeAutoreactionExclusive(message.guild.id, entry.id, target.type, target.id).catch(() => null);
-        return respond.reply(message, 'good', `Removed the exclusive ${target.type} target for \`${entry.id}\`.`);
+        return respond.reply(message, 'good', `Removed the exclusive ${target.type} target for \`#${entries.indexOf(resolved) + 1}\`.`);
       }
     }
 
