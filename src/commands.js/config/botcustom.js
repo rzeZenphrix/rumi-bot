@@ -53,14 +53,7 @@ module.exports = {
   aliases: ['custom'],
   category: 'config',
   description: 'Customize Rumi replies, profile styling, and webhook response mode for this server.',
-  usage:
-  ```customize view
-     customize mode
-     customize color
-     customize emoji
-     customize profile
-     customize reset
-  ```,
+  usage: 'customize <view|mode|color|emoji|profile|reset>',
   examples: [
     'customize view',
     'customize mode webhook',

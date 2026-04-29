@@ -1,8 +1,8 @@
 FROM maven:3.9.9-eclipse-temurin-17 AS music-builder
 WORKDIR /build/music
 
-COPY rumi/rumi-music-service/pom.xml ./
-COPY rumi/rumi-music-service/src ./src
+COPY rumi-music-service/pom.xml ./
+COPY rumi-music-service/src ./src
 
 RUN mvn -q -DskipTests package
 
@@ -16,10 +16,10 @@ WORKDIR /app
 
 ARG LAVALINK_VERSION=4.1.2
 
-COPY rumi/package*.json ./
+COPY package*.json ./
 RUN npm install
 
-COPY rumi ./
+COPY . ./
 COPY --from=music-builder /build/music/target/rumi-music-service-0.1.0-jar-with-dependencies.jar /app/music/rumi-music-service-0.1.0-jar-with-dependencies.jar
 
 RUN mkdir -p /app/lavalink \
@@ -28,4 +28,4 @@ RUN mkdir -p /app/lavalink \
 
 RUN chmod +x /app/scripts/start-worker.sh
 
-CMD ["/app/scripts/start-worker.sh"]
+CMD ["/bin/sh", "/app/scripts/start-worker.sh"]
