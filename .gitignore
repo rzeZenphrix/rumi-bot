@@ -4,7 +4,6 @@ node_modules/
 docs/
 data/
 supabase/
-scripts/
 .env.example
 feature.txt
 package.patch.json
