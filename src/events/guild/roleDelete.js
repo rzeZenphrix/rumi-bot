@@ -1,9 +1,11 @@
 const { handleNukeAction, AuditLogEvent } = require('../../systems/antinuke/guard');
 const { sendLog } = require('../../systems/logging/logDispatcher');
+const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
 
 module.exports = {
   name: 'roleDelete',
   async execute(_client, role) {
+    await recordVersionSnapshot(role.guild, `Role deleted: ${role.name}`, 'role_delete').catch(() => null);
     await sendLog(role.guild, 'roleDelete', {
       title: 'Role deleted',
       description: `Role **${role.name}** was deleted.`,

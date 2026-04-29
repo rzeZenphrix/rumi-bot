@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
 const { diffField, compactFields } = require('../../utils/logFields');
+const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
 
 module.exports = {
   name: Events.GuildRoleUpdate || 'roleUpdate',
@@ -16,6 +17,7 @@ module.exports = {
 
     if (fields.length <= 1) return;
 
+    await recordVersionSnapshot(newRole.guild, `Role updated: ${newRole.name}`, 'role_update').catch(() => null);
     await sendLog(newRole.guild, 'roleUpdate', {
       title: 'Role updated',
       description: `${newRole} was updated.`,

@@ -1,10 +1,13 @@
 const { handleNukeAction, AuditLogEvent } = require('../../systems/antinuke/guard');
 const { sendLog } = require('../../systems/logging/logDispatcher');
+const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
 
 module.exports = {
   name: 'channelDelete',
   async execute(_client, channel) {
     if (!channel.guild) return;
+
+    await recordVersionSnapshot(channel.guild, `Channel deleted: ${channel.name || channel.id}`, 'channel_delete').catch(() => null);
 
     await sendLog(channel.guild, 'channelDelete', {
       title: 'Channel deleted',

@@ -315,3 +315,8 @@ module.exports = {
     return confirmation;
   }
 };
+
+module.exports.parsePurgeArgs = parsePurgeArgs;
+module.exports.collectMessages = collectMessages;
+module.exports.buildTranscript = buildTranscript;
+module.exports.collectAttachmentFiles = collectAttachmentFiles;

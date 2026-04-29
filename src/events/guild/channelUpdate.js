@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
 const { diffField, compactFields } = require('../../utils/logFields');
+const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
 
 module.exports = {
   name: Events.ChannelUpdate || 'channelUpdate',
@@ -17,6 +18,7 @@ module.exports = {
 
     if (fields.length <= 1) return;
 
+    await recordVersionSnapshot(newChannel.guild, `Channel updated: ${newChannel.name}`, 'channel_update').catch(() => null);
     await sendLog(newChannel.guild, 'channelUpdate', {
       title: 'Channel updated',
       description: `${newChannel} was updated.`,

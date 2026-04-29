@@ -57,11 +57,20 @@ async function findRoleForReaction(guildId, messageId, emoji) {
   return guild.messages?.[messageId]?.items?.[emojiKey(emoji)] || null;
 }
 
+async function countReactionRoleLinks(guildId) {
+  const guild = await getGuild(guildId);
+  return Object.values(guild.messages || {}).reduce(
+    (total, entry) => total + Object.keys(entry.items || {}).length,
+    0
+  );
+}
+
 module.exports = {
   emojiKey,
   getGuild,
   addReactionRole,
   removeReactionRole,
   clearReactionRoles,
-  findRoleForReaction
+  findRoleForReaction,
+  countReactionRoleLinks
 };

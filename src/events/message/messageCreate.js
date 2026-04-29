@@ -4,6 +4,8 @@ const { handlePrefixCommand } = require('../../systems/prefix/commandHandler');
 const { handleMessageCreate } = require('../../systems/automod/filters');
 const { incrementFromContent } = require('../../systems/counters/wordCounter');
 const { handleLevelXp } = require('../../systems/levels/levelEngine');
+const { clearAfkForMessage, handleAfkMentions } = require('../../systems/afk/manager');
+const { handleMessageAutomation } = require('../../systems/automation/messageAutomation');
 
 module.exports = {
   name: Events.MessageCreate,
@@ -29,6 +31,7 @@ module.exports = {
 
     await handleLevelXp(client, message).catch(() => null);
     await incrementFromContent(message.author.id, message.content).catch(() => null);
+    await clearAfkForMessage(message).catch(() => null);
 
     try {
       const handledCommand = await handlePrefixCommand(client, message);
@@ -59,5 +62,8 @@ module.exports = {
         'Automod pipeline failed'
       );
     }
+
+    await handleMessageAutomation(message).catch(() => null);
+    await handleAfkMentions(message).catch(() => null);
   }
 };

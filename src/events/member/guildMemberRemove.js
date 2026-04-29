@@ -1,9 +1,11 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
+const { cleanupBoosterRoles } = require('../../systems/boosterroles/store');
 
 module.exports = {
   name: Events.GuildMemberRemove,
   async execute(_client, member) {
+    await cleanupBoosterRoles(member.guild, { automatic: true }).catch(() => null);
     await sendLog(member.guild, 'memberLeave', {
       title: 'Member left',
       description: `${member.user.tag || member.id} left the server.`,

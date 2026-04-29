@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
 const { diffField, compactFields } = require('../../utils/logFields');
+const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
 
 module.exports = {
   name: Events.GuildUpdate,
@@ -15,6 +16,7 @@ module.exports = {
 
     if (fields.length <= 1) return;
 
+    await recordVersionSnapshot(newGuild, 'Guild settings updated', 'guild_update').catch(() => null);
     await sendLog(newGuild, 'guildUpdate', {
       title: 'Server updated',
       description: 'Server settings changed.',

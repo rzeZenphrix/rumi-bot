@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const logger = require('../../systems/logging/logger');
 const { protectNewChannel } = require('../../systems/jail/setupManager');
 const { sendLog } = require('../../systems/logging/logDispatcher');
+const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
 
 module.exports = {
   name: Events.ChannelCreate,
@@ -14,6 +15,7 @@ module.exports = {
     }
 
     if (!channel.guild) return;
+    await recordVersionSnapshot(channel.guild, `Channel created: ${channel.name}`, 'channel_create').catch(() => null);
 
     await sendLog(channel.guild, 'channelCreate', {
       title: 'Channel created',

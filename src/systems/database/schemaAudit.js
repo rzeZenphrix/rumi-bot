@@ -8,6 +8,18 @@ const FEATURE_TABLES = Object.freeze({
   economy: ['economy_accounts', 'economy_transactions', 'economy_guild_settings'],
   social: ['social_profiles'],
   fun: ['fun_prompt_entries'],
+  automation: [
+    'booster_role_settings',
+    'booster_owned_roles',
+    'booster_role_shares',
+    'boost_reward_roles',
+    'autoresponders',
+    'autoresponder_exclusives',
+    'autoreactions',
+    'autoreaction_exclusives',
+    'afk_states',
+    'afk_ping_logs'
+  ],
   tickets: [
     'ticket_panels',
     'ticket_types',
@@ -25,6 +37,11 @@ const FEATURE_TABLES = Object.freeze({
     'premium_order_events',
     'premium_entitlements',
     'premium_redemption_codes'
+  ],
+  serverdata: [
+    'server_snapshots',
+    'server_restore_jobs',
+    'trust_nobody_settings'
   ]
 });
 

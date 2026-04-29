@@ -7,6 +7,7 @@ const logger = require('../logging/logger');
 const { probeFakePermission } = require('../permissions/fakePermissions');
 const { getProtectionSettings, isSecuritySystemEnabled } = require('../security/protectionConfig');
 const { manageabilityState, moderatabilityState } = require('../../utils/permissions');
+const { getTrustNobodySettings } = require('../security/trustNobody');
 
 const buckets = new Map();
 
@@ -57,7 +58,6 @@ async function stripDangerousRoles(member) {
 
 async function punish(guild, actor, config, eventType, count) {
   if (!actor || actor.bot || actor.id === guild.ownerId || actor.id === guild.client.user.id) return;
-  if (config.whitelist.includes(actor.id)) return;
 
   const member = await guild.members.fetch(actor.id).catch(() => null);
   if (!member) return;
@@ -108,16 +108,21 @@ async function handleNukeAction(guild, auditType, eventType, targetId) {
 
   const actor = await fetchActor(guild, auditType, targetId);
   if (!actor || actor.bot) return;
-  if (protection.antinuke.whitelist.includes(actor.id)) return;
-  if (await db.isWhitelisted(guild.id, actor.id).catch(() => false)) return;
+  const trustNobody = await getTrustNobodySettings(guild.id).catch(() => ({ enabled: false }));
+  const locallyTrusted = protection.antinuke.whitelist.includes(actor.id);
+  const globallyTrusted = await db.isWhitelisted(guild.id, actor.id).catch(() => false);
 
   const member = await guild.members.fetch(actor.id).catch(() => null);
+  let fakeBypass = false;
   if (member) {
     const specificBypass = await probeFakePermission(guild.id, member, 'RumiBypassAntinuke');
     const generalBypass = await probeFakePermission(guild.id, member, 'RumiBypass');
     if (!specificBypass.ok || !generalBypass.ok) return;
-    if (specificBypass.value || generalBypass.value) return;
+    fakeBypass = Boolean(specificBypass.value || generalBypass.value);
   }
+
+  const trusted = locallyTrusted || globallyTrusted || fakeBypass;
+  if (trusted && !trustNobody.enabled) return;
 
   const count = recordAction(
     guild.id,
@@ -127,6 +132,7 @@ async function handleNukeAction(guild, auditType, eventType, targetId) {
   );
 
   if (count < threshold) return;
+  if (trusted && trustNobody.enabled && count < Math.ceil(threshold * 1.7)) return;
 
   await logSecurityEvent({
     guildId: guild.id,
@@ -136,7 +142,8 @@ async function handleNukeAction(guild, auditType, eventType, targetId) {
     metadata: {
       trigger: eventType,
       count,
-      targetId
+      targetId,
+      trustNobodyOverride: trusted && trustNobody.enabled
     }
   }).catch(() => null);
 

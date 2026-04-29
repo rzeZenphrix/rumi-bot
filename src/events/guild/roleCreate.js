@@ -1,9 +1,11 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
+const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
 
 module.exports = {
   name: Events.GuildRoleCreate || 'roleCreate',
   async execute(_client, role) {
+    await recordVersionSnapshot(role.guild, `Role created: ${role.name}`, 'role_create').catch(() => null);
     await sendLog(role.guild, 'roleCreate', {
       title: 'Role created',
       description: `${role} was created.`,
