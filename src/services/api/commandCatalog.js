@@ -1,6 +1,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { DEFAULT_PREFIX } = require('../../systems/prefix/prefixManager');
 const { isSlashSupported } = require('../../systems/slashManifest');
+const { buildMusicAliasEntries } = require('../../systems/music/musicAliases');
 
 const PERMISSION_LABELS = {
   AddReactions: 'Add Reactions',
@@ -225,6 +226,7 @@ function getCommandCatalog(client, prefix = DEFAULT_PREFIX) {
       const { subcommands, ...base } = command;
       return [base, ...(subcommands || [])];
     })
+    .concat(buildMusicAliasEntries(prefix))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   return {

@@ -6,6 +6,7 @@ const { incrementFromContent } = require('../../systems/counters/wordCounter');
 const { handleLevelXp } = require('../../systems/levels/levelEngine');
 const { clearAfkForMessage, handleAfkMentions } = require('../../systems/afk/manager');
 const { handleMessageAutomation } = require('../../systems/automation/messageAutomation');
+const { recordMessage } = require('../../systems/analytics/serverAnalytics');
 
 module.exports = {
   name: Events.MessageCreate,
@@ -31,6 +32,7 @@ module.exports = {
 
     await handleLevelXp(client, message).catch(() => null);
     await incrementFromContent(message.author.id, message.content).catch(() => null);
+    await recordMessage(message.guild.id).catch(() => null);
     await clearAfkForMessage(message).catch(() => null);
 
     try {

@@ -16,3 +16,4 @@ package-lock.json
 hs_err_pid*.log
 replay_pid*.log
 .github/java-upgrade/**/*.log
+.env.render.example

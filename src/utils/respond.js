@@ -57,12 +57,15 @@ function makeEmbed(type, user, action, options = {}) {
     null;
 
   const theme = getTheme(guildId, type);
+  const customization = guildId ? getGuildCustomization(guildId) : null;
+  const replyEmbed = customization?.replyEmbed || {};
 
   const embed = new EmbedBuilder()
     .setColor(options.color || theme.color);
 
-  if (options.allowTitle === true && options.title) {
-    embed.setTitle(String(options.title).slice(0, 256));
+  const resolvedTitle = options.title || replyEmbed.title;
+  if (options.allowTitle !== false && resolvedTitle) {
+    embed.setTitle(String(resolvedTitle).slice(0, 256));
   }
 
   const description = buildDescription({
@@ -82,9 +85,22 @@ function makeEmbed(type, user, action, options = {}) {
   }
 
   if (options.author) embed.setAuthor(options.author);
-  if (options.thumbnail) embed.setThumbnail(options.thumbnail);
-  if (options.image) embed.setImage(options.image);
-  if (options.footer) embed.setFooter(options.footer);
+
+  const resolvedThumbnail = options.thumbnail || replyEmbed.thumbnailUrl || replyEmbed.thumbnail_url;
+  if (resolvedThumbnail) embed.setThumbnail(resolvedThumbnail);
+
+  const resolvedImage = options.image || replyEmbed.imageUrl || replyEmbed.image_url;
+  if (resolvedImage) embed.setImage(resolvedImage);
+
+  const resolvedFooter =
+    options.footer ||
+    (replyEmbed.footerText || replyEmbed.footer_text
+      ? {
+          text: String(replyEmbed.footerText || replyEmbed.footer_text).slice(0, 2048),
+          iconURL: replyEmbed.footerIconUrl || replyEmbed.footer_icon_url || undefined
+        }
+      : null);
+  if (resolvedFooter) embed.setFooter(resolvedFooter);
 
   return embed;
 }

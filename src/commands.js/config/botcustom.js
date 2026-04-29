@@ -53,7 +53,14 @@ module.exports = {
   aliases: ['custom'],
   category: 'config',
   description: 'Customize Rumi replies, profile styling, and webhook response mode for this server.',
-  usage: 'customize <view|mode|color|emoji|profile|reset> ...',
+  usage:
+  ```customize view
+     customize mode
+     customize color
+     customize emoji
+     customize profile
+     customize reset
+  ```,
   examples: [
     'customize view',
     'customize mode webhook',
@@ -91,7 +98,7 @@ module.exports = {
     if (sub === 'mode') {
       const mode = (args.shift() || '').toLowerCase();
       if (!['bot', 'webhook'].includes(mode)) {
-        return respond.reply(message, 'info', 'Use `customize mode <bot|webhook>`.');
+        return respond.reply(message, 'info', 'Use\n`customize mode bot\ncustomize mode webhook`.');
       }
 
       await setGuildCustomization(message.guild.id, (config) => {

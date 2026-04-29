@@ -185,13 +185,15 @@ function buildMainPayload({ author, prefix, ownerId, page, categories }) {
     author,
     description: [
       `**${emojis.ai} Rumi Help**`,
-      'Use the dashboard or docs for the full command browser.',
+      'Use the dashboard for the full command browser.',
       '',
       'Docs are still under construction, so the dashboard is the better index right now.',
       '',
+      '```',
       `Command details: ${prefix}help <command>`,
       `Subcommand details: ${prefix}help <command> <subcommand>`,
       `Paged command browser: ${prefix}help <category> [page]`,
+      '```',
       '',
       result.slice.join(' • ')
     ].join('\n'),

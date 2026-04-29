@@ -6,6 +6,8 @@ const db = require('../../services/database');
 const { checkCooldown, setCooldown, formatRemaining } = require('../cooldowns/cooldownManager.js');
 const { PermissionFlagsBits } = require('discord.js');
 const { runCustomCommand } = require('../customcommands/runner');
+const { isDirectMusicCommand } = require('../music/musicAliases');
+const { getDisabledCommands, isProtectedCommand, isCommandDisabled } = require('../commands/disabledCommands');
 
 function permissionLabel(permission) {
   const match = Object.entries(PermissionFlagsBits).find(([, value]) => value === permission);
@@ -113,7 +115,12 @@ async function handlePrefixCommand(client, message) {
 
   if (!commandName) return false;
 
-  const command = client.commands.get(commandName);
+  let command = client.commands.get(commandName);
+
+  if (!command && isDirectMusicCommand(commandName)) {
+    command = client.commands.get('music');
+    args.unshift(commandName);
+  }
 
   if (!command) {
     const custom = await runCustomCommand({ message, commandName });
@@ -134,6 +141,21 @@ async function handlePrefixCommand(client, message) {
   if (command.guildOnly && !message.guild) {
     await safeReply(message, 'bad', 'That command only works inside a server.');
     return true;
+  }
+
+  if (message.guild && !isBotOwner(message.author.id) && !isProtectedCommand(command.name)) {
+    const disabled = await getDisabledCommands(message.guild.id).catch(() => ({}));
+    const attemptedSubcommand = args[0] && Array.isArray(command.subcommands)
+      ? command.subcommands.find((sub) => {
+          const aliases = Array.isArray(sub.aliases) ? sub.aliases : [];
+          return [sub.name, ...aliases].map((value) => String(value || '').toLowerCase()).includes(String(args[0]).toLowerCase());
+        })?.name || null
+      : null;
+
+    if (isCommandDisabled(disabled, command.name, attemptedSubcommand)) {
+      await safeReply(message, 'alert', `\`${attemptedSubcommand ? `${command.name} ${attemptedSubcommand}` : command.name}\` is disabled in this server right now.`);
+      return true;
+    }
   }
 
   if (message.guild && command.permissions?.length && !isBotOwner(message.author.id)) {

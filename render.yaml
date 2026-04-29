@@ -69,3 +69,7 @@ services:
         value: https://rumi.rocks
       - key: DASHBOARD_PUBLIC_URL
         value: https://rumi.rocks
+      - key: DASHBOARD_FRONTEND_URL
+        value: https://rumi.rocks/studio
+      - key: STUDIO_URL
+        value: https://rumi.rocks/studio

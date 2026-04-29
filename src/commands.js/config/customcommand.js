@@ -11,17 +11,17 @@ module.exports = {
   category: 'config',
   description: 'Manage custom commands powered by embed scripts.',
   usage: 'cc <add|remove|list> ...',
-  examples: ['cc add rules {embed}$v{description: Read the rules}', 'cc remove rules', 'cc list'],
+  examples: ['cc add rules {embed}$v{description: Read the #rules}', 'cc remove rules', 'cc list'],
   subcommands: [
     {
       name: 'add',
       description: 'Create or update a custom command.',
-      usage: 'add <name> <script>'
+      usage: 'add name script'
     },
     {
       name: 'remove',
       description: 'Remove a custom command.',
-      usage: 'remove <name>'
+      usage: 'remove name'
     },
     {
       name: 'list',
@@ -58,7 +58,7 @@ module.exports = {
 
     if (sub === 'remove' || sub === 'delete') {
       const name = normalizeName(args.shift());
-      if (!name) return respond.reply(message, 'info', 'Use `cc remove <name>`.');
+      if (!name) return respond.reply(message, 'info', 'Use `cc remove name`.');
 
       const removed = await db.deleteCustomCommand(message.guild.id, name).catch(() => null);
       if (!removed) {
@@ -69,19 +69,19 @@ module.exports = {
         );
       }
 
-      return respond.reply(message, 'good', `I removed the custom command \`${name}\`.`);
+      return respond.reply(message, 'good', `I removed the custom command **\`${name}\`**.`);
     }
 
     if (sub === 'add' || sub === 'set') {
       const name = normalizeName(args.shift());
       const script = args.join(' ').trim();
-      if (!name || !script) return respond.reply(message, 'info', 'Use `cc add <name> <embed script or message>`.');
+      if (!name || !script) return respond.reply(message, 'info', 'Use `cc add name [embed script or message]`.');
 
       if (message.client?.commands?.has(name)) {
         return respond.reply(
           message,
           'bad',
-          `I cannot save \`${name}\` because it conflicts with a built-in command or alias.`
+          `I cannot save **\`${name}\`** because it conflicts with a built-in command or alias.`
         );
       }
 
@@ -116,7 +116,7 @@ module.exports = {
         );
       }
 
-      return respond.reply(message, 'good', `I saved custom command \`${name}\`.`);
+      return respond.reply(message, 'good', `I saved custom command **\`${name}\`**.`);
     }
 
     return respond.reply(message, 'info', 'Use `cc add`, `cc remove`, or `cc list`.');

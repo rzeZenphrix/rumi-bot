@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
+const { handleVoiceStateTransition } = require('../../systems/analytics/serverAnalytics');
 
 module.exports = {
   name: Events.VoiceStateUpdate || 'voiceStateUpdate',
@@ -7,6 +8,8 @@ module.exports = {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
     if (!guild || !member) return;
+
+    await handleVoiceStateTransition(oldState, newState).catch(() => null);
 
     const oldChannel = oldState.channelId;
     const newChannel = newState.channelId;

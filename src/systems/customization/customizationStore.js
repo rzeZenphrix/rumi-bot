@@ -52,6 +52,13 @@ function defaultGuildCustomization() {
     replyMode: 'bot',
     replyColors: { ...DEFAULT_REPLY_COLORS },
     replyEmojis: { ...DEFAULT_REPLY_EMOJIS },
+    replyEmbed: {
+      title: null,
+      footerText: null,
+      footerIconUrl: null,
+      thumbnailUrl: null,
+      imageUrl: null
+    },
     botProfile: {
       nickname: null,
       avatarUrl: null,
@@ -77,6 +84,10 @@ function normalizeGuild(config = {}) {
     replyEmojis: {
       ...base.replyEmojis,
       ...(config.replyEmojis || {})
+    },
+    replyEmbed: {
+      ...base.replyEmbed,
+      ...(config.replyEmbed || {})
     },
     botProfile: {
       ...base.botProfile,

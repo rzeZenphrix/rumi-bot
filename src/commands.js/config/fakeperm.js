@@ -117,7 +117,7 @@ module.exports = {
     const permission = permissionFromName(args.shift());
 
     if (!subject || !permission) {
-      return respond.reply(message, 'info', `Use \`fakeperm ${sub} <@user|@role> <permission>\`.`);
+      return respond.reply(message, 'info', `You can use:\n\`fakeperm ${sub} @member permission\`\n\`fakeperm ${sub} @user permission\`.`);
     }
 
     if (sub === 'grant') {
@@ -133,7 +133,7 @@ module.exports = {
         return respond.reply(message, 'bad', 'I could not save that fake permission because the database is currently unreachable.');
       }
 
-      return respond.reply(message, 'good', `I granted fake permission \`${permission}\`.`);
+      return respond.reply(message, 'good', 'I granted fake permission **\`${permission}\`**.');
     }
 
     const removed = await db.removeFakePermission(message.guild.id, subject.subject_type, subject.subject_id, permission.toString()).catch(() => null);
@@ -141,6 +141,6 @@ module.exports = {
       return respond.reply(message, 'bad', 'I could not revoke that fake permission because the database is currently unreachable.');
     }
 
-    return respond.reply(message, 'good', `I revoked fake permission \`${permission}\`.`);
+    return respond.reply(message, 'good', 'I revoked fake permission **\`${permission}\`**.');
   }
 };
