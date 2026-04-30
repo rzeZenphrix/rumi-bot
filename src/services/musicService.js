@@ -30,13 +30,14 @@ async function request(path, options = {}) {
   clearTimeout(timeout);
 
   if (!response || response.__networkError) {
+    const target = baseUrl();
     return {
       ok: false,
       code: 'music_service_unreachable',
       error: 'I could not reach the embedded music service.',
       detail: response?.__networkError?.name === 'AbortError'
-        ? `The embedded music service did not respond within ${timeoutMs}ms.`
-        : 'The embedded music service did not accept the connection.'
+        ? `The embedded music service at ${target} did not respond within ${timeoutMs}ms. It may still be booting Java, Lavalink, or the music sidecar.`
+        : `The embedded music service at ${target} did not accept the connection.`
     };
   }
 

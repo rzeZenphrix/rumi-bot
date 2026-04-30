@@ -32,7 +32,13 @@ async function postJson(url, payload) {
   });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    let detail = '';
+    try {
+      detail = await response.text();
+    } catch (_error) {
+      detail = '';
+    }
+    throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
   }
 }
 
@@ -80,14 +86,25 @@ async function syncDashboardBackend(client) {
     cluster: process.env.CLUSTER_ID || 'local'
   };
 
-  await Promise.all([
+  const results = await Promise.allSettled([
     postJson(`${base}/api/commands/sync`, getCommandCatalog(client)),
     postJson(`${base}/api/bot-info/sync`, botInfo),
     postJson(`${base}/api/status/sync`, runtimeStatus)
   ]);
 
-  logger.info({ base }, 'Synced runtime data to dashboard backend');
-  return true;
+  const labels = ['commands', 'botInfo', 'runtimeStatus'];
+  const failures = results
+    .map((result, index) => ({ label: labels[index], result }))
+    .filter(({ result }) => result.status === 'rejected')
+    .map(({ label, result }) => ({ label, error: result.reason?.message || String(result.reason) }));
+
+  if (failures.length) {
+    logger.warn({ base, failures }, 'Dashboard backend sync completed with partial failures');
+  } else {
+    logger.info({ base }, 'Synced runtime data to dashboard backend');
+  }
+
+  return failures.length < results.length;
 }
 
 module.exports = {
