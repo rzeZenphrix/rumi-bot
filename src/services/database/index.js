@@ -217,6 +217,8 @@ async function upsertGuild(guildId, patch = {}) {
         {
           guild_id: guildId,
           prefix: process.env.DEFAULT_PREFIX || ',',
+          automod_enabled: false,
+          jail_enabled: false,
           thresholds_json: DEFAULT_THRESHOLDS,
           ...patch
         },
@@ -292,7 +294,7 @@ async function upsertGuildSecurityConfig(guildId, patch = {}) {
       .upsert(
         {
           guild_id: guildId,
-          security_json: { enabled: true },
+          security_json: { enabled: false },
           antinuke_json: {},
           antiraid_json: {},
           thresholds_json: DEFAULT_THRESHOLDS,
@@ -330,7 +332,7 @@ async function getGuildSecurityConfig(guildId) {
 
   const legacy = await getGuildSettings(guildId);
   return upsertGuildSecurityConfig(guildId, {
-    security_json: legacy.settings_json?.security || { enabled: true },
+    security_json: legacy.settings_json?.security || { enabled: false },
     antinuke_json: legacy.settings_json?.antinuke || {},
     antiraid_json: legacy.settings_json?.antiraid || {},
     thresholds_json: legacy.thresholds_json || DEFAULT_THRESHOLDS
@@ -347,7 +349,7 @@ async function updateGuildSecurityConfig(guildId, patchOrUpdater) {
       };
 
   const saved = await upsertGuildSecurityConfig(guildId, {
-    security_json: next.security_json || current.security_json || { enabled: true },
+    security_json: next.security_json || current.security_json || { enabled: false },
     antinuke_json: next.antinuke_json || current.antinuke_json || {},
     antiraid_json: next.antiraid_json || current.antiraid_json || {},
     thresholds_json: mergeThresholds(next.thresholds_json || current.thresholds_json || DEFAULT_THRESHOLDS)
@@ -357,7 +359,7 @@ async function updateGuildSecurityConfig(guildId, patchOrUpdater) {
   await updateGuildSettings(guildId, {
     settings_json: {
       ...(guild.settings_json || {}),
-      security: saved.security_json || { enabled: true },
+      security: saved.security_json || { enabled: false },
       antinuke: saved.antinuke_json || {},
       antiraid: saved.antiraid_json || {}
     },

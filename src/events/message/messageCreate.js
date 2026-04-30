@@ -7,6 +7,7 @@ const { handleLevelXp } = require('../../systems/levels/levelEngine');
 const { clearAfkForMessage, handleAfkMentions } = require('../../systems/afk/manager');
 const { handleMessageAutomation } = require('../../systems/automation/messageAutomation');
 const { recordMessage } = require('../../systems/analytics/serverAnalytics');
+const { handleStickyMessages } = require('../../systems/messages/guildMessages');
 
 module.exports = {
   name: Events.MessageCreate,
@@ -66,6 +67,7 @@ module.exports = {
     }
 
     await handleMessageAutomation(message).catch(() => null);
+    await handleStickyMessages(message).catch(() => null);
     await handleAfkMentions(message).catch(() => null);
   }
 };

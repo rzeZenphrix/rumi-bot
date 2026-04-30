@@ -1,12 +1,40 @@
 #!/bin/sh
 set -eu
 
-MUSIC_JAR_PATH="${MUSIC_JAR_PATH:-/app/music/rumi-music-service-0.1.0-jar-with-dependencies.jar}"
+APP_ROOT="${APP_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
+MUSIC_JAR_PATH="${MUSIC_JAR_PATH:-}"
 MUSIC_PORT="${RUMI_MUSIC_SERVICE_PORT:-3025}"
-LAVALINK_JAR_PATH="${LAVALINK_JAR_PATH:-/app/lavalink/Lavalink.jar}"
-LAVALINK_WORKDIR="${LAVALINK_WORKDIR:-/app/lavalink}"
+LAVALINK_JAR_PATH="${LAVALINK_JAR_PATH:-}"
+LAVALINK_WORKDIR="${LAVALINK_WORKDIR:-$APP_ROOT/.runtime/lavalink}"
 LAVALINK_PORT="${LAVALINK_PORT:-2333}"
 LAVALINK_PASSWORD="${LAVALINK_PASSWORD:-youshallnotpass}"
+LAVALINK_VERSION="${LAVALINK_VERSION:-4.1.2}"
+
+if [ -z "$MUSIC_JAR_PATH" ]; then
+  if [ -f "$APP_ROOT/music/rumi-music-service-0.1.0-jar-with-dependencies.jar" ]; then
+    MUSIC_JAR_PATH="$APP_ROOT/music/rumi-music-service-0.1.0-jar-with-dependencies.jar"
+  elif [ -f "$APP_ROOT/rumi-music-service/target/rumi-music-service-0.1.0-jar-with-dependencies.jar" ]; then
+    MUSIC_JAR_PATH="$APP_ROOT/rumi-music-service/target/rumi-music-service-0.1.0-jar-with-dependencies.jar"
+  else
+    MUSIC_JAR_PATH="$APP_ROOT/rumi-music-service/target/rumi-music-service-0.1.0.jar"
+  fi
+fi
+
+if [ -z "$LAVALINK_JAR_PATH" ]; then
+  if [ -f "$APP_ROOT/lavalink/Lavalink.jar" ]; then
+    LAVALINK_JAR_PATH="$APP_ROOT/lavalink/Lavalink.jar"
+  else
+    LAVALINK_JAR_PATH="$LAVALINK_WORKDIR/Lavalink.jar"
+  fi
+fi
+
+mkdir -p "$LAVALINK_WORKDIR"
+
+if [ ! -f "$LAVALINK_JAR_PATH" ]; then
+  echo "[rumi] lavalink jar not found at ${LAVALINK_JAR_PATH}; downloading ${LAVALINK_VERSION}"
+  curl -fsSL "https://github.com/lavalink-devs/Lavalink/releases/download/${LAVALINK_VERSION}/Lavalink.jar" \
+    -o "$LAVALINK_JAR_PATH"
+fi
 
 cat > "${LAVALINK_WORKDIR}/application.yml" <<EOF
 server:

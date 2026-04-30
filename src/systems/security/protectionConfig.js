@@ -17,7 +17,7 @@ const DEFAULT_ANTIRAID = Object.freeze({
 });
 
 const DEFAULT_SECURITY = Object.freeze({
-  enabled: true
+  enabled: false
 });
 const cache = new Map();
 const CACHE_TTL_MS = Math.max(5000, Number(process.env.PROTECTION_CACHE_TTL_MS || 15000));
@@ -56,7 +56,7 @@ function normalizeSecurityConfig(value = {}) {
   return {
     ...clone(DEFAULT_SECURITY),
     ...(value || {}),
-    enabled: value?.enabled !== false
+    enabled: value?.enabled === true
   };
 }
 
@@ -161,11 +161,11 @@ function isSecuritySystemEnabled(protection, section, fallback = true) {
   if (protection.security?.enabled === false) return false;
 
   if (section === 'automod') {
-    return protection.row?.automod_enabled !== false;
+    return protection.row?.automod_enabled === true;
   }
 
   if (section === 'autojail') {
-    return protection.row?.jail_enabled !== false;
+    return protection.row?.jail_enabled === true;
   }
 
   const local = protection[section];

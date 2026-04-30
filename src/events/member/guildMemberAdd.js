@@ -4,6 +4,7 @@ const logger = require('../../systems/logging/logger');
 const { handleMemberJoin } = require('../../systems/antiraid/guard');
 const { maybeAutoJailMember } = require('../../systems/autojail/engine');
 const { applyJoinRoles } = require('../../systems/automation/serverRoles');
+const { sendJoinMessages } = require('../../systems/messages/guildMessages');
 
 module.exports = {
   name: Events.GuildMemberAdd || 'guildMemberAdd',
@@ -32,6 +33,10 @@ module.exports = {
 
     await applyJoinRoles(member).catch((error) => {
       logger.warn({ error, guildId: member.guild.id, userId: member.id }, 'Join-role automation failed');
+    });
+
+    await sendJoinMessages(member).catch((error) => {
+      logger.warn({ error, guildId: member.guild.id, userId: member.id }, 'Join message automation failed');
     });
   }
 };
