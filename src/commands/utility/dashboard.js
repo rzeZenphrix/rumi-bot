@@ -1,7 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const { createDashboardUrl } = require('../../systems/dashboard/session');
-const { isDashboardReady, DASHBOARD_NOT_READY } = require('../../systems/runtime/featureGates');
 const { requireServerPremium } = require('../../systems/monetization/access');
 const { syncDashboardBackend } = require('../../services/dashboardSync');
 
@@ -54,10 +53,6 @@ module.exports = {
           ? 'Pushed a fresh command/runtime sync to the dashboard backend.'
           : 'I could not reach the dashboard backend right now.'
       );
-    }
-
-    if (!isDashboardReady()) {
-      return respond.reply(message, 'info', DASHBOARD_NOT_READY);
     }
 
     const url = await createDashboardUrl(

@@ -10,7 +10,7 @@ function envFlag(name, fallback = false) {
 }
 
 function isDashboardReady() {
-  return envFlag('DASHBOARD_READY', false);
+  return envFlag('DASHBOARD_READY', true);
 }
 
 function isMusicReady() {

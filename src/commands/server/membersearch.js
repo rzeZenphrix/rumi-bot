@@ -1,6 +1,7 @@
 const respond = require('../../utils/respond');
 const { createPagedMessage } = require('../../utils/pagedMessages');
 const { findRole } = require('../../utils/roleResolver');
+const { fetchAllGuildMembers } = require('../../utils/memberFetch');
 
 function chunk(items = [], size = 15) {
   const pages = [];
@@ -25,7 +26,15 @@ module.exports = {
       return respond.reply(message, 'info', 'Use `membersearch <role mention|id|name>`.', { mentionUser: false });
     }
 
-    const members = role.members
+    let fetchedMembers;
+    try {
+      fetchedMembers = await fetchAllGuildMembers(message.guild);
+    } catch (error) {
+      return respond.reply(message, 'bad', error.message, { mentionUser: false });
+    }
+
+    const members = fetchedMembers
+      .filter((member) => member.roles.cache.has(role.id))
       .sort((left, right) => left.displayName.localeCompare(right.displayName))
       .map((member) => ({
         id: member.id,
