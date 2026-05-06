@@ -19,6 +19,13 @@ MAVEN_RUNTIME_ROOT="${MAVEN_RUNTIME_ROOT:-$RUNTIME_ROOT/maven}"
 MAVEN_DIST_URL="${MAVEN_DIST_URL:-https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz}"
 MVN_BIN="${MVN_BIN:-}"
 
+if [ "${MUSIC_SIDECAR_ENABLED:-false}" != "true" ] || [ "${MUSIC_READY:-false}" != "true" ]; then
+  echo "[rumi] embedded music is disabled; starting bot worker without Java/Lavalink"
+  export MUSIC_READY="${MUSIC_READY:-false}"
+  export MUSIC_SIDECAR_ENABLED="${MUSIC_SIDECAR_ENABLED:-false}"
+  exec npm run start:bot-worker
+fi
+
 download_and_extract_tarball() {
   url="$1"
   target_root="$2"

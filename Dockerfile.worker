@@ -1,31 +1,10 @@
-FROM maven:3.9.9-eclipse-temurin-17 AS music-builder
-WORKDIR /build/music
-
-COPY rumi-music-service/pom.xml ./
-COPY rumi-music-service/src ./src
-
-RUN mvn -q -DskipTests package
-
 FROM node:20-bookworm-slim
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl \
-  && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
-
-ARG LAVALINK_VERSION=4.1.2
 
 COPY package*.json ./
 RUN npm install
 
 COPY . ./
-COPY --from=music-builder /build/music/target/rumi-music-service-0.1.0-jar-with-dependencies.jar /app/music/rumi-music-service-0.1.0-jar-with-dependencies.jar
 
-RUN mkdir -p /app/lavalink \
-  && curl -fsSL "https://github.com/lavalink-devs/Lavalink/releases/download/${LAVALINK_VERSION}/Lavalink.jar" \
-    -o /app/lavalink/Lavalink.jar
-
-RUN chmod +x /app/scripts/start-worker.sh
-
-CMD ["/bin/sh", "/app/scripts/start-worker.sh"]
+CMD ["npm", "run", "start:bot-worker"]
