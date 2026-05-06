@@ -2,8 +2,8 @@ module.exports = {
   // Core reply emojis
   list: '<:list:1497281759803478187>',
   info: '',
-  good: '<:good:1497281757144154203>',
-  success: '<:good:1497281757144154203>',
+  good: '<:done:1500893329762680924>',
+  success: '<:done:1500893329762680924>',
   bad: '<:bad:1497281754510266548>',
   error: '<:bad:1497281754510266548>',
   alert: '<:alert:1497281752480223333>',
@@ -82,6 +82,6 @@ module.exports = {
   thropy: '<:thropy:1497571840409731193>',
   backpack: '<:backpack:1497575191004319904>',
   inventory: '<:backpack:1497575191004319904>',
-  coin_tails: '<:coin_tails:1497576800027541584>',
-  coin_heads: '<:coin_heads:1497576718234550292>',
+  coin_tails: '<:rumi_tails:1500895128410263672>',
+  coin_heads: '<:rumi_heads:1500895126728343742>',
 };

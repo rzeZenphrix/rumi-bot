@@ -73,6 +73,19 @@ module.exports = {
         thumbnail: user.displayAvatarURL?.({ size: 256 })
       });
 
+      await handleAntiNukeEvent({
+        guild: member.guild,
+        actionType: 'member_kick',
+        targetId: member.id,
+        target: member.user,
+        metadata: {
+          targetType: 'member',
+          targetName: member.user.tag || member.user.username,
+          auditDelayMs: 900,
+          auditRetries: 1
+        }
+      }).catch(() => null);
+
       logger.warn({ guildId: guild.id, userId: user.id, executorId }, 'Reapplied hardban after unban attempt');
     } catch (error) {
       logger.error({ error, guildId: guild.id, userId: user.id, executorId }, 'Failed to reapply hardban');

@@ -168,7 +168,9 @@ async function sendConfiguredPayload(channel, baseText, embedText, context, dele
   };
 
   if (content) payload.content = content.slice(0, 2000);
-  if (embedContent) payload.embeds = [buildEmbed(embedContent.slice(0, 4096), context.message.author)];
+  if (embedContent) {
+    payload.embeds = [buildEmbed(embedContent.slice(0, 4096), context.message.author)];
+  }
 
   const sent = await channel.send(payload).catch(() => null);
   if (sent && deleteDelaySeconds > 0) {
@@ -258,7 +260,8 @@ async function sendJoinMessages(member) {
       member,
       config.dm.message,
       config.dm.embed,
-      context
+      context,
+      0
     ).catch(() => null);
   }
 }

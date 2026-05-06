@@ -1,8 +1,10 @@
-const { handleNukeAction, AuditLogEvent } = require('../../systems/antinuke/guard');
+const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
+const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
 
 module.exports = {
-  name: 'guildBanAdd',
+  name: Events.GuildBanAdd || 'guildBanAdd',
+
   async execute(_client, ban) {
     await sendLog(ban.guild, 'memberBan', {
       title: 'Member banned',
@@ -15,6 +17,15 @@ module.exports = {
       thumbnail: ban.user.displayAvatarURL?.({ size: 256 })
     });
 
-    await handleNukeAction(ban.guild, AuditLogEvent.MemberBanAdd, 'banAdd', ban.user.id);
+    await handleAntiNukeEvent({
+      guild: ban.guild,
+      actionType: 'member_ban_add',
+      targetId: ban.user.id,
+      target: ban.user,
+      metadata: {
+        targetType: 'user',
+        targetName: ban.user.tag || ban.user.username
+      }
+    }).catch(() => null);
   }
 };

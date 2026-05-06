@@ -62,6 +62,7 @@ async function deleteAfkState(stateId) {
 
 async function listAfkPingLogs(stateIds = []) {
   if (!stateIds.length) return [];
+
   return queryData(
     db.supabase
       .from('afk_ping_logs')
@@ -85,6 +86,7 @@ async function insertAfkPingLog(row) {
 
 async function deleteAfkPingLogs(stateIds = []) {
   if (!stateIds.length) return [];
+
   return queryData(
     db.supabase
       .from('afk_ping_logs')
@@ -95,16 +97,48 @@ async function deleteAfkPingLogs(stateIds = []) {
   );
 }
 
-function formatAfkDuration(createdAt) {
-  const diffMs = Date.now() - new Date(createdAt).getTime();
+function formatAfkDurationShort(createdAt) {
+  const started = new Date(createdAt).getTime();
+  const diffMs = Date.now() - started;
   const seconds = Math.max(0, Math.floor(diffMs / 1000));
+
   if (seconds < 60) return `${seconds}s`;
+
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
+
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ${minutes % 60}m`;
+
   const days = Math.floor(hours / 24);
   return `${days}d ${hours % 24}h`;
+}
+
+function plural(value, one, many = `${one}s`) {
+  return `${value} ${value === 1 ? one : many}`;
+}
+
+function formatAfkDurationLong(createdAt) {
+  const started = new Date(createdAt).getTime();
+  const diffMs = Date.now() - started;
+  const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
+
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts = [];
+
+  if (days) parts.push(plural(days, 'day'));
+  if (hours) parts.push(plural(hours, 'hour'));
+  if (minutes) parts.push(plural(minutes, 'minute'));
+  if (!parts.length || seconds) parts.push(plural(seconds, 'second'));
+
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+
+  return `${parts.slice(0, -1).join(', ')}, and ${parts.at(-1)}`;
 }
 
 function afkNicknameFor(member) {
@@ -123,7 +157,9 @@ async function applyAfkNickname(member) {
 
   const original = member.nickname || null;
   const nickname = afkNicknameFor(member);
+
   await member.setNickname(nickname, 'AFK rename');
+
   return {
     ok: true,
     original,
@@ -133,6 +169,7 @@ async function applyAfkNickname(member) {
 
 async function restoreNickname(member, originalNickname) {
   if (!member?.manageable) return false;
+
   await member.setNickname(originalNickname || null, 'AFK cleared').catch(() => null);
   return true;
 }
@@ -162,55 +199,76 @@ async function setAfk(member, scopeType, reason, renameEnabled = false) {
 }
 
 async function clearAfkStatesForMember(member, states) {
-  if (!states.length) return { logs: [] };
+  if (!states.length) {
+    return {
+      logs: [],
+      oldestState: null
+    };
+  }
 
   const stateIds = states.map((entry) => entry.id);
   const logs = await listAfkPingLogs(stateIds).catch(() => []);
+  const oldestState = states[0] || null;
 
   for (const state of states) {
     if (member && state.rename_enabled) {
       await restoreNickname(member, state.original_nickname).catch(() => null);
     }
+
     await deleteAfkState(state.id).catch(() => null);
   }
 
   await deleteAfkPingLogs(stateIds).catch(() => null);
 
-  return { logs };
+  return {
+    logs,
+    oldestState
+  };
 }
 
-async function sendAfkReturnSummary(message, logs = []) {
-  const summary = logs.length
-    ? `Welcome back. I tracked **${logs.length}** ping${logs.length === 1 ? '' : 's'} while you were away.`
-    : 'Welcome back. I cleared your AFK status.';
+async function sendAfkReturnSummary(message, logs = [], oldestState = null) {
+  const duration = oldestState?.created_at
+    ? formatAfkDurationLong(oldestState.created_at)
+    : 'a while';
 
-  await respond.reply(message, 'info', summary, {
-    mentionUser: false,
-    useWebhook: false
-  }).catch(() => null);
+  const extra = logs.length
+    ? ` I logged ${logs.length} ping${logs.length === 1 ? '' : 's'} while you were gone.`
+    : '';
 
-  if (logs.length) {
-    const dmLines = logs.slice(-20).map((entry) => {
-      const at = new Date(entry.created_at).toLocaleString('en-GB', {
-        timeZone: 'UTC',
-        dateStyle: 'medium',
-        timeStyle: 'short'
-      });
-      return `- ${at} UTC by <@${entry.pinged_by_user_id}> ${entry.message_url ? `| ${entry.message_url}` : ''}`;
+  await respond.reply(
+    message,
+    'info',
+    `👋 ${message.author}: Welcome back, you went away ${duration}.${extra}`,
+    {
+      mentionUser: false,
+      useWebhook: false
+    }
+  ).catch(() => null);
+
+  if (!logs.length) return;
+
+  const dmLines = logs.slice(-20).map((entry) => {
+    const at = new Date(entry.created_at).toLocaleString('en-GB', {
+      timeZone: 'UTC',
+      dateStyle: 'medium',
+      timeStyle: 'short'
     });
 
-    await message.author.send({
-      content: [
-        'Here are the most recent pings I logged while you were AFK:',
-        ...dmLines
-      ].join('\n'),
-      allowedMentions: { parse: [] }
-    }).catch(() => null);
-  }
+    return `- ${at} UTC by <@${entry.pinged_by_user_id}>${entry.message_url ? ` | ${entry.message_url}` : ''}`;
+  });
+
+  await message.author.send({
+    content: [
+      'Recent pings while you were AFK:',
+      ...dmLines
+    ].join('\n'),
+    allowedMentions: { parse: [] }
+  }).catch(() => null);
 }
 
 async function clearAfkByCommand(member) {
   const states = await listRelevantAfkStates(member.id, member.guild?.id || null).catch(() => []);
+
   if (!states.length) return false;
 
   await clearAfkStatesForMember(member, states).catch(() => null);
@@ -219,10 +277,16 @@ async function clearAfkByCommand(member) {
 
 async function clearAfkForMessage(message) {
   const states = await listRelevantAfkStates(message.author.id, message.guild?.id || null).catch(() => []);
+
   if (!states.length) return false;
 
-  const cleared = await clearAfkStatesForMember(message.member || null, states).catch(() => ({ logs: [] }));
-  await sendAfkReturnSummary(message, cleared.logs || []).catch(() => null);
+  const cleared = await clearAfkStatesForMember(message.member || null, states).catch(() => ({
+    logs: [],
+    oldestState: states[0] || null
+  }));
+
+  await sendAfkReturnSummary(message, cleared.logs || [], cleared.oldestState || states[0] || null).catch(() => null);
+
   return true;
 }
 
@@ -244,6 +308,7 @@ async function handleAfkMentions(message) {
   for (const userId of mentionedUsers.slice(0, 10)) {
     const states = await listRelevantAfkStates(userId, message.guild.id).catch(() => []);
     const active = states[0];
+
     if (!active) continue;
 
     await insertAfkPingLog({
@@ -257,20 +322,21 @@ async function handleAfkMentions(message) {
       pinged_by_user_id: message.author.id
     }).catch(() => null);
 
-    const member = message.guild.members.cache.get(userId) || await message.guild.members.fetch(userId).catch(() => null);
-    const label = member?.displayName || member?.user?.username || userId;
-    const reason = active.reason ? ` - ${active.reason}` : '';
-    lines.push(`**${label}** is AFK (${formatAfkDuration(active.created_at)})${reason}`);
+    const member = message.guild.members.cache.get(userId) ||
+      await message.guild.members.fetch(userId).catch(() => null);
+
+    const label = member ? `${member}` : `<@${userId}>`;
+    const reason = active.reason ? ` with the status: \`${active.reason}\`` : '';
+    const duration = formatAfkDurationShort(active.created_at);
+
+    lines.push(`💤 ${label} is afk${reason} • away for **${duration}**`);
   }
 
   if (!lines.length) return false;
 
-  await respond.reply(message, 'info', null, {
+  await respond.reply(message, 'info', lines.join('\n'), {
     mentionUser: false,
-    useWebhook: false,
-    allowTitle: true,
-    title: 'AFK notices',
-    description: lines.join('\n')
+    useWebhook: false
   }).catch((error) => {
     logger.warn({ error, guildId: message.guild.id }, 'AFK mention notice failed');
   });

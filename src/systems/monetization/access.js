@@ -3,11 +3,7 @@ const { getPremiumStatus } = require('./service');
 
 const CACHE_TTL_MS = Math.max(5000, Number(process.env.PREMIUM_ACCESS_CACHE_TTL_MS || 15000));
 const VOTER_BOOST_MULTIPLIER = Math.max(1, Number(process.env.VOTER_EARN_MULTIPLIER || 1.25));
-const PREMIUM_URL =
-  process.env.PREMIUM_URL ||
-  process.env.DASHBOARD_PUBLIC_URL ||
-  process.env.DASHBOARD_URL ||
-  'https://rumi.rocks/plans';
+const PREMIUM_URL = 'https://rumi.rocks/plans';
 const cache = new Map();
 const SERVER_TIER_LABELS = Object.freeze({
   base: 'Server Premium',
@@ -59,6 +55,11 @@ function buildAccess(status, userId, guildId) {
   const hasServerPremiumBase = activePlans.some((plan) => plan.scope === 'server');
   const hasVoter = activePlans.some((plan) => plan.planId === 'voter');
   const sharedPremium = hasUserPremium || hasServerPremiumBase;
+  const baseAiQueries = 15;
+  const userAiQueries = hasUserPremium ? 75 : 0;
+  const serverAiQueries = hasServerPremiumBase ? 150 : 0;
+  const hasPremiumServerUnlimited = hasServerPremiumBase;
+  const hasPremiumUserUnlimited = hasUserPremium;
 
   return {
     userId,
@@ -75,14 +76,15 @@ function buildAccess(status, userId, guildId) {
     hasServerTier3: serverTier === 'tier3',
     sharedPremium,
     limits: {
-      aiQueriesPerDay: hasServerPremiumBase ? 30 : hasUserPremium ? 15 : 5,
-      bookmarkSlots: hasUserPremium ? 20 : 5,
-      calendarSlots: hasUserPremium ? Number.MAX_SAFE_INTEGER : 20,
-      saveGifSlots: hasUserPremium ? 50 : 0,
-      customCommands: hasServerPremiumBase ? 20 : 7,
-      joinRoles: hasServerPremiumBase ? 25 : 10,
-      roleConnectionParents: hasServerPremiumBase ? 15 : 5,
-      roleConnectionChildren: hasServerPremiumBase ? 15 : 10
+      aiQueriesPerDay: baseAiQueries + userAiQueries + serverAiQueries,
+      bookmarkSlots: hasPremiumUserUnlimited ? Number.MAX_SAFE_INTEGER : 75,
+      calendarSlots: hasPremiumUserUnlimited ? Number.MAX_SAFE_INTEGER : 75,
+      saveGifSlots: hasPremiumUserUnlimited ? Number.MAX_SAFE_INTEGER : 0,
+      customCommands: hasPremiumServerUnlimited ? 200 : 30,
+      joinRoles: hasPremiumServerUnlimited ? Number.MAX_SAFE_INTEGER : 15,
+      roleConnectionParents: hasPremiumServerUnlimited ? Number.MAX_SAFE_INTEGER : 5,
+      roleConnectionChildren: hasPremiumServerUnlimited ? Number.MAX_SAFE_INTEGER : 10,
+      economyCooldownMinSeconds: hasServerPremiumBase ? 3 : null
     },
     economy: {
       canEditCooldowns: hasServerPremiumBase,
@@ -203,17 +205,12 @@ async function replyPremiumDenied(message, feature, requirement, access = null) 
 
   await respond.reply(message, 'alert', null, {
     mentionUser: false,
-    allowTitle: true,
+    allowTitle: false,
     title,
     description: [
       requirementErrorText(feature, normalized),
       '',
-      `Required: **${describeRequirement(normalized)}**`,
-      `Current access: ${describeCurrentAccess(access)}`,
-      '',
       `Buy a plan: ${PREMIUM_URL}`,
-      `Redeem a code: ${redeemTarget}`,
-      'You can also check `premium`, `userpremium status`, or `serverpremium status`.'
     ].join('\n')
   });
 }

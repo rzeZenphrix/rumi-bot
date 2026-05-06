@@ -1,6 +1,7 @@
 const db = require('../../services/database');
 const logger = require('../logging/logger');
 const { classifyNetworkError } = require('../network/errorClassifier');
+const { runDueDisboardBumpReminders } = require('../bump/disboardBumpReminder');
 
 let failureCount = 0;
 let disabledUntil = 0;
@@ -71,8 +72,10 @@ function startReminderRunner(client) {
   if (runnerStarted) return null;
   runnerStarted = true;
 
-  if (!runnerEnabled()) {
-    logger.info('Reminder runner disabled by REMINDER_RUNNER_ENABLED=false');
+  const bumpRunnerEnabled = process.env.DISBOARD_BUMP_RUNNER_ENABLED !== 'false';
+
+  if (!runnerEnabled() && !bumpRunnerEnabled) {
+    logger.info('Scheduled reminder runners disabled by REMINDER_RUNNER_ENABLED=false and DISBOARD_BUMP_RUNNER_ENABLED=false');
     return null;
   }
 
@@ -87,6 +90,10 @@ function startReminderRunner(client) {
   const interval = setInterval(() => {
     runDueReminders(client).catch((error) => {
       logger.warn({ error }, 'Reminder runner tick failed');
+    });
+
+    runDueDisboardBumpReminders(client).catch((error) => {
+      logger.warn({ error }, 'Disboard bump reminder runner tick failed');
     });
   }, Number(process.env.REMINDER_RUNNER_INTERVAL_MS || 30000));
 

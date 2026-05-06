@@ -6,6 +6,7 @@ const { startShards } = require('./core/shardManager');
 const { loadCommands } = require('./core/loader');
 const { startApiServer } = require('./services/api/server');
 const logger = require('./systems/logging/logger');
+const { validateRuntimeEnv } = require('./systems/runtime/envValidation');
 
 process.chdir(path.join(__dirname, '..'));
 
@@ -37,6 +38,11 @@ async function startDashboardApiOnly() {
 async function main() {
   const configuredMode = String(process.env.BOT_MODE || '').trim().toLowerCase();
   const mode = configuredMode || (process.env.NO_SHARDS === 'true' || process.env.NODE_ENV === 'production' ? 'single' : 'shard');
+  const validation = validateRuntimeEnv({ mode });
+
+  if (validation.errors.length) {
+    throw new Error(validation.errors.join(' '));
+  }
 
   if (process.env.STARTUP_LOGS !== 'false') {
     console.log(`[rumi] starting in ${mode} mode`);

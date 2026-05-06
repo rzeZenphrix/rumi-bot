@@ -1,0 +1,129 @@
+function loadSharp() {
+  try {
+    return require('sharp');
+  } catch {
+    return null;
+  }
+}
+
+function escapeXml(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function weatherCodeLabel(code) {
+  const map = {
+    0: ['Clear sky', '☀️'],
+    1: ['Mainly clear', '🌤️'],
+    2: ['Partly cloudy', '⛅'],
+    3: ['Overcast', '☁️'],
+    45: ['Fog', '🌫️'],
+    48: ['Freezing fog', '🌫️'],
+    51: ['Light drizzle', '🌦️'],
+    53: ['Drizzle', '🌦️'],
+    55: ['Dense drizzle', '🌧️'],
+    56: ['Freezing drizzle', '🌧️'],
+    57: ['Heavy freezing drizzle', '🌧️'],
+    61: ['Slight rain', '🌧️'],
+    63: ['Rain', '🌧️'],
+    65: ['Heavy rain', '🌧️'],
+    66: ['Freezing rain', '🌧️'],
+    67: ['Heavy freezing rain', '🌧️'],
+    71: ['Slight snow', '🌨️'],
+    73: ['Snow', '🌨️'],
+    75: ['Heavy snow', '❄️'],
+    77: ['Snow grains', '❄️'],
+    80: ['Rain showers', '🌦️'],
+    81: ['Heavy showers', '🌧️'],
+    82: ['Violent showers', '⛈️'],
+    85: ['Snow showers', '🌨️'],
+    86: ['Heavy snow showers', '❄️'],
+    95: ['Thunderstorm', '⛈️'],
+    96: ['Thunderstorm with hail', '⛈️'],
+    99: ['Severe thunderstorm', '⛈️']
+  };
+
+  return map[Number(code)] || ['Unknown', '🌡️'];
+}
+
+function safeNumber(value, suffix = '') {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 'n/a';
+
+  return `${Math.round(number)}${suffix}`;
+}
+
+async function buildWeatherCard({ location, current, forecast, timezone }) {
+  const [label, emoji] = weatherCodeLabel(current?.weather_code);
+  const high = forecast?.daily?.temperature_2m_max?.[0];
+  const low = forecast?.daily?.temperature_2m_min?.[0];
+  const rain = forecast?.daily?.precipitation_probability_max?.[0];
+
+  const place = [location?.name, location?.admin1, location?.country].filter(Boolean).join(', ');
+  const temp = safeNumber(current?.temperature_2m, '°C');
+  const humidity = safeNumber(current?.relative_humidity_2m, '%');
+  const wind = safeNumber(current?.wind_speed_10m, ' km/h');
+  const highLow = `${safeNumber(high, '°')} / ${safeNumber(low, '°')}`;
+  const rainText = safeNumber(rain, '%');
+
+  const svg = `
+  <svg width="1100" height="620" viewBox="0 0 1100 620" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+        <stop offset="0%" stop-color="#19213f"/>
+        <stop offset="45%" stop-color="#3447a7"/>
+        <stop offset="100%" stop-color="#6fb7ff"/>
+      </linearGradient>
+      <radialGradient id="sun" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#fff7bf" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#fff7bf" stop-opacity="0"/>
+      </radialGradient>
+      <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
+      </filter>
+    </defs>
+
+    <rect width="1100" height="620" fill="url(#bg)"/>
+    <circle cx="880" cy="90" r="220" fill="url(#sun)"/>
+    <circle cx="140" cy="520" r="260" fill="#ffffff" opacity="0.08"/>
+    <circle cx="1030" cy="520" r="170" fill="#ffffff" opacity="0.11"/>
+
+    <rect x="70" y="70" width="960" height="480" rx="42" fill="#10172a" opacity="0.58" filter="url(#shadow)"/>
+    <rect x="92" y="92" width="916" height="436" rx="34" fill="#ffffff" opacity="0.10"/>
+
+    <text x="125" y="155" fill="#ffffff" font-size="34" font-family="Arial, Helvetica, sans-serif" font-weight="700">${escapeXml(place || 'Weather')}</text>
+    <text x="125" y="198" fill="#dbeafe" font-size="22" font-family="Arial, Helvetica, sans-serif">${escapeXml(timezone || 'auto timezone')}</text>
+
+    <text x="125" y="335" fill="#ffffff" font-size="118" font-family="Arial, Helvetica, sans-serif" font-weight="800">${escapeXml(temp)}</text>
+    <text x="125" y="390" fill="#e0f2fe" font-size="32" font-family="Arial, Helvetica, sans-serif" font-weight="700">${escapeXml(label)}</text>
+
+    <text x="775" y="260" text-anchor="middle" dominant-baseline="middle" font-size="150" font-family="Arial, Helvetica, sans-serif">${escapeXml(emoji)}</text>
+
+    <g font-family="Arial, Helvetica, sans-serif" font-size="25" fill="#ffffff">
+      <rect x="125" y="432" width="245" height="66" rx="22" fill="#000000" opacity="0.22"/>
+      <text x="150" y="473">Humidity: ${escapeXml(humidity)}</text>
+
+      <rect x="420" y="432" width="245" height="66" rx="22" fill="#000000" opacity="0.22"/>
+      <text x="445" y="473">Wind: ${escapeXml(wind)}</text>
+
+      <rect x="715" y="432" width="260" height="66" rx="22" fill="#000000" opacity="0.22"/>
+      <text x="740" y="473">High/Low: ${escapeXml(highLow)}</text>
+    </g>
+
+    <text x="885" y="520" fill="#dbeafe" font-size="20" font-family="Arial, Helvetica, sans-serif" text-anchor="end">Rain chance: ${escapeXml(rainText)} • Generated by Rumi</text>
+  </svg>`;
+
+  const sharp = loadSharp();
+  if (!sharp) return null;
+
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+module.exports = {
+  weatherCodeLabel,
+  buildWeatherCard
+};

@@ -37,7 +37,38 @@ const RUMI_SHOP_ITEMS = {
         status: 'active'
       };
     }
-  }
+  },
+  cigarette: {
+    key: 'cigarette',
+    name: 'Cigarette Pack',
+    category: 'consumable',
+    price: 180,
+    description: 'A pack of cigarettes. You need a lighter before you can smoke one.',
+    create() {
+      return {
+        kind: 'rumi',
+        type: 'cigarette',
+        sticks: 10,
+        smoked: 0,
+        status: 'active'
+      };
+    }
+  },
+  lighter: {
+    key: 'lighter',
+    name: 'Lighter',
+    category: 'tool',
+    price: 60,
+    description: 'Required to use cigarettes. Each light consumes one charge.',
+    create() {
+      return {
+        kind: 'rumi',
+        type: 'lighter',
+        charges: 25,
+        status: 'active'
+      };
+    }
+  },
 };
 
 function accountNamespace(guildId) {
@@ -123,6 +154,9 @@ function normalizeInventory(items = []) {
       itemKey: item.itemKey || normalizeKey(item.type),
       juice: Number(item.juice || 0),
       kind: item.kind || 'guild',
+      lastUsedAt: item.lastUsedAt || null,
+      smoked: Number(item.smoked || 0),
+      sticks: Number(item.sticks || 0),
       price: Number(item.price || 0),
       purchasedAt: item.purchasedAt || item.createdAt || new Date().toISOString(),
       rarity: item.rarity || null,

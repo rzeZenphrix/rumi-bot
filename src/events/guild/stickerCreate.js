@@ -1,3 +1,0 @@
-const { Events } = require('discord.js');
-const { sendLog } = require('../../systems/logging/logDispatcher');
-module.exports = { name: Events.GuildStickerCreate || 'stickerCreate', async execute(_client, sticker) { await sendLog(sticker.guild, 'stickerCreate', { title: 'Sticker created', description: `Sticker **${sticker.name}** was created.`, targetId: sticker.id, fields: [{ name: 'Name', value: `\`${sticker.name}\``, inline: true }, { name: 'Format', value: `\`${sticker.format}\``, inline: true }, { name: 'Tags', value: sticker.tags || 'None', inline: false }], thumbnail: sticker.url }); } };

@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { Collection } = require('discord.js');
 const logger = require('../systems/logging/logger');
 const { normalizeCommandMeta } = require('../utils/normalizeCommandMeta');
+const { createCommandRegistry } = require('./commandRegistry');
 
 function walkJsFiles(directory) {
   if (!fs.existsSync(directory)) return [];
@@ -22,22 +22,24 @@ function walkJsFiles(directory) {
     }
   }
 
-  return files;
+  return files.sort((a, b) => a.localeCompare(b));
 }
 
 function loadCommands(client) {
-  client.commands = new Collection();
+  const registry = createCommandRegistry({ logger });
 
   const roots = [
     path.join(process.cwd(), 'src', 'commands'),
     path.join(process.cwd(), 'src', 'commands.js')
   ];
 
-  let loadedCount = 0;
-
   for (const root of roots) {
     for (const file of walkJsFiles(root)) {
       try {
+        if (/[\\/]actions[\\/]/.test(file)) {
+          continue;
+        }
+
         delete require.cache[require.resolve(file)];
 
         const command = normalizeCommandMeta(require(file));
@@ -54,18 +56,14 @@ function loadCommands(client) {
           continue;
         }
 
-        client.commands.set(command.name, command);
-
-        for (const alias of command.aliases || []) {
-          client.commands.set(alias, command);
-        }
-
-        loadedCount += 1;
+        registry.registerCommand(command, file);
 
         logger.info(
           {
             command: command.name,
             aliases: command.aliases || [],
+            subcommands: command.subcommands?.length || 0,
+            catalogEntries: command.catalogEntries?.length || 0,
             file
           },
           'Loaded prefix command'
@@ -82,9 +80,12 @@ function loadCommands(client) {
     }
   }
 
+  registry.attachToClient(client);
+
   logger.info(
     {
-      loadedCount,
+      stats: registry.stats,
+      collisions: registry.collisions,
       commandKeys: [...client.commands.keys()]
     },
     'Command loading complete'

@@ -4,7 +4,7 @@ const PERKS = Object.freeze([
   {
     id: 'vote_priority',
     label: 'Vote recognition',
-    description: 'Voter benefits and vote-tier perks appear across Rumi surfaces.',
+    description: 'Vote status is recognised across Rumi, with a 12-hour earning boost unless a Tier 1+ premium server disables it.',
     filters: { voteTier: 'voter' },
     live: true,
     scope: 'vote',
@@ -13,34 +13,52 @@ const PERKS = Object.freeze([
   {
     id: 'selfprefix',
     label: 'Self prefix',
-    description: 'Choose a personal prefix for your own commands.',
+    description: 'Choose a personal prefix for your own command flow.',
     filters: { userPremium: 'base', serverPremium: 'base' },
     live: true,
     scope: 'shared',
-    commandRefs: ['prefix']
+    commandRefs: ['selfprefix', 'prefix']
   },
   {
     id: 'ai_queries_user',
-    label: '15 AI queries per day',
-    description: 'Raised AI request allowance for user premium.',
+    label: '75 AI queries per day',
+    description: 'Raises the free 15-query daily AI allowance to 75 on your account.',
     filters: { userPremium: 'base' },
     live: true,
     scope: 'user',
     commandRefs: ['ask']
   },
   {
+    id: 'ai_queries_server',
+    label: '150 server AI queries per user',
+    description: 'Gives every member in the premium server an extra 150 AI queries per day. This stacks with user premium.',
+    filters: { serverPremium: 'base' },
+    live: true,
+    scope: 'server',
+    commandRefs: ['ask']
+  },
+  {
+    id: 'spotify_suite',
+    label: 'All Spotify features',
+    description: 'Spotify account linking, playback-related features, and premium Spotify commands.',
+    filters: { userPremium: 'base' },
+    live: true,
+    scope: 'user',
+    commandRefs: ['spotify', 'music']
+  },
+  {
     id: 'leaderboard_masking',
     label: 'Mask leaderboard presence',
-    description: 'Hide your profile from supported leaderboard commands.',
+    description: 'Hide your profile from supported leaderboards.',
     filters: { userPremium: 'base' },
     live: true,
     scope: 'user',
     commandRefs: ['bio', 'leaderboard', 'economytop']
   },
   {
-    id: 'bookmarks_20',
-    label: '20 bookmark tabs',
-    description: 'Expanded bookmark capacity over the free tier.',
+    id: 'bookmarks_unlimited',
+    label: 'Unlimited bookmark tabs',
+    description: 'Removes the free 75-bookmark limit.',
     filters: { userPremium: 'base' },
     live: true,
     scope: 'user',
@@ -49,11 +67,29 @@ const PERKS = Object.freeze([
   {
     id: 'calendars_unlimited',
     label: 'Unlimited calendars',
-    description: 'Remove the free-tier calendar limit.',
+    description: 'Removes the free 75-calendar limit.',
     filters: { userPremium: 'base' },
     live: true,
     scope: 'user',
     commandRefs: ['calendar']
+  },
+  {
+    id: 'savegif_gallery',
+    label: 'Unlimited savegif slots',
+    description: 'Save and reuse as many GIF slots as you want, subject to server moderation rules.',
+    filters: { userPremium: 'base' },
+    live: true,
+    scope: 'user',
+    commandRefs: ['savegif']
+  },
+  {
+    id: 'dm_market_alerts',
+    label: 'DM crypto and currency alerts',
+    description: 'Subscribe to daily crypto and currency notifications in DMs.',
+    filters: { userPremium: 'base' },
+    live: true,
+    scope: 'user',
+    commandRefs: ['crypto', 'currency']
   },
   {
     id: 'iplookup_access',
@@ -67,7 +103,7 @@ const PERKS = Object.freeze([
   {
     id: 'linkpreview_access',
     label: 'Link preview',
-    description: 'Use Rumi link preview utilities.',
+    description: 'Use Rumi link preview tools.',
     filters: { userPremium: 'base' },
     live: true,
     scope: 'user',
@@ -76,107 +112,61 @@ const PERKS = Object.freeze([
   {
     id: 'reminders_access',
     label: 'Reminders',
-    description: 'Use reminder scheduling features.',
+    description: 'Create personal reminders with premium limits removed.',
     filters: { userPremium: 'base' },
     live: true,
     scope: 'user',
     commandRefs: ['reminder']
   },
   {
-    id: 'music_suite',
-    label: 'Music and Spotify features',
-    description: 'Music playback, syncing, and Spotify controls.',
-    filters: { userPremium: 'base', serverPremium: 'base' },
-    live: false,
-    comingSoon: true,
-    scope: 'shared',
-    commandRefs: ['music', 'spotify']
-  },
-  {
-    id: 'savegif_gallery',
-    label: 'Save GIF gallery',
-    description: 'Store personal GIF slots with moderation controls.',
-    filters: { userPremium: 'base' },
-    live: true,
-    scope: 'user',
-    commandRefs: ['savegif']
-  },
-  {
-    id: 'dm_market_alerts',
-    label: 'DM market alerts',
-    description: 'Crypto and currency notifications in DMs.',
-    filters: { userPremium: 'base' },
-    live: true,
-    scope: 'user',
-    commandRefs: ['crypto', 'currency']
-  },
-  {
     id: 'premium_regex_builder',
     label: 'Regex builder',
-    description: 'Use the regex builder in DMs or premium servers.',
-    filters: { userPremium: 'base', serverPremium: 'base' },
+    description: 'Use the regex builder with premium access.',
+    filters: { userPremium: 'base' },
     live: true,
-    scope: 'shared',
+    scope: 'user',
     commandRefs: ['regex']
   },
   {
-    id: 'custom_commands_20',
-    label: '20 custom commands',
-    description: 'Raise custom command capacity over the free tier.',
+    id: 'custom_commands_200',
+    label: '200 custom commands',
+    description: 'Raises the free server limit from 30 custom commands to 200.',
     filters: { serverPremium: 'base' },
     live: true,
     scope: 'server',
     commandRefs: ['customcommand']
   },
   {
+    id: 'bot_bio_ad_removal',
+    label: 'Remove support ad link',
+    description: 'Premium servers can hide the default support link at the bottom of the bot bio.',
+    filters: { serverPremium: 'base' },
+    live: true,
+    scope: 'server',
+    commandRefs: ['botcustom', 'branding']
+  },
+  {
     id: 'custom_economy_cooldowns',
     label: 'Custom economy cooldowns',
-    description: 'Tune economy command cooldowns with premium minimums.',
+    description: 'Tune server economy cooldowns, with a hard minimum of 3 seconds.',
     filters: { serverPremium: 'base' },
     live: true,
     scope: 'server',
     commandRefs: ['economy']
   },
   {
-    id: 'dashboard_hotload',
-    label: 'Dashboard hotload',
-    description: 'Live dashboard-driven updates for premium servers.',
+    id: 'ticket_panels_unlimited',
+    label: 'Unlimited ticket panels and types',
+    description: 'Removes the free panel and ticket-type cap for the server.',
     filters: { serverPremium: 'base' },
     live: true,
     scope: 'server',
-    commandRefs: ['dashboard']
-  },
-  {
-    id: 'bot_bio_ad_removal',
-    label: 'Remove bot bio ad link',
-    description: 'Hide the default ad link from the bot bio/profile surface.',
-    filters: { serverPremium: 'base' },
-    live: true,
-    scope: 'server',
-    commandRefs: ['botcustom']
-  },
-  {
-    id: 'history_flag_pardons',
-    label: 'History flag pardons',
-    description: 'Mark stored flags as resolved inside a premium server.',
-    filters: { serverPremium: 'base' },
-    live: true,
-    scope: 'server',
-    commandRefs: ['history']
-  },
-  {
-    id: 'history_flag_deletion',
-    label: 'History flag deletion',
-    description: 'Delete stored flag history in Tier 2 premium servers.',
-    filters: { serverPremium: 'tier2' },
-    live: true,
-    scope: 'server',
-    commandRefs: ['history']
+    commandRefs: ['ticket']
   },
   {
     id: 'join_roles_premium',
-    label: 'Expanded join roles',
-    description: 'Premium join-role capacity and automation.',
+    label: 'Unlimited join roles',
+    description: 'Raises the free join-role cap from 15 to unlimited.',
     filters: { serverPremium: 'base' },
     live: true,
     scope: 'server',
@@ -184,26 +174,17 @@ const PERKS = Object.freeze([
   },
   {
     id: 'role_connections_premium',
-    label: 'Expanded role connections',
-    description: 'More parent roles and connected-role links.',
+    label: 'Unlimited role connections',
+    description: 'Removes the free parent-role and child-link caps on role connections.',
     filters: { serverPremium: 'base' },
     live: true,
     scope: 'server',
     commandRefs: ['role']
   },
   {
-    id: 'ai_queries_server',
-    label: '30 AI queries per user',
-    description: 'Raised per-user AI limits for premium servers.',
-    filters: { serverPremium: 'base' },
-    live: true,
-    scope: 'server',
-    commandRefs: ['ask']
-  },
-  {
     id: 'voter_boost_toggle',
-    label: 'Toggle voter earn boosts',
-    description: 'Tier 1 or higher servers can disable voter economy boosts.',
+    label: 'Disable voter earn boosts',
+    description: 'Tier 1+ servers can disable the 12-hour vote earning boost.',
     filters: { serverPremium: 'tier1' },
     live: true,
     scope: 'server',
@@ -221,7 +202,7 @@ const CATALOG = Object.freeze([
     price: '$0',
     paymentMethods: [],
     live: true,
-    description: 'Core Rumi features with free-tier limits.',
+    description: 'Everything stays free unless Rumi specifically marks it as premium.',
     perks: []
   },
   {
@@ -233,7 +214,7 @@ const CATALOG = Object.freeze([
     price: '$0',
     paymentMethods: [],
     live: true,
-    description: 'Vote-based perks and recognition.',
+    description: 'Vote-based recognition with a 12-hour server-rate earning boost.',
     perks: ['vote_priority']
   },
   {
@@ -242,21 +223,21 @@ const CATALOG = Object.freeze([
     scope: 'user',
     tier: 'base',
     billing: [
-      { cycle: 'monthly', price: '$2.99', amountCents: 299 },
-      { cycle: 'lifetime', price: '$10.99', amountCents: 1099 }
+      { cycle: 'monthly', price: '$1.50', amountCents: 150 },
+      { cycle: 'lifetime', price: '$3.99', amountCents: 399 }
     ],
-    price: '$2.99 / month or $10.99 lifetime',
+    price: '$1.50 / month or $3.99 lifetime',
     paymentMethods: PAYMENT_METHODS,
     live: true,
     recommended: true,
-    description: 'Premium features that follow your Discord account.',
+    description: 'Premium that follows the Discord user account across DMs and every server you use.',
     perks: [
       'selfprefix',
       'ai_queries_user',
+      'spotify_suite',
       'leaderboard_masking',
-      'bookmarks_20',
+      'bookmarks_unlimited',
       'calendars_unlimited',
-      'music_suite',
       'savegif_gallery',
       'dm_market_alerts',
       'iplookup_access',
@@ -271,25 +252,22 @@ const CATALOG = Object.freeze([
     scope: 'server',
     tier: 'base',
     billing: [
-      { cycle: 'monthly', price: '$8.99', amountCents: 899 },
-      { cycle: 'lifetime', price: '$25.99', amountCents: 2599 }
+      { cycle: 'monthly', price: '$7.00', amountCents: 700 },
+      { cycle: 'lifetime', price: '$14.99', amountCents: 1499 }
     ],
-    price: '$8.99 / month or $25.99 lifetime',
+    price: '$7.00 / month or $14.99 lifetime',
     paymentMethods: PAYMENT_METHODS,
     live: true,
-    description: 'Premium upgrades that apply to one server.',
+    description: 'Premium upgrades that apply only inside one server.',
     perks: [
       'ai_queries_server',
-      'custom_commands_20',
+      'custom_commands_200',
       'bot_bio_ad_removal',
       'custom_economy_cooldowns',
       'selfprefix',
-      'history_flag_pardons',
-      'dashboard_hotload',
-      'premium_regex_builder',
+      'ticket_panels_unlimited',
       'join_roles_premium',
-      'role_connections_premium',
-      'music_suite'
+      'role_connections_premium'
     ]
   },
   {
@@ -301,9 +279,9 @@ const CATALOG = Object.freeze([
     durationMonths: 3,
     billing: [],
     price: 'Derived from 3 months of server premium',
-    paymentMethods: PAYMENT_METHODS,
+    paymentMethods: [],
     live: true,
-    description: 'Three-month derived server premium tier.',
+    description: 'Unlocked automatically from three months of active server premium.',
     perks: ['voter_boost_toggle']
   },
   {
@@ -315,10 +293,10 @@ const CATALOG = Object.freeze([
     durationMonths: 6,
     billing: [],
     price: 'Derived from 6 months of server premium',
-    paymentMethods: PAYMENT_METHODS,
+    paymentMethods: [],
     live: true,
-    description: 'Six-month derived server premium tier.',
-    perks: ['voter_boost_toggle', 'history_flag_deletion']
+    description: 'Unlocked automatically from six months of active server premium.',
+    perks: ['voter_boost_toggle']
   },
   {
     planId: 'server_premium_tier3',
@@ -329,9 +307,9 @@ const CATALOG = Object.freeze([
     durationMonths: 12,
     billing: [],
     price: 'Derived from 12 months of server premium',
-    paymentMethods: PAYMENT_METHODS,
+    paymentMethods: [],
     live: true,
-    description: 'Twelve-month derived server premium tier.',
+    description: 'Unlocked automatically from twelve months of active server premium.',
     perks: ['voter_boost_toggle']
   }
 ]);

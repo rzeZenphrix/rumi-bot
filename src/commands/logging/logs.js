@@ -1,0 +1,105 @@
+const { ChannelType, PermissionFlagsBits } = require('discord.js');
+const { updateGuildLogConfig, getGuildLogConfig, DEFAULT_EVENTS } = require('../../systems/logging/logConfigStore');
+const { info, ok, bad, id } = require('../../utils/moderationSimple');
+
+function parseColor(input) {
+  const raw = String(input || '').replace('#', '');
+  return /^[0-9a-f]{6}$/i.test(raw) ? `#${raw}` : null;
+}
+
+async function createLogWebhook(channel, user) {
+  const existing = await channel.fetchWebhooks().catch(() => null);
+  const old = existing?.find?.((hook) => hook.name === 'Rumi Logs' && hook.owner?.id === channel.client.user.id);
+  if (old?.url) return old;
+
+  return channel.createWebhook({
+    name: 'Rumi Logs',
+    avatar: channel.client.user.displayAvatarURL(),
+    reason: `Logging webhook created by ${user.tag}`
+  });
+}
+
+module.exports = {
+  name: 'logs',
+  aliases: ['log', 'logging'],
+  category: 'logging',
+  description: 'Configure server logs.',
+  usage: 'logs [#channel|off|events|remove|color]',
+  examples: ['logs #mod-logs', 'logs #message-logs messageDelete', 'logs off', 'logs events'],
+  guildOnly: true,
+  permissions: [PermissionFlagsBits.ManageGuild],
+  botPermissions: [PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks],
+
+  async execute({ message, args }) {
+    const first = (args.shift() || '').toLowerCase();
+
+    if (!first) {
+      const cfg = await getGuildLogConfig(message.guild.id);
+      const routes = Object.entries(cfg.channels || {}).map(([event, channelId]) => `${event}: <#${channelId}>`);
+      return info(message, `Logging: ${cfg.enabled ? 'on' : 'off'}\n${routes.join('\n') || 'No routes set.'}`);
+    }
+
+    if (first === 'off' || first === 'disable') {
+      await updateGuildLogConfig(message.guild.id, (cfg) => { cfg.enabled = false; });
+      return ok(message, 'Logging disabled.');
+    }
+
+    if (first === 'events') {
+      return info(message, DEFAULT_EVENTS.map((event) => `\`${event}\``).join(', '));
+    }
+
+    if (first === 'remove' || first === 'del') {
+      const target = args.shift();
+      if (!target) return info(message, 'Usage: `logs remove <event|#channel>`.');
+
+      await updateGuildLogConfig(message.guild.id, (cfg) => {
+        const targetId = id(target);
+        for (const [event, channelId] of Object.entries(cfg.channels || {})) {
+          if (event === target || channelId === targetId) {
+            delete cfg.channels[event];
+            delete cfg.webhooks[event];
+          }
+        }
+      });
+
+      return ok(message, 'Removed matching log route.');
+    }
+
+    if (first === 'color') {
+      const color = parseColor(args.shift());
+      const event = args.shift() || 'all';
+      if (!color || !DEFAULT_EVENTS.includes(event)) return info(message, 'Usage: `logs color <#hex> [event]`.');
+
+      await updateGuildLogConfig(message.guild.id, (cfg) => {
+        cfg.colors[event] = color;
+      });
+
+      return ok(message, `Set ${event} color to ${color}.`);
+    }
+
+    const channelId = id(first);
+    const channel = channelId ? await message.guild.channels.fetch(channelId).catch(() => null) : null;
+    const event = args.shift() || 'all';
+
+    if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
+      return info(message, 'Usage: `logs #channel [event]`.');
+    }
+
+    if (!DEFAULT_EVENTS.includes(event)) return bad(message, 'Unknown log event. Use `logs events`.');
+
+    const webhook = await createLogWebhook(channel, message.author);
+
+    await updateGuildLogConfig(message.guild.id, (cfg) => {
+      cfg.enabled = true;
+      cfg.channels[event] = channel.id;
+      cfg.webhooks[event] = {
+        id: webhook.id,
+        token: webhook.token,
+        url: webhook.url,
+        channelId: channel.id
+      };
+    });
+
+    return ok(message, `Logging ${event} to #${channel.name}.`);
+  }
+};

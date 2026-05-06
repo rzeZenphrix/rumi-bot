@@ -1,6 +1,6 @@
 {
   "name": "rumi-bot",
-  "version": "0.6.0",
+  "version": "0.9.0 --beta",
   "private": true,
   "description": "Rumi multi-function Discord bot with moderation, logging, media, AI, utility, economy, community, fun, and dashboard features.",
   "main": "src/index.js",
@@ -23,11 +23,12 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@napi-rs/canvas": "^0.1.99",
+    "@napi-rs/canvas": "^0.1.100",
     "@supabase/supabase-js": "^2.49.4",
+    "cheerio": "^1.2.0",
     "cors": "^2.8.6",
-    "discord.js": "^14.18.0",
-    "dotenv": "^16.4.7",
+    "discord.js": "^14.26.3",
+    "dotenv": "^16.6.1",
     "express": "^5.2.1",
     "ffmpeg-static": "^5.2.0",
     "fluent-ffmpeg": "^2.1.3",

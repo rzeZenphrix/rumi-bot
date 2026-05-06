@@ -1,21 +1,13 @@
 const { Events } = require('discord.js');
-const logger = require('../../systems/logging/logger');
-const { protectNewChannel } = require('../../systems/jail/setupManager');
 const { sendLog } = require('../../systems/logging/logDispatcher');
-const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
+const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
+const { applyVerificationToNewChannel } = require('../../systems/verification/verificationManager');
 
 module.exports = {
-  name: Events.ChannelCreate,
+  name: Events.ChannelCreate || 'channelCreate',
 
-  async execute(client, channel) {
-    try {
-      await protectNewChannel(channel);
-    } catch (error) {
-      logger.error({ error, guildId: channel.guild?.id, channelId: channel.id }, 'Could not protect new channel for jail role');
-    }
-
+  async execute(_client, channel) {
     if (!channel.guild) return;
-    await recordVersionSnapshot(channel.guild, `Channel created: ${channel.name}`, 'channel_create').catch(() => null);
 
     await sendLog(channel.guild, 'channelCreate', {
       title: 'Channel created',
@@ -23,9 +15,24 @@ module.exports = {
       channelId: channel.id,
       fields: [
         { name: 'Name', value: `\`${channel.name || 'unknown'}\``, inline: true },
-        { name: 'Type', value: `\`${channel.type}\``, inline: true },
         { name: 'ID', value: `\`${channel.id}\``, inline: true }
       ]
     });
+
+    await applyVerificationToNewChannel(channel).catch((error) => {
+      console.error('[VERIFICATION NEW CHANNEL PERMS ERROR]', error);
+    });
+
+    await handleAntiNukeEvent({
+      guild : channel.guild,
+      actionType: 'something_create',
+      targetId: channel.id,
+      target: channel,
+      newValue: channel,
+      metadata: {
+        targetType: 'channel',
+        targetName: channel.name
+      }
+    }).catch(() => null);
   }
 };

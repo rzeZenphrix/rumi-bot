@@ -8,6 +8,7 @@ const { PermissionFlagsBits } = require('discord.js');
 const { runCustomCommand } = require('../customcommands/runner');
 const { isDirectMusicCommand } = require('../music/musicAliases');
 const { getDisabledCommands, isProtectedCommand, isCommandDisabled } = require('../commands/disabledCommands');
+const { getCommandNotFoundSettings } = require('./commandNotFoundSetting');
 
 function permissionLabel(permission) {
   const match = Object.entries(PermissionFlagsBits).find(([, value]) => value === permission);
@@ -129,7 +130,13 @@ async function handlePrefixCommand(client, message) {
       return true;
     }
 
-    await safeReply(message, 'bad', `I don't know \`${commandName}\`. Try \`${prefix}help\`.`);
+    const notFound = message.guild
+      ? await getCommandNotFoundSettings(message.guild.id).catch(() => ({ enabled: true }))
+      : { enabled: true };
+
+    if (notFound.enabled) {
+      await safeReply(message, 'bad', `I don't know \`${commandName}\`. Try \`${prefix}help\`.`);
+    }
     return true;
   }
 

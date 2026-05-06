@@ -1,57 +1,73 @@
-const db = require('../../services/database');
+const {
+  getProtectionSettings,
+  updateProtectionSection
+} = require('./protectionConfig');
+const { normalizeAntinukeConfig } = require('../antinuke/config');
 
-function defaultTrustNobody(guildId) {
+function normalizeTrustNobody(value = {}) {
   return {
-    guild_id: guildId,
-    enabled: false,
-    created_by: null,
-    updated_by: null,
-    activated_at: null
-  };
-}
+    enabled: value?.enabled === true,
+    overboundPercent: Math.min(500, Math.max(0, Math.round(Number(value?.overboundPercent ?? 75)))),
 
-async function queryData(query, context) {
-  const { data } = await db.runQuery(query, context);
-  return data;
+    includeTrustedUsers: value?.includeTrustedUsers !== false,
+    includeTrustedRoles: value?.includeTrustedRoles !== false,
+    includeTrustedBots: value?.includeTrustedBots !== false,
+    includeWhitelist: value?.includeWhitelist !== false,
+    includeAntinukeAdmins: value?.includeAntinukeAdmins !== false,
+    includeFakePermissionBypass: value?.includeFakePermissionBypass !== false,
+
+    action: ['alert', 'mitigate'].includes(String(value?.action || '').toLowerCase())
+      ? String(value.action).toLowerCase()
+      : 'mitigate'
+  };
 }
 
 async function getTrustNobodySettings(guildId) {
-  const row = await queryData(
-    db.supabase
-      .from('trust_nobody_settings')
-      .select('*')
-      .eq('guild_id', guildId)
-      .maybeSingle(),
-    'getTrustNobodySettings'
-  );
+  const protection = await getProtectionSettings(guildId);
+  const antinuke = normalizeAntinukeConfig(protection.antinuke || {});
 
-  return {
-    ...defaultTrustNobody(guildId),
-    ...(row || {})
-  };
+  return normalizeTrustNobody(antinuke.trustNoOne || antinuke.trustNobody || {});
 }
 
-async function saveTrustNobodySettings(guildId, patch = {}) {
-  const current = await getTrustNobodySettings(guildId).catch(() => defaultTrustNobody(guildId));
-  return queryData(
-    db.supabase
-      .from('trust_nobody_settings')
-      .upsert(
-        {
-          ...current,
-          ...patch,
-          guild_id: guildId
-        },
-        { onConflict: 'guild_id' }
-      )
-      .select()
-      .single(),
-    'saveTrustNobodySettings'
-  );
+async function updateTrustNobodySettings(guildId, updater) {
+  return updateProtectionSection(guildId, 'antinuke', (current) => {
+    const antinuke = normalizeAntinukeConfig(current || {});
+    const currentTrustNoOne = normalizeTrustNobody(antinuke.trustNoOne || {});
+    const nextTrustNoOne = typeof updater === 'function'
+      ? updater(currentTrustNoOne)
+      : updater;
+
+    return normalizeAntinukeConfig({
+      ...antinuke,
+      trustNoOne: normalizeTrustNobody(nextTrustNoOne)
+    });
+  });
+}
+
+function trustedReasonWatched(reason, settings = {}) {
+  if (!settings.enabled) return false;
+
+  if (reason === 'trusted_user') return settings.includeTrustedUsers !== false;
+  if (reason === 'trusted_role') return settings.includeTrustedRoles !== false;
+  if (reason === 'trusted_bot') return settings.includeTrustedBots !== false;
+  if (reason === 'legacy_whitelist' || reason === 'global_whitelist') return settings.includeWhitelist !== false;
+  if (reason === 'antinuke_admin') return settings.includeAntinukeAdmins !== false;
+  if (reason === 'fake_permission') return settings.includeFakePermissionBypass !== false;
+
+  return false;
+}
+
+function applyOverbound(value, percent) {
+  const base = Number(value || 0);
+  const overbound = Math.max(0, Number(percent || 0));
+
+  return Math.max(1, Math.ceil(base * (1 + overbound / 100)));
 }
 
 module.exports = {
-  defaultTrustNobody,
+  normalizeTrustNobody,
   getTrustNobodySettings,
-  saveTrustNobodySettings
+  updateTrustNobodySettings,
+  trustedReasonWatched,
+  applyOverbound
 };

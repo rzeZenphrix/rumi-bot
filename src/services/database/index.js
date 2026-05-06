@@ -1050,6 +1050,83 @@ async function completeScheduledTask(taskId) {
   );
 }
 
+
+async function completeScheduledTasksByTypeAndGuild(taskType, guildId) {
+  return requireData(
+    supabase
+      .from('scheduled_tasks')
+      .update({ completed_at: new Date().toISOString() })
+      .eq('task_type', taskType)
+      .eq('guild_id', guildId)
+      .is('completed_at', null)
+      .select(),
+    'completeScheduledTasksByTypeAndGuild'
+  );
+}
+
+async function getDisboardBumpSettings(guildId) {
+  const { data } = await executeQuery(
+    supabase
+      .from('disboard_bump_settings')
+      .select('*')
+      .eq('guild_id', guildId)
+      .maybeSingle(),
+    'getDisboardBumpSettings'
+  );
+
+  return data;
+}
+
+async function upsertDisboardBumpSettings(guildId, patch = {}) {
+  return requireData(
+    supabase
+      .from('disboard_bump_settings')
+      .upsert(
+        {
+          guild_id: guildId,
+          ...patch,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'guild_id' }
+      )
+      .select()
+      .single(),
+    'upsertDisboardBumpSettings'
+  );
+}
+
+async function insertDisboardBumpLog(row = {}) {
+  return requireData(
+    supabase
+      .from('disboard_bump_logs')
+      .insert({
+        guild_id: row.guild_id,
+        event_type: row.event_type,
+        actor_user_id: row.actor_user_id || null,
+        channel_id: row.channel_id || null,
+        message_id: row.message_id || null,
+        task_id: row.task_id || null,
+        source: row.source || null,
+        metadata: row.metadata || {}
+      })
+      .select()
+      .single(),
+    'insertDisboardBumpLog'
+  );
+}
+
+async function listDisboardBumpLogs(guildId, limit = 10) {
+  return requireData(
+    supabase
+      .from('disboard_bump_logs')
+      .select('*')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    'listDisboardBumpLogs'
+  );
+}
+
 async function listCustomCommands(guildId, limit = 50) {
   return requireData(
     supabase
@@ -1467,8 +1544,374 @@ async function setLegacyGuildPlan(guildId, tier) {
     'setLegacyGuildPlan'
   );
 }
+
+async function upsertStaffRole(row) {
+  return requireData(
+    supabase
+      .from('guild_staff_roles')
+      .upsert(
+        {
+          metadata: {},
+          strip_on_staff_strip: true,
+          protected_from_staff_strip: false,
+          ...row
+        },
+        { onConflict: 'guild_id,role_id' }
+      )
+      .select()
+      .single(),
+    'upsertStaffRole'
+  );
+}
+
+async function removeStaffRole(guildId, roleId) {
+  return requireData(
+    supabase
+      .from('guild_staff_roles')
+      .delete()
+      .eq('guild_id', guildId)
+      .eq('role_id', roleId)
+      .select(),
+    'removeStaffRole'
+  );
+}
+
+async function getStaffRole(guildId, roleId) {
+  const { data } = await executeQuery(
+    supabase
+      .from('guild_staff_roles')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('role_id', roleId)
+      .maybeSingle(),
+    'getStaffRole'
+  );
+
+  return data || null;
+}
+
+async function listStaffRoles(guildId) {
+  return requireData(
+    supabase
+      .from('guild_staff_roles')
+      .select('*')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: false }),
+    'listStaffRoles'
+  );
+}
+
+async function clearRoleFakePermissions(guildId, roleId) {
+  return requireData(
+    supabase
+      .from('fake_permissions')
+      .delete()
+      .eq('guild_id', guildId)
+      .eq('subject_type', 'role')
+      .eq('subject_id', roleId)
+      .select(),
+    'clearRoleFakePermissions'
+  );
+}
+
+async function createAntiNukeIncident(row) {
+  return requireData(
+    supabase
+      .from('anti_nuke_incidents')
+      .insert(row)
+      .select()
+      .single(),
+    'createAntiNukeIncident'
+  );
+}
+
+async function updateAntiNukeIncident(id, patch) {
+  return requireData(
+    supabase
+      .from('anti_nuke_incidents')
+      .update(patch)
+      .eq('id', id)
+      .select()
+      .single(),
+    'updateAntiNukeIncident'
+  );
+}
+
+async function getAntiNukeIncident(guildId, id) {
+  const { data } = await executeQuery(
+    supabase
+      .from('anti_nuke_incidents')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('id', id)
+      .maybeSingle(),
+    'getAntiNukeIncident'
+  );
+
+  return data || null;
+}
+
+async function listAntiNukeIncidents(guildId, options = {}) {
+  let query = supabase
+    .from('anti_nuke_incidents')
+    .select('*')
+    .eq('guild_id', guildId)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(100, Math.max(1, Number(options.limit || 10))));
+
+  if (options.status) {
+    query = query.eq('status', options.status);
+  }
+
+  return requireData(query, 'listAntiNukeIncidents');
+}
+
+async function createAntiRaidIncident(row) {
+  return requireData(
+    supabase
+      .from('anti_raid_incidents')
+      .insert(row)
+      .select()
+      .single(),
+    'createAntiRaidIncident'
+  );
+}
+
+async function updateAntiRaidIncident(id, patch) {
+  return requireData(
+    supabase
+      .from('anti_raid_incidents')
+      .update(patch)
+      .eq('id', id)
+      .select()
+      .single(),
+    'updateAntiRaidIncident'
+  );
+}
+
+async function getAntiRaidIncident(guildId, id) {
+  const { data } = await executeQuery(
+    supabase
+      .from('anti_raid_incidents')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('id', id)
+      .maybeSingle(),
+    'getAntiRaidIncident'
+  );
+
+  return data || null;
+}
+
+async function listAntiRaidIncidents(guildId, options = {}) {
+  let query = supabase
+    .from('anti_raid_incidents')
+    .select('*')
+    .eq('guild_id', guildId)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(100, Math.max(1, Number(options.limit || 10))));
+
+  if (options.status) {
+    query = query.eq('status', options.status);
+  }
+
+  if (options.triggerType) {
+    query = query.eq('trigger_type', options.triggerType);
+  }
+
+  return requireData(query, 'listAntiRaidIncidents');
+}
+
+async function createAntiRaidAction(row) {
+  return requireData(
+    supabase
+      .from('anti_raid_actions')
+      .insert(row)
+      .select()
+      .single(),
+    'createAntiRaidAction'
+  );
+}
+
+async function listAntiRaidActions(guildId, options = {}) {
+  let query = supabase
+    .from('anti_raid_actions')
+    .select('*')
+    .eq('guild_id', guildId)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(200, Math.max(1, Number(options.limit || 25))));
+
+  if (options.incidentId) {
+    query = query.eq('incident_id', options.incidentId);
+  }
+
+  if (options.userId) {
+    query = query.eq('user_id', options.userId);
+  }
+
+  return requireData(query, 'listAntiRaidActions');
+}
+
+async function upsertAntiRaidMemberFlag(row) {
+  return requireData(
+    supabase
+      .from('anti_raid_member_flags')
+      .upsert(row, {
+        onConflict: 'guild_id,user_id,flag_type'
+      })
+      .select()
+      .single(),
+    'upsertAntiRaidMemberFlag'
+  );
+}
+
+async function removeAntiRaidMemberFlag(guildId, userId, flagType) {
+  return requireData(
+    supabase
+      .from('anti_raid_member_flags')
+      .delete()
+      .eq('guild_id', guildId)
+      .eq('user_id', userId)
+      .eq('flag_type', flagType)
+      .select(),
+    'removeAntiRaidMemberFlag'
+  );
+}
+
+async function listAntiRaidMemberFlags(guildId, options = {}) {
+  let query = supabase
+    .from('anti_raid_member_flags')
+    .select('*')
+    .eq('guild_id', guildId)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(200, Math.max(1, Number(options.limit || 50))));
+
+  if (options.userId) {
+    query = query.eq('user_id', options.userId);
+  }
+
+  if (options.flagType) {
+    query = query.eq('flag_type', options.flagType);
+  }
+
+  return requireData(query, 'listAntiRaidMemberFlags');
+}
+
+async function upsertAntiRaidChannelState(row) {
+  return requireData(
+    supabase
+      .from('anti_raid_channel_states')
+      .upsert(row, {
+        onConflict: 'guild_id,channel_id'
+      })
+      .select()
+      .single(),
+    'upsertAntiRaidChannelState'
+  );
+}
+
+async function removeAntiRaidChannelState(guildId, channelId) {
+  return requireData(
+    supabase
+      .from('anti_raid_channel_states')
+      .delete()
+      .eq('guild_id', guildId)
+      .eq('channel_id', channelId)
+      .select(),
+    'removeAntiRaidChannelState'
+  );
+}
+
+async function listAntiRaidChannelStates(guildId, options = {}) {
+  let query = supabase
+    .from('anti_raid_channel_states')
+    .select('*')
+    .eq('guild_id', guildId)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(200, Math.max(1, Number(options.limit || 50))));
+
+  if (options.incidentId) {
+    query = query.eq('incident_id', options.incidentId);
+  }
+
+  return requireData(query, 'listAntiRaidChannelStates');
+}
+
+async function createVerificationCaptcha(row) {
+  return requireData(
+    supabase
+      .from('verification_captchas')
+      .upsert(row, {
+        onConflict: 'guild_id,user_id'
+      })
+      .select()
+      .single(),
+    'createVerificationCaptcha'
+  );
+}
+
+async function getVerificationCaptcha(guildId, userId) {
+  const { data } = await executeQuery(
+    supabase
+      .from('verification_captchas')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('user_id', userId)
+      .maybeSingle(),
+    'getVerificationCaptcha'
+  );
+
+  return data || null;
+}
+
+async function incrementVerificationCaptchaAttempts(guildId, userId) {
+  const current = await getVerificationCaptcha(guildId, userId);
+  if (!current) return null;
+
+  return requireData(
+    supabase
+      .from('verification_captchas')
+      .update({
+        attempts: Number(current.attempts || 0) + 1
+      })
+      .eq('guild_id', guildId)
+      .eq('user_id', userId)
+      .select()
+      .single(),
+    'incrementVerificationCaptchaAttempts'
+  );
+}
+
+async function deleteVerificationCaptcha(guildId, userId) {
+  return requireData(
+    supabase
+      .from('verification_captchas')
+      .delete()
+      .eq('guild_id', guildId)
+      .eq('user_id', userId)
+      .select(),
+    'deleteVerificationCaptcha'
+  );
+}
+
+async function deleteExpiredVerificationCaptchas() {
+  return requireData(
+    supabase
+      .from('verification_captchas')
+      .delete()
+      .lt('expires_at', new Date().toISOString())
+      .select(),
+    'deleteExpiredVerificationCaptchas'
+  );
+}
+
 module.exports = {
   DatabaseUnavailableError,
+  createVerificationCaptcha,
+  getVerificationCaptcha,
+  incrementVerificationCaptchaAttempts,
+  deleteVerificationCaptcha,
+  deleteExpiredVerificationCaptchas,
   isSupabaseConfigured,
   hasDatabaseConfigured,
   isConfigured: isSupabaseConfigured,
@@ -1495,6 +1938,11 @@ module.exports = {
   listDueScheduledTasks,
   createScheduledTask,
   completeScheduledTask,
+  listDisboardBumpLogs,
+  insertDisboardBumpLog,
+  upsertDisboardBumpSettings,
+  getDisboardBumpSettings,
+  completeScheduledTasksByTypeAndGuild,
   createDashboardSession,
   getDashboardSessionByTokenHash,
   touchDashboardSession,
@@ -1564,5 +2012,26 @@ module.exports = {
   clearWarnings,
   insertSnapshot,
   getLatestSnapshot,
-  markSnapshotRestored
+  markSnapshotRestored,
+  upsertStaffRole,
+  removeStaffRole,
+  getStaffRole,
+  listStaffRoles,
+  clearRoleFakePermissions,
+  createAntiNukeIncident,
+  updateAntiNukeIncident,
+  getAntiNukeIncident,
+  listAntiNukeIncidents,
+  createAntiRaidIncident,
+  updateAntiRaidIncident,
+  getAntiRaidIncident,
+  listAntiRaidIncidents,
+  createAntiRaidAction,
+  listAntiRaidActions,
+  upsertAntiRaidMemberFlag,
+  removeAntiRaidMemberFlag,
+  listAntiRaidMemberFlags,  
+  upsertAntiRaidChannelState,
+  removeAntiRaidChannelState,
+  listAntiRaidChannelStates,
 };

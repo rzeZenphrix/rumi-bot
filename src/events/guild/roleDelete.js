@@ -18,6 +18,16 @@ module.exports = {
       ]
     });
 
-    await handleNukeAction(role.guild, AuditLogEvent.RoleDelete, 'roleDelete', role.id);
+    await handleAntiNukeEvent({
+      guild: role.guild,
+      actionType: 'role_delete',
+      targetId: role.id,
+      target: role,
+      oldValue: role,
+      metadata: {
+        targetType: 'role',
+        targetName: role.name
+      }
+    }).catch(() => null);
   }
 };

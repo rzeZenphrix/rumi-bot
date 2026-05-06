@@ -1,27 +1,66 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
-const { diffField, compactFields } = require('../../utils/logFields');
-const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
+const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
 
 module.exports = {
-  name: Events.GuildUpdate,
+  name: Events.GuildUpdate || 'guildUpdate',
+
   async execute(_client, oldGuild, newGuild) {
-    const fields = compactFields([
-      diffField('Name', oldGuild.name, newGuild.name),
-      diffField('Description', oldGuild.description, newGuild.description, false),
-      diffField('Verification level', oldGuild.verificationLevel, newGuild.verificationLevel),
-      diffField('AFK channel', oldGuild.afkChannelId, newGuild.afkChannelId),
-      { name: 'Guild ID', value: `\`${newGuild.id}\``, inline: true }
-    ]);
+    const fields = [];
 
-    if (fields.length <= 1) return;
+    if (oldGuild.name !== newGuild.name) {
+      fields.push({
+        name: 'Name',
+        value: `Before: \`${oldGuild.name}\`\nAfter: \`${newGuild.name}\``,
+        inline: false
+      });
+    }
 
-    await recordVersionSnapshot(newGuild, 'Guild settings updated', 'guild_update').catch(() => null);
+    if (oldGuild.icon !== newGuild.icon) {
+      fields.push({
+        name: 'Icon',
+        value: 'Changed',
+        inline: true
+      });
+    }
+
+    if (oldGuild.banner !== newGuild.banner) {
+      fields.push({
+        name: 'Banner',
+        value: 'Changed',
+        inline: true
+      });
+    }
+
+    if (oldGuild.vanityURLCode !== newGuild.vanityURLCode) {
+      fields.push({
+        name: 'Vanity URL',
+        value: `Before: \`${oldGuild.vanityURLCode || 'none'}\`\nAfter: \`${newGuild.vanityURLCode || 'none'}\``,
+        inline: false
+      });
+    }
+
+    if (!fields.length) return;
+
     await sendLog(newGuild, 'guildUpdate', {
       title: 'Server updated',
-      description: 'Server settings changed.',
-      fields,
-      thumbnail: newGuild.iconURL?.({ size: 256 }) || undefined
+      description: 'Server settings were updated.',
+      fields
+    }).catch(() => null);
+
+    await handleAntiNukeEvent({
+      guild: newGuild,
+      actionType: 'guild_update',
+      targetId: newGuild.id,
+      target: newGuild,
+      oldValue: oldGuild,
+      newValue: newGuild,
+      metadata: {
+        targetType: 'guild',
+        targetName: newGuild.name
+      }
+    }).catch((error) => {
+      console.error('[GUILD UPDATE ANTINUKE ERROR]', error);
     });
   }
 };
