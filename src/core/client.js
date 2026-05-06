@@ -22,7 +22,6 @@ const { runSchemaAudit } = require('../systems/database/schemaAudit');
 const { startKeepAlive } = require('../systems/runtime/keepAlive');
 const { startMarketAlertRunner } = require('../systems/monetization/marketAlerts');
 const { syncApplicationCommands } = require('../systems/slashCommands');
-const { startGiveawayRunner } = require('../systems/giveaways/manager');
 
 function shouldStartApi() {
   if (process.env.ENABLE_API === 'false') return false;
@@ -39,8 +38,6 @@ function shouldStartApi() {
 function requiredToken() {
   return process.env.DISCORD_TOKEN || process.env.BOT_TOKEN || '';
 }
-
-
 
 const client = new Client({
   intents: [
@@ -116,12 +113,6 @@ client.once('clientReady', async () => {
     startAutoJailScheduler(client);
   } catch (error) {
     logger.warn({ error }, 'AutoJail scheduler failed to start; continuing startup');
-  }
-
-  try {
-    startGiveawayRunner(client);
-  } catch (error) {
-    logger.warn({ error }, 'Giveaway runner failed to start; continuing startup');
   }
 
   await syncDashboardBackend(client).catch((error) => {
