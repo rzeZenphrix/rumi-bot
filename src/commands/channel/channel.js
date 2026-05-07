@@ -10,17 +10,59 @@ const TYPES = {
   announcement: ChannelType.GuildAnnouncement
 };
 
+function takeFlagValue(args, names) {
+  const index = args.findIndex((arg) => names.includes(String(arg || '').toLowerCase()));
+  if (index === -1) return null;
+  const value = args[index + 1] || '';
+  args.splice(index, value ? 2 : 1);
+  return value || null;
+}
+
+function channelLabel(channel) {
+  if (!channel) return 'N/A';
+  if (channel.type === ChannelType.GuildCategory) return `**${channel.name}**`;
+  return `${channel}`;
+}
+
 module.exports = {
   name: 'channel',
   aliases: ['ch'],
-  category: 'moderation',
+  category: 'channel',
   description: 'Create, delete, rename, or move channels.',
   usage: 'channel <create|delete|rename|move> ...',
   examples: [
     'channel create text general-chat',
+    'channel create voice Lounge --category Social',
+    'channel create category Social',
     'channel delete #old-channel',
     'channel rename #general main-chat',
     'channel move #general 3'
+  ],
+  subcommands: [
+    {
+      name: 'create',
+      description: 'Create a text, voice, category, stage, forum, or announcement channel.',
+      usage: 'channel create <text|voice|category|stage|forum|announcement> <name> [--category <category>]',
+      examples: ['channel create text announcements --category Info', 'channel create category Events']
+    },
+    {
+      name: 'delete',
+      description: 'Delete a channel.',
+      usage: 'channel delete [channel]',
+      examples: ['channel delete #old-channel']
+    },
+    {
+      name: 'rename',
+      description: 'Rename a channel.',
+      usage: 'channel rename [channel] <new name>',
+      examples: ['channel rename #general main-chat']
+    },
+    {
+      name: 'move',
+      description: 'Move a channel to a position or category.',
+      usage: 'channel move [channel] <position|category>',
+      examples: ['channel move #general 3', 'channel move #chat Social']
+    }
   ],
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageChannels],
@@ -31,18 +73,28 @@ module.exports = {
 
     if (action === 'create') {
       const typeName = (args.shift() || 'text').toLowerCase();
+      const categoryInput = takeFlagValue(args, ['--category', '-c']);
       const name = clean(args, '');
       const type = TYPES[typeName];
 
-      if (!type || !name) return info(message, 'Usage: `channel create <text|voice|category> <name>`.');
+      if (!type || !name) return info(message, 'Usage: `channel create <text|voice|category> <name> [--category <category>]`.');
+
+      let parent = null;
+      if (categoryInput && type !== ChannelType.GuildCategory) {
+        parent = await findChannel(message.guild, categoryInput);
+        if (!parent || parent.type !== ChannelType.GuildCategory) {
+          return bad(message, 'I could not find that category.');
+        }
+      }
 
       const channel = await message.guild.channels.create({
-        name,
+        name: name.slice(0, 100),
         type,
+        parent: parent?.id,
         reason: `Channel created by ${message.author.tag}`
       });
 
-      return ok(message, `Created ${channel.name}.`);
+      return ok(message, `Created ${channelLabel(channel)}${parent ? ` in **${parent.name}**` : ''}.`);
     }
 
     if (action === 'delete') {

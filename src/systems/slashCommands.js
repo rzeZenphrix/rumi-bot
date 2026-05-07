@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { Collection, PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
+const { Collection, PermissionFlagsBits, SlashCommandBuilder, MessageFlags } = require('discord.js');
 const logger = require('./logging/logger');
 const { parseArgs } = require('./prefix/commandHandler');
 const { isSlashSupported, listSupportedSlashCommands } = require('./slashManifest');
@@ -10,6 +10,39 @@ const { normalizeCommandMeta } = require('../utils/normalizeCommandMeta');
 const registryCache = new WeakMap();
 let fallbackRegistry = null;
 const syncHashes = new Map();
+
+function envFlag(name, fallback = false) {
+  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  return fallback;
+}
+
+function slashSyncEnabled() {
+  if (String(process.env.ENABLE_SLASH_COMMANDS || '').trim().toLowerCase() === 'false') return false;
+  return envFlag('SLASH_SYNC_ENABLED', true);
+}
+
+function slashSyncScope() {
+  const raw = String(process.env.SLASH_SYNC_SCOPE || '').trim().toLowerCase();
+  return raw === 'guild' ? 'guild' : 'global';
+}
+
+function slashSyncGuildId() {
+  return String(
+    process.env.SLASH_SYNC_GUILD_ID ||
+    process.env.SLASH_COMMAND_GUILD_ID ||
+    process.env.DISCORD_DEV_GUILD_ID ||
+    process.env.DISCORD_GUILD_ID ||
+    process.env.GUILD_ID ||
+    ''
+  ).trim();
+}
+
+function slashSyncMaxCommands() {
+  return Math.min(100, Math.max(1, Number(process.env.SLASH_SYNC_MAX_COMMANDS || 95)));
+}
 
 function walkJsFiles(directory) {
   if (!fs.existsSync(directory)) return [];
@@ -607,7 +640,7 @@ async function handleSlashCommandInteraction(interaction) {
 
     const payload = {
       content: `Something broke while running /${interaction.commandName}.`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     };
 
     if (interaction.deferred || interaction.replied) {
@@ -650,15 +683,28 @@ function registryHash(commands) {
 
 async function syncApplicationCommands(client) {
   if (!client?.application) return null;
-  if (process.env.ENABLE_SLASH_COMMANDS === 'false') return null;
+  if (!slashSyncEnabled()) {
+    logger.info('Slash command sync is disabled by SLASH_SYNC_ENABLED=false');
+    return null;
+  }
 
   const commands = getSlashCommandData(client);
-  const guildId = String(
-    process.env.SLASH_COMMAND_GUILD_ID ||
-    process.env.DISCORD_GUILD_ID ||
-    process.env.GUILD_ID ||
-    ''
-  ).trim();
+  const maxCommands = slashSyncMaxCommands();
+
+  if (commands.length > maxCommands) {
+    logger.warn(
+      { count: commands.length, maxCommands },
+      'Slash command sync refused because it would exceed the configured command cap'
+    );
+    return { ok: false, skipped: true, reason: 'too_many_commands', count: commands.length, maxCommands };
+  }
+
+  const guildId = slashSyncScope() === 'guild' ? slashSyncGuildId() : '';
+
+  if (slashSyncScope() === 'guild' && !guildId) {
+    logger.warn('Slash command sync scope is guild, but SLASH_SYNC_GUILD_ID is missing; skipping sync');
+    return { ok: false, skipped: true, reason: 'missing_guild_id', count: commands.length };
+  }
 
   const manager = guildId
     ? (await client.guilds.fetch(guildId)).commands

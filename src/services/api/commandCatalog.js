@@ -94,6 +94,35 @@ function unique(list = []) {
   return [...new Set((list || []).map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
+const CATEGORY_ALIASES = Object.freeze({
+  admin: 'configuration',
+  config: 'configuration',
+  configs: 'configuration',
+  core: 'core',
+  general: 'utility',
+  guild: 'server',
+  giveaway: 'giveaways',
+  info: 'utility',
+  lastfm: 'lastfm',
+  moderation: 'moderation',
+  mod: 'moderation',
+  music: 'music',
+  permission: 'role',
+  permissions: 'role',
+  server: 'server',
+  social: 'roleplay',
+  staff: 'moderation',
+  tools: 'utility',
+  util: 'utility',
+  vc: 'voice',
+  voice: 'voice'
+});
+
+function normalizeCategory(category) {
+  const raw = String(category || 'misc').trim().toLowerCase();
+  return CATEGORY_ALIASES[raw] || raw || 'misc';
+}
+
 function deriveFlags(source = {}) {
   if (Array.isArray(source.flags)) return unique(source.flags);
   return [];
@@ -183,7 +212,7 @@ function prefixedExamples(prefix, lines) {
 function serializeEntry(command, prefix, sub = null) {
   const source = sub || command;
   const fullName = sub ? `${command.name} ${sub.name}` : command.name;
-  const category = command.category || 'misc';
+  const category = normalizeCategory(command.category || 'misc');
 
   const permissions = Array.isArray(command.permissions)
     ? command.permissions.flatMap(permissionToNames).filter(Boolean)
@@ -245,7 +274,7 @@ function serializeEntry(command, prefix, sub = null) {
 function serializeVirtualEntry(registryEntry, prefix) {
   const source = registryEntry.source || registryEntry;
   const fullName = registryEntry.fullName || source.fullName || source.name;
-  const category = registryEntry.category || source.category || 'misc';
+  const category = normalizeCategory(registryEntry.category || source.category || 'misc');
 
   const permissions = Array.isArray(source.permissions)
     ? source.permissions.flatMap(permissionToNames).filter(Boolean)

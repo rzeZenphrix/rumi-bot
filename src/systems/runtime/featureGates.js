@@ -14,15 +14,27 @@ function isDashboardReady() {
 }
 
 function isMusicReady() {
+  const backend = String(process.env.MUSIC_BACKEND || '').trim().toLowerCase();
+  if (backend === 'off' || backend === 'disabled') return false;
+  if (backend === 'node') return true;
+
   const explicit = String(process.env.MUSIC_READY ?? '').trim().toLowerCase();
+  if (backend === 'sidecar' || backend === 'http') {
+    if (explicit) return envFlag('MUSIC_READY', false);
+    return Boolean(
+      String(process.env.RUMI_MUSIC_SERVICE_URL || '').trim() ||
+      envFlag('MUSIC_SIDECAR_ENABLED', false)
+    );
+  }
+
+  const nodeExplicit = String(process.env.NODE_MUSIC_ENABLED ?? '').trim().toLowerCase();
+  if (nodeExplicit) return envFlag('NODE_MUSIC_ENABLED', false);
+
   if (explicit) {
     return envFlag('MUSIC_READY', false);
   }
 
-  return Boolean(
-    String(process.env.RUMI_MUSIC_SERVICE_URL || '').trim() ||
-    envFlag('MUSIC_SIDECAR_ENABLED', false)
-  );
+  return true;
 }
 
 function dashboardNotReadyPayload() {

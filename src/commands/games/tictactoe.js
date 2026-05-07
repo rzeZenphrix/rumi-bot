@@ -1,8 +1,9 @@
-const {
+const { 
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
+  ButtonStyle,
+  MessageFlags
+ } = require('discord.js');
 const respond = require('../../utils/respond');
 const { resolveUser } = require('../../utils/resolveUser');
 const {
@@ -192,7 +193,7 @@ async function handleTicTacToeInteraction(interaction) {
   if (!state) {
     await interaction.reply({
       content: 'That tic tac toe game expired. Start a new one with `tictactoe`.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
     return true;
   }
@@ -203,7 +204,7 @@ async function handleTicTacToeInteraction(interaction) {
   if (!isOwner && !isOpponent) {
     await interaction.reply({
       content: 'This game belongs to someone else.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
     return true;
   }
@@ -235,7 +236,7 @@ async function handleTicTacToeInteraction(interaction) {
         content: state.vsBot
           ? 'Wait for your turn.'
           : 'It is not your turn yet.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       }).catch(() => null);
       return true;
     }

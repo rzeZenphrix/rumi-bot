@@ -9,6 +9,7 @@ const { runCustomCommand } = require('../customcommands/runner');
 const { isDirectMusicCommand } = require('../music/musicAliases');
 const { getDisabledCommands, isProtectedCommand, isCommandDisabled } = require('../commands/disabledCommands');
 const { getCommandNotFoundSettings } = require('./commandNotFoundSetting');
+const simpleStore = require('../../utils/simpleStore');
 
 function permissionLabel(permission) {
   const match = Object.entries(PermissionFlagsBits).find(([, value]) => value === permission);
@@ -148,6 +149,22 @@ async function handlePrefixCommand(client, message) {
   if (command.guildOnly && !message.guild) {
     await safeReply(message, 'bad', 'That command only works inside a server.');
     return true;
+  }
+
+  if (command.nsfw && message.guild && !isBotOwner(message.author.id)) {
+    const enabled = await simpleStore.getGuild(message.guild.id, 'settings', 'nsfwEnabled', false).catch(() => false);
+    const allowEverywhere = await simpleStore.getGuild(message.guild.id, 'settings', 'nsfwAllowNonNsfwChannels', false).catch(() => false);
+    const channelAllowed = allowEverywhere || message.channel?.nsfw === true;
+
+    if (!enabled) {
+      await safeReply(message, 'bad', `NSFW-tagged commands are disabled here. Use \`${prefix}nsfw toggle on\` first.`);
+      return true;
+    }
+
+    if (!channelAllowed) {
+      await safeReply(message, 'bad', 'NSFW-tagged commands can only be used in an age-restricted channel.');
+      return true;
+    }
   }
 
   if (message.guild && !isBotOwner(message.author.id) && !isProtectedCommand(command.name)) {

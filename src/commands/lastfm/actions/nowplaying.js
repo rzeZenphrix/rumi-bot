@@ -18,19 +18,14 @@ module.exports = {
 
     return respond.reply(message, 'info', null, {
       mentionUser: false,
-      title: track.nowPlaying ? 'Last.fm | Now Playing' : 'Last.fm | Last Played',
       description: [
-        `**${track.name}**`,
+        track.nowPlaying ? `-# Now playing for ${username}` : `-# Last Played for ${username}`,
+        `[**${track.name}**](${track.url})`,
         `by **${track.artist}**`,
         track.album ? `Album: **${track.album}**` : null,
-        track.nowPlaying ? '`currently scrobbling`' : `Played ${unix(track.playedAt)}`,
-        '',
-        track.url
+        track.nowPlaying ? '-# currently scrobbling' : `Played ${unix(track.playedAt)}`,
       ].filter(Boolean).join('\n'),
       thumbnail: track.image || null,
-      footer: {
-        text: `Last.fm user: ${username}`
-      }
     });
   }
 };

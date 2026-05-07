@@ -4,7 +4,7 @@ const { ok, bad, info, findMember, findChannel, isVoice } = require('../../utils
 module.exports = {
   name: 'voicemove',
   aliases: ['vmove', 'movevoice'],
-  category: 'moderation',
+  category: 'voice',
   description: 'Move a member to a voice channel.',
   usage: 'voicemove <member> <voiceChannel>',
   examples: ['voicemove @noob19 #VC 1'],

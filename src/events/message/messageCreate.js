@@ -45,7 +45,6 @@ module.exports = {
     await handleLevelXp(client, message).catch(() => null);
     await incrementFromContent(message.author.id, message.content).catch(() => null);
     await recordMessage(message.guild.id, message.channel.id, message.author.id).catch(() => null);
-    await clearAfkForMessage(message).catch(() => null);
 
     try {
       const handledCommand = await handlePrefixCommand(client, message);
@@ -62,6 +61,8 @@ module.exports = {
         'Prefix command pipeline failed'
       );
     }
+
+    await clearAfkForMessage(message).catch(() => null);
 
     try {
       await handleMessageCreate(message);

@@ -1,10 +1,11 @@
 const crypto = require('node:crypto');
-const {
+const { 
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionFlagsBits
-} = require('discord.js');
+  PermissionFlagsBits,
+  MessageFlags
+ } = require('discord.js');
 const respond = require('../../utils/respond');
 const db = require('../../services/database');
 const { isBotOwner } = require('../../systems/owner/ownerManager');
@@ -363,7 +364,7 @@ module.exports = {
 
     if (!entry) {
       await interaction.reply({
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
         content: 'That server premium confirmation expired. Run the redeem command again.'
       }).catch(() => null);
       return true;
@@ -371,7 +372,7 @@ module.exports = {
 
     if (interaction.user.id !== entry.userId) {
       await interaction.reply({
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
         content: 'Only the user who started this redemption can confirm it.'
       }).catch(() => null);
       return true;
@@ -417,7 +418,7 @@ module.exports = {
     const member = await guild.members.fetch(interaction.user.id).catch(() => null);
     if (!member?.permissions?.has(PermissionFlagsBits.ManageGuild) && interaction.user.id !== guild.ownerId) {
       await interaction.reply({
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
         content: 'You need Manage Server in the target server to finish this redemption.'
       }).catch(() => null);
       return true;

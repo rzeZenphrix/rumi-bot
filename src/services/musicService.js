@@ -1,5 +1,20 @@
 const DEFAULT_URL = 'http://127.0.0.1:3025';
 const DEFAULT_TIMEOUT_MS = Math.max(2000, Number(process.env.MUSIC_SERVICE_TIMEOUT_MS || 8000));
+const nodeMusic = require('../systems/music/nodePlayer');
+
+function envFlag(name, fallback = false) {
+  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  return fallback;
+}
+
+function useNodeBackend() {
+  const backend = String(process.env.MUSIC_BACKEND || '').trim().toLowerCase();
+  if (backend) return backend === 'node';
+  return envFlag('NODE_MUSIC_ENABLED', true);
+}
 
 function baseUrl() {
   return (process.env.RUMI_MUSIC_SERVICE_URL || DEFAULT_URL).replace(/\/+$/, '');
@@ -53,14 +68,20 @@ async function request(path, options = {}) {
 }
 
 async function health() {
+  if (useNodeBackend()) return nodeMusic.health();
   return request('/health', { method: 'GET', timeoutMs: 5000 });
 }
 
 async function getState(guildId) {
+  if (useNodeBackend()) return nodeMusic.getState(guildId);
   return request(`/api/state?guildId=${encodeURIComponent(guildId)}`);
 }
 
 async function runCommand(guildId, command, options = {}) {
+  if (useNodeBackend()) {
+    return nodeMusic.runCommand(guildId, command, options);
+  }
+
   return request('/api/command', {
     method: 'POST',
     body: JSON.stringify({

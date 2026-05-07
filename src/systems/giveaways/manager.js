@@ -1,17 +1,20 @@
-const {
+const crypto = require('node:crypto');
+const { 
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
   EmbedBuilder,
-  PermissionFlagsBits
-} = require('discord.js');
+  PermissionFlagsBits,
+  MessageFlags
+ } = require('discord.js');
 const store = require('./store');
 const { checkEligibility, calculateBonusEntries, conditionLabel } = require('./conditions');
 const { colorInt, formatDuration, unix } = require('./flags');
 const logger = require('../logging/logger');
 
 const RUNNER_INTERVAL_MS = 30_000;
+const DEFAULT_REACTION_EMOJI = '\uD83C\uDF89';
 let runnerStarted = false;
 
 function messageUrl(giveaway) {
@@ -32,37 +35,30 @@ async function renderGiveawayEmbed(giveaway, client, { ended = false } = {}) {
   const conditions = await store.listConditions(giveaway.id).catch(() => []);
   const winners = ended ? await store.listWinners(giveaway.id).catch(() => []) : [];
   const endsAt = unix(giveaway.ends_at);
-  const title = giveaway.title || `${giveaway.prize} Giveaway`;
-  const description = giveaway.description || [
-    giveaway.status === 'SCHEDULED'
-      ? `Starts <t:${unix(giveaway.starts_at)}:R>.`
-      : ended
-        ? (giveaway.end_message || 'The giveaway has ended.')
-        : `Ends <t:${endsAt}:R>.`,
+  const mode = giveaway.entry_mode === 'REACTION'
+    ? `Reaction ${giveaway.reaction_emoji || DEFAULT_REACTION_EMOJI}`
+    : 'Button';
+  const statusLine = giveaway.status === 'SCHEDULED'
+    ? `starts: <t:${unix(giveaway.starts_at)}:R>`
+    : ended
+      ? (giveaway.end_message || 'The giveaway has ended.')
+      : `ends: <t:${endsAt}:R>`;
+  const description = [
+    giveaway.description ? resolveGiveawayText(giveaway.description, giveaway, { entries, winners }) : null,
+    `**Prize:** ${String(giveaway.prize).slice(0, 512)}`,
     '',
-    giveaway.status === 'ACTIVE' ? 'Use the button or reaction on this message to enter.' : null
+    `host: <@${giveaway.host_id}>`,
+    statusLine,
+    `winners: **${giveaway.winners_count}**`,
+    `entries: **${entries}**`,
+    `mode: **${mode}**`,
+    conditions.length ? `\n**Conditions**\n${conditions.map((row) => `- ${conditionLabel(row)}`).join('\n')}` : null
   ].filter(Boolean).join('\n');
 
   const embed = new EmbedBuilder()
     .setColor(colorInt(giveaway.color))
-    .setTitle(resolveGiveawayText(title, giveaway, { entries, winners }))
-    .setDescription(resolveGiveawayText(description, giveaway, { entries, winners }).slice(0, 4096))
-    .addFields(
-      { name: 'Prize', value: String(giveaway.prize).slice(0, 1024), inline: true },
-      { name: 'Winners', value: String(giveaway.winners_count), inline: true },
-      { name: 'Entries', value: String(entries), inline: true },
-      { name: 'Host', value: `<@${giveaway.host_id}>`, inline: true },
-      { name: 'Entry mode', value: giveaway.entry_mode === 'REACTION' ? `Reaction ${giveaway.reaction_emoji || '🎉'}` : 'Button', inline: true },
-      { name: 'Ends', value: `<t:${endsAt}:F>\n<t:${endsAt}:R>`, inline: true }
-    );
-
-  if (conditions.length) {
-    embed.addFields({
-      name: 'Conditions',
-      value: conditions.map((row) => `- ${conditionLabel(row)}`).join('\n').slice(0, 1024),
-      inline: false
-    });
-  }
+    .setAuthor({ name: resolveGiveawayText(giveaway.title || 'Giveaway', giveaway, { entries, winners }) })
+    .setDescription(description.slice(0, 4096));
 
   if (winners.length) {
     embed.addFields({
@@ -78,7 +74,6 @@ async function renderGiveawayEmbed(giveaway, client, { ended = false } = {}) {
 
   return embed;
 }
-
 function resolveGiveawayText(input, giveaway, extra = {}) {
   const winnerMentions = (extra.winners || []).map((winner) => `<@${winner.user_id || winner.id}>`).join(', ');
   const replacements = {
@@ -136,7 +131,7 @@ async function publishGiveaway(client, giveaway) {
   });
 
   if (updated.entry_mode === 'REACTION') {
-    await sent.react(updated.reaction_emoji || '🎉').catch(() => null);
+    await sent.react(updated.reaction_emoji || DEFAULT_REACTION_EMOJI).catch(() => null);
   }
 
   await store.logEvent(updated.guild_id, updated.id, 'started', updated.created_by, { messageId: sent.id });
@@ -295,7 +290,7 @@ async function handleGiveawayButton(interaction) {
     content: result.ok
       ? `You are entered${result.bonus ? ` with +${result.bonus} bonus entr${result.bonus === 1 ? 'y' : 'ies'}` : ''}.`
       : result.reason,
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   }).catch(() => null);
   return true;
 }
@@ -304,7 +299,7 @@ async function handleGiveawayReaction(client, reaction, user) {
   if (user?.bot || !reaction?.message?.guild) return false;
   const giveaway = await store.getGiveawayByMessage(reaction.message.guild.id, reaction.message.id).catch(() => null);
   if (!giveaway || giveaway.status !== 'ACTIVE' || giveaway.entry_mode !== 'REACTION') return false;
-  const expected = giveaway.reaction_emoji || '🎉';
+  const expected = giveaway.reaction_emoji || DEFAULT_REACTION_EMOJI;
   const got = reaction.emoji.id ? `<:${reaction.emoji.name}:${reaction.emoji.id}>` : reaction.emoji.name;
   if (got !== expected && reaction.emoji.name !== expected) return false;
   const result = await enterGiveaway(client, giveaway, user.id).catch((error) => ({ ok: false, reason: error.message }));

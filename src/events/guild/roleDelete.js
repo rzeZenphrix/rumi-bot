@@ -1,4 +1,4 @@
-const { handleNukeAction, AuditLogEvent } = require('../../systems/antinuke/guard');
+const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
 const { sendLog } = require('../../systems/logging/logDispatcher');
 const { recordVersionSnapshot } = require('../../systems/serverdata/backups');
 

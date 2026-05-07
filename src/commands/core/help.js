@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const respond = require('../../utils/respond');
 const { isBotOwner } = require('../../systems/owner/ownerManager');
 const { getCommandCatalog } = require('../../services/api/commandCatalog');
@@ -264,62 +264,49 @@ function formatDetails(entry) {
 }
 
 function formatEntryPage(prefix, entry, currentPage, pageCount, moduleName) {
-  const fields = [
-    {
-      name: 'Details',
-      value: clampText(formatDetails(entry)),
-      inline: false
-    },
-    {
-      name: 'Aliases',
-      value: formatList(entry.aliases),
-      inline: false
-    }
-  ];
+  const usageLines = getUsageLines(entry, prefix).slice(0, 4);
+  const exampleLines = getExampleLines(entry, prefix).slice(0, 4);
+  const syntax = usageLines[0] || `${prefix}${entry.fullName}`;
+  const example = exampleLines[0] || syntax;
+  const details = [
+    entry.parent ? `Parent: ${entry.parent}` : null,
+    entry.aliases?.length ? `Aliases: ${formatList(entry.aliases)}` : null,
+    entry.permissions?.length ? `User permissions: ${formatList(entry.permissions)}` : null,
+    entry.botPermissions?.length ? `Bot permissions: ${formatList(entry.botPermissions)}` : null,
+    entry.premiumLabel ? `Premium: ${entry.premiumLabel}` : null,
+    entry.nsfw ? 'NSFW' : null,
+    entry.guildOnly ? 'Guild only' : null,
+    entry.ownerOnly ? 'Owner only' : null,
+    entry.slashLabel || 'Prefix only'
+  ].filter(Boolean);
+  const fields = details.length
+    ? [{ name: 'Info', value: clampText(details.join('\n')), inline: false }]
+    : [];
 
-  if (entry.permissions?.length) {
+  const more = [
+    usageLines.length > 1 ? `More syntax:\n${usageLines.slice(1).join('\n')}` : null,
+    exampleLines.length > 1 ? `More examples:\n${exampleLines.slice(1).join('\n')}` : null,
+    entry.flags?.length ? `Flags: ${formatList(entry.flags)}` : null
+  ].filter(Boolean).join('\n\n');
+
+  if (more) {
     fields.push({
-      name: 'User Permissions',
-      value: formatList(entry.permissions),
+      name: 'More',
+      value: clampText(codeBlock(more.split('\n')).slice(0, 1024)),
       inline: false
     });
   }
-
-  if (entry.botPermissions?.length) {
-    fields.push({
-      name: 'Bot Permissions',
-      value: formatList(entry.botPermissions),
-      inline: false
-    });
-  }
-
-  if (entry.flags?.length) {
-    fields.push({
-      name: 'Flags',
-      value: formatList(entry.flags),
-      inline: false
-    });
-  }
-
-  fields.push(
-    {
-      name: 'Usage',
-      value: usageField(prefix, entry),
-      inline: false
-    },
-    {
-      name: 'Example(s)',
-      value: examplesField(prefix, entry),
-      inline: false
-    }
-  );
 
   const module = String(moduleName || entry.module || entry.category || 'misc').toLowerCase();
 
   return {
     description: [
-      `**${entry.fullName}**`,
-      `> ${entry.description || 'No description saved yet.'}`
+      entry.description || 'No description saved yet.',
+      '',
+      codeBlock([
+        `Syntax: ${syntax}`,
+        `Example: ${example}`
+      ])
     ].join('\n'),
     fields,
     footer: {
@@ -504,7 +491,10 @@ function buildEntryPayload({
 
   return {
     mentionUser: false,
-    author,
+    author: {
+      name: entry.fullName,
+      iconURL: author?.iconURL || undefined
+    },
     description: pageData.description,
     fields: pageData.fields,
     footer: pageData.footer,
@@ -684,7 +674,7 @@ async function handleHelpInteraction(interaction) {
   if (interaction.user.id !== ownerId) {
     await interaction.reply({
       content: 'This help panel belongs to someone else.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
 
     return true;
@@ -695,7 +685,7 @@ async function handleHelpInteraction(interaction) {
   if (!session) {
     await interaction.reply({
       content: 'This help panel expired. Run the help command again.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
 
     return true;
@@ -721,7 +711,7 @@ async function handleHelpInteraction(interaction) {
   if (!payload) {
     await interaction.followUp({
       content: 'I could not load the next help page. Try running the help command again.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
 
     return true;

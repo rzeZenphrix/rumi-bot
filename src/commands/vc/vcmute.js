@@ -4,7 +4,7 @@ const { clean, ok, bad, info, findMember } = require('../../utils/moderationSimp
 module.exports = {
   name: 'vcmute',
   aliases: ['servermute', 'voicemute'],
-  category: 'moderation',
+  category: 'voice',
   description: 'Server-mute a voice member.',
   usage: 'vcmute <member> [reason]',
   examples: ['vcmute @user mic spam'],

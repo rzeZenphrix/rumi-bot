@@ -1,4 +1,4 @@
-const {
+const { 
   AttachmentBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -9,8 +9,9 @@ const {
   PermissionFlagsBits,
   StringSelectMenuBuilder,
   TextInputBuilder,
-  TextInputStyle
-} = require('discord.js');
+  TextInputStyle,
+  MessageFlags
+ } = require('discord.js');
 
 const emojis = require('../../config/botEmojis');
 const { parseComponentEmoji } = require('../../utils/componentEmoji');
@@ -390,10 +391,10 @@ async function failEphemeral(interaction, message, adminDetails = null) {
   const content = adminDetails ? `${message}\n\n${adminDetails}` : message;
 
   if (interaction.deferred || interaction.replied) {
-    return interaction.followUp({ content, ephemeral: true }).catch(() => null);
+    return interaction.followUp({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
   }
 
-  return interaction.reply({ content, ephemeral: true }).catch(() => null);
+  return interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
 }
 
 async function ensureTicketCanOpen({ guild, member, type }) {
@@ -664,7 +665,7 @@ async function createTicketModal(interaction, typeKey, panelId = null) {
 
     return interaction.reply({
       content: `${emojis.good} Your ticket was created: <#${result.channel.id}>`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -705,7 +706,7 @@ async function handleModalSubmit(interaction) {
     answer: interaction.fields.getTextInputValue(`q:${question.id}`) || ''
   }));
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const result = await openTicket({
     guild: interaction.guild,
@@ -1126,7 +1127,7 @@ async function handleTicketInteraction(interaction) {
   }
 
   if (action === 'claim') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const result = await claimTicket({
       guild: interaction.guild,
       member: interaction.member,
@@ -1139,7 +1140,7 @@ async function handleTicketInteraction(interaction) {
   }
 
   if (action === 'close') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const result = await closeTicket({
       guild: interaction.guild,
       member: interaction.member,
@@ -1153,7 +1154,7 @@ async function handleTicketInteraction(interaction) {
   }
 
   if (action === 'transcript') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const ticket = await ticketDb.getTicket(parts[2]);
     if (!ticket) return interaction.editReply(`${emojis.bad} Ticket not found.`);
@@ -1176,7 +1177,7 @@ async function handleTicketInteraction(interaction) {
     return interaction.followUp({
       content: `${emojis.documents} Transcript generated.`,
       files: [transcript.file],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 

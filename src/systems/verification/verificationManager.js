@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const {
+const { 
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -8,8 +8,9 @@ const {
   ModalBuilder,
   PermissionFlagsBits,
   TextInputBuilder,
-  TextInputStyle
-} = require('discord.js');
+  TextInputStyle,
+  MessageFlags
+ } = require('discord.js');
 
 const db = require('../../services/database');
 const logger = require('../logging/logger');
@@ -663,7 +664,7 @@ async function createCaptchaChallenge(interaction) {
   if (!config.enabled || config.mode !== 'captcha') {
     return interaction.reply({
       content: 'Captcha verification is not enabled here.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -690,7 +691,7 @@ async function createCaptchaChallenge(interaction) {
   });
 
   return interaction.reply({
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
     embeds: [
       new EmbedBuilder()
         .setTitle('Your Captcha')
@@ -734,7 +735,7 @@ async function handleCaptchaSubmit(interaction) {
   if (!captcha) {
     return interaction.reply({
       content: 'You do not have an active captcha. Click **Captcha** first.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -743,7 +744,7 @@ async function handleCaptchaSubmit(interaction) {
 
     return interaction.reply({
       content: 'Your captcha expired. Click **Captcha** to get a new one.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -760,13 +761,13 @@ async function handleCaptchaSubmit(interaction) {
 
       return interaction.reply({
         content: 'Captcha failed too many times. Click **Captcha** to generate a new one.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     return interaction.reply({
       content: `Incorrect captcha. Attempts: **${attempts}/${maxAttempts}**.`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -775,7 +776,7 @@ async function handleCaptchaSubmit(interaction) {
   if (!member) {
     return interaction.reply({
       content: 'I could not find your member profile in this server.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -785,7 +786,7 @@ async function handleCaptchaSubmit(interaction) {
     content: result.ok
       ? 'You are now verified. Welcome!'
       : `Verification failed: ${result.reason}`,
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   });
 }
 
@@ -802,7 +803,7 @@ async function safeInteractionError(interaction, error) {
 
   const payload = {
     content: `Verification failed: ${error.message || 'Unknown error.'}`,
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   };
 
   if (interaction.replied || interaction.deferred) {

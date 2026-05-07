@@ -238,7 +238,7 @@ async function sendAfkReturnSummary(message, logs = [], oldestState = null) {
   await respond.reply(
     message,
     'info',
-    `👋 ${message.author}: Welcome back, you went away ${duration}.${extra}`,
+    `Welcome back, ${message.author}. I removed your AFK status. You were away ${duration}.${extra}`,
     {
       mentionUser: false,
       useWebhook: false
@@ -329,7 +329,7 @@ async function handleAfkMentions(message) {
     const reason = active.reason ? ` with the status: \`${active.reason}\`` : '';
     const duration = formatAfkDurationShort(active.created_at);
 
-    lines.push(`💤 ${label} is afk${reason} • away for **${duration}**`);
+    lines.push(`${label} is AFK${reason} - away for **${duration}**`);
   }
 
   if (!lines.length) return false;

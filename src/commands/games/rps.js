@@ -1,10 +1,11 @@
-const {
+const { 
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
-  PermissionFlagsBits
-} = require('discord.js');
+  PermissionFlagsBits,
+  MessageFlags
+ } = require('discord.js');
 const respond = require('../../utils/respond');
 const {
   createSession,
@@ -475,13 +476,13 @@ async function handleRpsInteraction(interaction) {
   const state = getSession(SESSION_PREFIX, sessionId);
 
   if (!state) {
-    await interaction.reply({ content: 'That RPS match expired. Start a new one with `rps`.', ephemeral: true }).catch(() => null);
+    await interaction.reply({ content: 'That RPS match expired. Start a new one with `rps`.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
 
   if (type === 'control') {
     if (!canControl(interaction, state)) {
-      await interaction.reply({ content: 'Only the players or members with Manage Messages can control this match.', ephemeral: true }).catch(() => null);
+      await interaction.reply({ content: 'Only the players or members with Manage Messages can control this match.', flags: MessageFlags.Ephemeral }).catch(() => null);
       return true;
     }
 
@@ -502,7 +503,7 @@ async function handleRpsInteraction(interaction) {
     if (rawAction === 'forfeit' && state.status === 'active') {
       if (state.mode === 'solo') {
         if (interaction.user.id !== state.ownerId) {
-          await interaction.reply({ content: 'Only the player can forfeit this match.', ephemeral: true }).catch(() => null);
+          await interaction.reply({ content: 'Only the player can forfeit this match.', flags: MessageFlags.Ephemeral }).catch(() => null);
           return true;
         }
         state.status = 'finished';
@@ -511,7 +512,7 @@ async function handleRpsInteraction(interaction) {
         await recordSoloRound(interaction.guildId, state.ownerId, 'loss').catch(() => null);
       } else {
         if (![state.ownerId, state.opponentId].includes(interaction.user.id)) {
-          await interaction.reply({ content: 'Only one of the duel players can forfeit this match.', ephemeral: true }).catch(() => null);
+          await interaction.reply({ content: 'Only one of the duel players can forfeit this match.', flags: MessageFlags.Ephemeral }).catch(() => null);
           return true;
         }
         const winnerId = interaction.user.id === state.ownerId ? state.opponentId : state.ownerId;
@@ -534,19 +535,19 @@ async function handleRpsInteraction(interaction) {
   if (type !== 'choice') return false;
 
   if (state.status !== 'active') {
-    await interaction.reply({ content: 'This match is already over. Hit rematch to play again.', ephemeral: true }).catch(() => null);
+    await interaction.reply({ content: 'This match is already over. Hit rematch to play again.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
 
   const choice = rawAction === 'random' ? randomChoice() : normalizeChoice(rawAction);
   if (!choice) {
-    await interaction.reply({ content: 'That move is not valid.', ephemeral: true }).catch(() => null);
+    await interaction.reply({ content: 'That move is not valid.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
 
   if (state.mode === 'solo') {
     if (interaction.user.id !== state.ownerId) {
-      await interaction.reply({ content: 'This is not your arena. Start your own with `rps`.', ephemeral: true }).catch(() => null);
+      await interaction.reply({ content: 'This is not your arena. Start your own with `rps`.', flags: MessageFlags.Ephemeral }).catch(() => null);
       return true;
     }
 
@@ -558,12 +559,12 @@ async function handleRpsInteraction(interaction) {
   }
 
   if (![state.ownerId, state.opponentId].includes(interaction.user.id)) {
-    await interaction.reply({ content: 'Only the two duel players can choose moves here.', ephemeral: true }).catch(() => null);
+    await interaction.reply({ content: 'Only the two duel players can choose moves here.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
 
   if (state.choices[interaction.user.id]) {
-    await interaction.reply({ content: 'Your move is already locked for this round.', ephemeral: true }).catch(() => null);
+    await interaction.reply({ content: 'Your move is already locked for this round.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
 
@@ -574,7 +575,7 @@ async function handleRpsInteraction(interaction) {
     await interaction.deferUpdate().catch(() => null);
     await interaction.message.edit(payloadFor(next)).catch(() => null);
   } else {
-    await interaction.reply({ content: `Locked in ${choiceText(choice)}. Waiting for the other player.`, ephemeral: true }).catch(() => null);
+    await interaction.reply({ content: `Locked in ${choiceText(choice)}. Waiting for the other player.`, flags: MessageFlags.Ephemeral }).catch(() => null);
     await interaction.message.edit(payloadFor(next)).catch(() => null);
   }
 

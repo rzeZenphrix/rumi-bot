@@ -4,7 +4,7 @@ const { ok, bad, info, findMember } = require('../../utils/moderationSimple');
 module.exports = {
   name: 'vcunmute',
   aliases: ['serverunmute', 'voiceunmute'],
-  category: 'moderation',
+  category: 'voice',
   description: 'Remove server voice mute.',
   usage: 'vcunmute <member>',
   examples: ['vcunmute @user'],

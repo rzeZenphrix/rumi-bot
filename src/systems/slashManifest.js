@@ -1,128 +1,69 @@
-const SUPPORTED_SLASH_COMMANDS = Object.freeze([
-  'about',
-  'ask',
-  'autojail',
-  'automod',
-  'ban',
-  'bookmark',
-  'calculator',
-  'calendar',
-  'case',
-  'commandnotfound',
-  'channelinfo',
-  'changelog',
-  'claim',
-  'close',
-  'color',
-  'config',
-  'crypto',
-  'currency',
-  'customcommand',
-  'customize',
-  'dashboard',
-  'deafen',
-  'define',
-  'deposit',
-  'disconnect',
-  'domain',
-  'economy',
-  'economytop',
-  'emojiinfo',
-  'expandurl',
-  'fakeperm',
-  'fn',
-  'give',
-  'giveaway',
-  'hardban',
+const CURATED_SLASH_COMMANDS = Object.freeze([
   'help',
-  'hide',
-  'history',
-  'id',
-  'inventory',
-  'invite',
-  'iplookup',
-  'kick',
-  'linkpreview',
-  'lock',
-  'lockdown',
-  'music',
-  'messagecount',
-  'mute',
-  'nuke',
-  'nsfw',
   'ping',
+  'dashboard',
   'prefix',
   'premium',
-  'pulse',
-  'presence',
-  'purge',
-  'reactionrole',
-  'regex',
-  'reminder',
-  'role',
-  'roleinfo',
-  'rumishop',
-  'savegif',
-  'security',
-  'signal',
-  'selfprefix',
-  'sell',
   'serverpremium',
-  'setup',
-  'shard',
-  'shop',
-  'slowmode',
-  'softban',
-  'spotify',
-  'support',
-  'tempban',
-  'thresholds',
-  'ticket',
-  'todo',
-  'transcript',
-  'translate',
-  'unban',
-  'undeafen',
-  'unhide',
-  'unlock',
-  'unlockdown',
-  'unmute',
   'userpremium',
-  'userinfo',
-  'variables',
-  'voicecount',
-  'voicemove',
-  'vote',
-  'warn',
-  'weather',
-  'weekly',
-  'whitelist',
-  'withdraw',
-  'work',
-  'balance',
-  'buy',
-  'rps',
-  'bumpreminder',
-  'daily',
-  'anime',
-  'cigarette',
-  'fasttype',
-  'google',
+  'ticket',
+  'giveaway',
+  'spotify',
   'lastfm',
-  'manga',
-  'mathrace',
-  'bio',
-  'calendar',
-  'media',
-  'poll',
-  'profile',
-  'reminder',
-  'snipe',
-  'emojisteal',
-  'currency',
+  'music',
+  'verification',
+  'security',
+  'setup',
+  'commandnotfound',
+  'variables',
+  'messagecount',
+  'voicecount',
+  'support',
+  'invite',
+  'about',
+  'shard'
 ]);
 
-const supportedSet = new Set(SUPPORTED_SLASH_COMMANDS);
+const LEGACY_SLASH_COMMANDS = Object.freeze([
+  ...CURATED_SLASH_COMMANDS,
+  'automod',
+  'autojail',
+  'ban',
+  'currency',
+  'economy',
+  'fakeperm',
+  'kick',
+  'mute',
+  'nsfw',
+  'purge',
+  'role',
+  'softban',
+  'tempban',
+  'unban',
+  'unmute',
+  'warn'
+]);
+
+function envFlag(name, fallback = false) {
+  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  return fallback;
+}
+
+function strictManifestEnabled() {
+  return envFlag('SLASH_SYNC_STRICT_MANIFEST', true);
+}
+
+function configuredSlashCommands() {
+  const raw = String(process.env.SLASH_SYNC_COMMANDS || '').trim();
+  const base = raw
+    ? raw.split(',').map((name) => name.trim().toLowerCase()).filter(Boolean)
+    : (strictManifestEnabled() ? CURATED_SLASH_COMMANDS : LEGACY_SLASH_COMMANDS);
+
+  return [...new Set(base)];
+}
 
 function musicSlashOwnedBySidecar() {
   const raw = String(process.env.MUSIC_SLASH_OWNER || '').trim().toLowerCase();
@@ -134,18 +75,21 @@ function isSlashSupported(commandName) {
   if (musicSlashOwnedBySidecar() && (normalized === 'music' || normalized === 'spotify')) {
     return false;
   }
-  return supportedSet.has(normalized);
+  return configuredSlashCommands().includes(normalized);
 }
 
 function listSupportedSlashCommands() {
+  const commands = configuredSlashCommands();
   if (!musicSlashOwnedBySidecar()) {
-    return [...SUPPORTED_SLASH_COMMANDS];
+    return commands;
   }
-  return SUPPORTED_SLASH_COMMANDS.filter((name) => name !== 'music' && name !== 'spotify');
+  return commands.filter((name) => name !== 'music' && name !== 'spotify');
 }
 
 module.exports = {
-  SUPPORTED_SLASH_COMMANDS,
+  SUPPORTED_SLASH_COMMANDS: CURATED_SLASH_COMMANDS,
+  CURATED_SLASH_COMMANDS,
+  LEGACY_SLASH_COMMANDS,
   musicSlashOwnedBySidecar,
   isSlashSupported,
   listSupportedSlashCommands

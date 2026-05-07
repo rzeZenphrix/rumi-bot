@@ -1,4 +1,4 @@
-const { Events } = require('discord.js');
+const { Events, MessageFlags } = require('discord.js');
 const { handleTicketInteraction } = require('../../systems/tickets/ticketManager');
 const { handleSlashCommandInteraction } = require('../../systems/slashCommands');
 const { handlePagedMessageInteraction } = require('../../utils/pagedMessages');
@@ -66,7 +66,7 @@ module.exports = {
 
       await interaction.reply({
         content: 'This slash command is currently unavailable. Try syncing commands again, or use the prefix version for now.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       }).catch(() => null);
 
       return;
@@ -86,7 +86,7 @@ module.exports = {
 
       await interaction.reply({
         content: 'The help system is still loading. Try again in a moment.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       }).catch(() => null);
 
       return;

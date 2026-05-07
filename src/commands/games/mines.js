@@ -1,8 +1,9 @@
-const {
+const { 
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
+  ButtonStyle,
+  MessageFlags
+ } = require('discord.js');
 const respond = require('../../utils/respond');
 const {
   createSession,
@@ -179,7 +180,7 @@ async function handleMinesInteraction(interaction) {
   if (!state) {
     await interaction.reply({
       content: 'That mines board expired. Start a new one with `mines`.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
     return true;
   }
@@ -187,7 +188,7 @@ async function handleMinesInteraction(interaction) {
   if (interaction.user.id !== state.ownerId) {
     await interaction.reply({
       content: 'Only the player who started this board can use it.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
     return true;
   }

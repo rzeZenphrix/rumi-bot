@@ -16,18 +16,25 @@ function normalizeServiceUrl(raw) {
 }
 
 function getBackendUrl() {
-  return normalizeServiceUrl(
+  const normalized = normalizeServiceUrl(
     process.env.RUMI_DASHBOARD_BACKEND_URL ||
     process.env.DASHBOARD_BACKEND_URL ||
     process.env.DASHBOARD_URL ||
     process.env.DASHBOARD_PUBLIC_URL
   );
+
+  return normalized.replace(/\/studio$/i, '');
 }
 
 async function postJson(url, payload) {
+  const headers = { 'content-type': 'application/json' };
+  if (process.env.BOT_SYNC_SECRET) {
+    headers.authorization = `Bearer ${process.env.BOT_SYNC_SECRET}`;
+  }
+
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify(payload)
   });
 

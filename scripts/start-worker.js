@@ -27,6 +27,10 @@ function startBotWorkerFallback(reason) {
   process.env.ENABLE_API = process.env.ENABLE_API || 'false';
   process.env.BOT_MODE = process.env.BOT_MODE || 'single';
   process.env.NO_SHARDS = process.env.NO_SHARDS || 'true';
+  process.env.MUSIC_BACKEND = process.env.MUSIC_BACKEND || 'node';
+  process.env.NODE_MUSIC_ENABLED = process.env.NODE_MUSIC_ENABLED || 'true';
+  process.env.MUSIC_READY = process.env.MUSIC_READY || 'true';
+  process.env.MUSIC_SIDECAR_ENABLED = 'false';
   require(path.resolve(__dirname, '..', 'src', 'index.js'));
 }
 

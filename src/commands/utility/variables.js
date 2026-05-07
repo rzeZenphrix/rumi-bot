@@ -1,4 +1,4 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const respond = require('../../utils/respond');
 const { VARIABLES } = require('../../systems/variables/variableRegistry');
 
@@ -100,7 +100,7 @@ async function handleVariablesInteraction(interaction) {
 
   const [, ownerId, pageToken, encodedQuery] = interaction.customId.split(':');
   if (interaction.user.id !== ownerId) {
-    await interaction.reply({ content: 'This variables panel belongs to someone else.', ephemeral: true }).catch(() => null);
+    await interaction.reply({ content: 'This variables panel belongs to someone else.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
 

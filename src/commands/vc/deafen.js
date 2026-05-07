@@ -4,7 +4,7 @@ const { clean, ok, bad, info, findMember } = require('../../utils/moderationSimp
 module.exports = {
   name: 'deafen',
   aliases: ['serverdeafen'],
-  category: 'moderation',
+  category: 'voice',
   description: 'Server-deafen a voice member.',
   usage: 'deafen <member> [reason]',
   examples: ['deafen @user'],

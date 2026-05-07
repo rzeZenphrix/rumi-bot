@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
+const db = require('../../services/database');
 const fs = require('fs');
 const path = require('path');
 
@@ -60,6 +61,7 @@ const ACTION_SPECS = [
   ['leanon', 'leaned on', 'leaned into the cozy silence', 'affectionate', 'anime lean on shoulder', 'cozy'],
   ['twirl', 'twirled', 'twirled playfully', 'playful', 'anime twirl dance', 'affection'],
   ['smooch', 'gave a sweet smooch to', 'sent a sweet smooch into the air', 'sweet', 'anime kiss cute wholesome', 'affection'],
+  ['kiss', 'kissed', 'sent a soft kiss into the air', 'sweet', 'anime kiss cute wholesome', 'affection'],
   ['peck', 'gave a quick peck to', 'sent a quick peck', 'sweet', 'anime cheek kiss cute wholesome', 'affection'],
   ['foreheadkiss', 'gave a gentle forehead kiss to', 'sent a gentle forehead kiss', 'gentle', 'anime forehead kiss wholesome', 'affection'],
   ['cheekkiss', 'gave a cheek kiss to', 'sent a cheek kiss', 'sweet', 'anime cheek kiss wholesome', 'affection'],
@@ -316,6 +318,7 @@ const SAFE_ACTIONS = new Set([
   'hug',
   'hugback',
   'idea',
+  'kiss',
   'laugh',
   'laughhard',
   'leanon',
@@ -654,20 +657,74 @@ function getExtraLine(commandName, actionData) {
   ]);
 }
 
-function buildDescription(commandName, actionData, message, target) {
+function ordinal(value) {
+  const number = Math.max(1, Number(value || 1));
+  const mod100 = number % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${number}th`;
+  if (number % 10 === 1) return `${number}st`;
+  if (number % 10 === 2) return `${number}nd`;
+  if (number % 10 === 3) return `${number}rd`;
+  return `${number}th`;
+}
+
+async function incrementRoleplayCount(message, commandName, target) {
+  if (!message.guild?.id || !message.author?.id) return 1;
+
+  const guildId = message.guild.id;
+  const actorId = message.author.id;
+  const targetId = target?.id || null;
+  const action = String(commandName || '').toLowerCase();
+
+  try {
+    const { data: current } = await db.runQuery(
+      db.supabase
+        .from('roleplay_counts')
+        .select('*')
+        .eq('guild_id', guildId)
+        .eq('actor_user_id', actorId)
+        .eq('target_user_id', targetId || actorId)
+        .eq('action_name', action)
+        .maybeSingle(),
+      'roleplay:getCount'
+    );
+
+    const nextCount = Number(current?.count || 0) + 1;
+    await db.runQuery(
+      db.supabase
+        .from('roleplay_counts')
+        .upsert(
+          {
+            guild_id: guildId,
+            actor_user_id: actorId,
+            target_user_id: targetId || actorId,
+            action_name: action,
+            count: nextCount,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'guild_id,actor_user_id,target_user_id,action_name' }
+        ),
+      'roleplay:upsertCount'
+    );
+    return nextCount;
+  } catch {
+    return 1;
+  }
+}
+
+function buildDescription(commandName, actionData, message, target, count = 1) {
   const author = getAuthorDisplay(message);
   const targetDisplay = getDisplay(target);
-  const extra = getExtraLine(commandName, actionData);
+  const countText = `for the **${ordinal(count)}** time`;
 
   if (target && target.id === message.author.id && SELF_LINES[commandName]) {
-    return [`${author} **${SELF_LINES[commandName]}**.`, extra].join(NL);
+    return `${author} ${SELF_LINES[commandName]} ${countText}`;
   }
 
   if (targetDisplay) {
-    return [`${author} **${actionData.verb}** ${targetDisplay}.`, extra].join(NL);
+    return `${author} ${actionData.verb} ${targetDisplay} ${countText}`;
   }
 
-  return [`${author} **${actionData.noTarget || actionData.verb}**.`, extra].join(NL);
+  return `${author} ${actionData.noTarget || actionData.verb} ${countText}`;
 }
 
 function getFallbackGif(commandName, actionData) {
@@ -773,51 +830,24 @@ function isNsfwTaggedAction(commandName) {
   return !SAFE_ACTIONS.has(String(commandName || '').toLowerCase());
 }
 
-function buildEmbed(commandName, actionData, message, target, gifData) {
+function buildEmbed(commandName, actionData, message, target, gifData, count = 1) {
   const actorName = message.member?.displayName || message.author?.displayName || message.author?.username || 'Someone';
-  const targetName = target?.displayName || target?.user?.globalName || target?.user?.username || 'Solo scene';
 
   return {
     author: {
       name: actorName,
       icon_url: message.author?.displayAvatarURL?.({ size: 256 }) || undefined
     },
-    title: prettifyCommandName(commandName),
-    description: buildDescription(commandName, actionData, message, target),
+    description: buildDescription(commandName, actionData, message, target, count),
     color: commandColor(actionData),
-    fields: [
-      {
-        name: 'Mode',
-        value: target ? 'Targeted' : 'Solo',
-        inline: true
-      },
-      {
-        name: 'Tone',
-        value: titleCase(actionData.tone || 'roleplay'),
-        inline: true
-      },
-      {
-        name: 'Style',
-        value: titleCase(actionData.group || 'roleplay'),
-        inline: true
-      },
-      {
-        name: target ? 'Target' : 'Scene',
-        value: target ? targetName : 'No target picked',
-        inline: false
-      }
-    ],
     image: gifData?.url ? { url: gifData.url } : undefined,
-    footer: {
-      text: gifData?.source ? `GIF via Tenor • ${gifData.source}` : `Rumi Roleplay • ${titleCase(actionData.group || 'roleplay')}`
-    },
-    timestamp: new Date().toISOString()
+    footer: gifData?.source ? { text: `GIF via Tenor - ${gifData.source}` } : undefined
   };
 }
 
-async function sendRoleplay(message, commandName, actionData, target, gifData) {
+async function sendRoleplay(message, commandName, actionData, target, gifData, count = 1) {
   return message.channel.send({
-    embeds: [buildEmbed(commandName, actionData, message, target, gifData)],
+    embeds: [buildEmbed(commandName, actionData, message, target, gifData, count)],
     allowedMentions: {
       users: [message.author.id, target?.id].filter(Boolean),
       roles: [],
@@ -825,7 +855,6 @@ async function sendRoleplay(message, commandName, actionData, target, gifData) {
     }
   });
 }
-
 function chunkCommands(commandNames, maxLength = 950) {
   const chunks = [];
   let current = '';
@@ -915,9 +944,10 @@ async function executeRoleplayAction({ message, args, actionName }) {
   }
 
   const target = await findMemberByText(message, args);
+  const count = await incrementRoleplayCount(message, usedCommand, target);
   const gifData = await getGif(usedCommand, actionData);
 
-  return sendRoleplay(message, usedCommand, actionData, target, gifData);
+  return sendRoleplay(message, usedCommand, actionData, target, gifData, count);
 }
 
 function usageLinesFor(commandName) {

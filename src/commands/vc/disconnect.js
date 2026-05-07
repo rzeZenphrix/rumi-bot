@@ -4,7 +4,7 @@ const { ok, bad, info, findMember } = require('../../utils/moderationSimple');
 module.exports = {
   name: 'disconnect',
   aliases: ['dc'],
-  category: 'moderation',
+  category: 'voice',
   description: 'Disconnect a member from voice.',
   usage: 'disconnect <member>',
   examples: ['disconnect @user'],

@@ -22,6 +22,8 @@ const { runSchemaAudit } = require('../systems/database/schemaAudit');
 const { startKeepAlive } = require('../systems/runtime/keepAlive');
 const { startMarketAlertRunner } = require('../systems/monetization/marketAlerts');
 const { syncApplicationCommands } = require('../systems/slashCommands');
+const { startGiveawayRunner } = require('../systems/giveaways/manager');
+const { initializeMusicPlayer } = require('../systems/music/nodePlayer');
 
 function shouldStartApi() {
   if (process.env.ENABLE_API === 'false') return false;
@@ -114,6 +116,16 @@ client.once('clientReady', async () => {
   } catch (error) {
     logger.warn({ error }, 'AutoJail scheduler failed to start; continuing startup');
   }
+
+  try {
+    startGiveawayRunner(client);
+  } catch (error) {
+    logger.warn({ error }, 'Giveaway runner failed to start; continuing startup');
+  }
+
+  await initializeMusicPlayer(client).catch((error) => {
+    logger.warn({ error }, 'Node music backend failed to start; continuing startup');
+  });
 
   await syncDashboardBackend(client).catch((error) => {
     logger.warn({ error }, 'Dashboard backend sync failed; continuing startup');

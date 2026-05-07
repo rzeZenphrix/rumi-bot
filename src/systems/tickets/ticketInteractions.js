@@ -1,10 +1,11 @@
+const { MessageFlags } = require('discord.js');
 const respond = require('../../utils/respond');
 const ticketDb = require('./ticketDb');
 const ticketManager = require('./ticketManager');
 
 async function createTicketFromInteraction(interaction, typeKey, panelId = null) {
   if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ ephemeral: true }).catch(() => null);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
   }
 
   const result = await ticketManager.openTicket({
@@ -18,8 +19,8 @@ async function createTicketFromInteraction(interaction, typeKey, panelId = null)
   }));
 
   const payload = result.ok
-    ? { content: `Ticket created: <#${result.channel.id}>`, ephemeral: true }
-    : { content: result.reason || 'I could not create that ticket right now.', ephemeral: true };
+    ? { content: `Ticket created: <#${result.channel.id}>`, flags: MessageFlags.Ephemeral }
+    : { content: result.reason || 'I could not create that ticket right now.', flags: MessageFlags.Ephemeral };
 
   if (interaction.deferred || interaction.replied) {
     await interaction.editReply(payload).catch(() => null);
@@ -32,7 +33,7 @@ async function createTicketFromInteraction(interaction, typeKey, panelId = null)
 
 async function claimTicketFromInteraction(interaction, ticketId = null) {
   if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ ephemeral: true }).catch(() => null);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
   }
 
   const ticket =
@@ -40,7 +41,7 @@ async function claimTicketFromInteraction(interaction, ticketId = null) {
     await ticketDb.getTicketByChannel(interaction.guild.id, interaction.channelId).catch(() => null);
 
   if (!ticket) {
-    const payload = { content: 'This channel is not a ticket.', ephemeral: true };
+    const payload = { content: 'This channel is not a ticket.', flags: MessageFlags.Ephemeral };
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply(payload).catch(() => null);
     } else {
@@ -60,7 +61,7 @@ async function claimTicketFromInteraction(interaction, ticketId = null) {
 
   const payload = {
     content: result.ok ? 'Ticket claimed.' : (result.reason || 'I could not claim that ticket right now.'),
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   };
 
   if (interaction.deferred || interaction.replied) {
@@ -74,7 +75,7 @@ async function claimTicketFromInteraction(interaction, ticketId = null) {
 
 async function closeTicketFromInteraction(interaction, ticketId = null, reason = 'Closed from ticket button.') {
   if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ ephemeral: true }).catch(() => null);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
   }
 
   const ticket =
@@ -82,7 +83,7 @@ async function closeTicketFromInteraction(interaction, ticketId = null, reason =
     await ticketDb.getTicketByChannel(interaction.guild.id, interaction.channelId).catch(() => null);
 
   if (!ticket) {
-    const payload = { content: 'This channel is not a ticket.', ephemeral: true };
+    const payload = { content: 'This channel is not a ticket.', flags: MessageFlags.Ephemeral };
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply(payload).catch(() => null);
     } else {
@@ -103,7 +104,7 @@ async function closeTicketFromInteraction(interaction, ticketId = null, reason =
 
   const payload = {
     content: result.ok ? 'Ticket closed.' : (result.reason || 'I could not close that ticket right now.'),
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   };
 
   if (interaction.deferred || interaction.replied) {

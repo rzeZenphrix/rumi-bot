@@ -1,4 +1,4 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const respond = require('./respond');
 const {
   createSession,
@@ -77,7 +77,7 @@ async function handlePagedMessageInteraction(interaction) {
   if (!session) {
     await interaction.reply({
       content: 'That panel expired. Run the command again for a fresh view.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
     return true;
   }
@@ -85,7 +85,7 @@ async function handlePagedMessageInteraction(interaction) {
   if (interaction.user.id !== session.ownerId) {
     await interaction.reply({
       content: 'That panel belongs to someone else.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     }).catch(() => null);
     return true;
   }

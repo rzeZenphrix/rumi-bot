@@ -4,7 +4,7 @@ const { ok, bad, info, findMember } = require('../../utils/moderationSimple');
 module.exports = {
   name: 'undeafen',
   aliases: ['serverundeafen'],
-  category: 'moderation',
+  category: 'voice',
   description: 'Remove server deafening.',
   usage: 'undeafen <member>',
   examples: ['undeafen @user'],
