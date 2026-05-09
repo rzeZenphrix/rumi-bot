@@ -23,14 +23,12 @@ module.exports = {
     const bots = fetchedMembers.filter((member) => member.user.bot).size;
     const total = fetchedMembers.size;
 
-    return respond.reply(message, 'info', null, {
-      title: 'Member Count',
+    return respond.reply(message, '', null, {
       description: [
         `> Total members: **${total.toLocaleString()}**`,
         `> Users: **${users.toLocaleString()}**`,
         `> Bots: **${bots.toLocaleString()}**`
       ].join('\n'),
-      footer: { text: 'Fetched live from Discord, not read from member cache.' },
       mentionUser: false
     });
   }

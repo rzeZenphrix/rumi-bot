@@ -357,21 +357,14 @@ function buildMainPayload({ author, prefix, ownerId, sessionId, page, catalog })
   return {
     mentionUser: false,
     author,
-    description: [
-      `**${emojis.ai} Rumi command center**`,
-      `I found **${catalog.displayCount}** public command entries for this server.`,
-      statsLine ? `_${statsLine}_` : null,
-      '',
-      'Use the dashboard for the searchable command browser, or search here by command, subcommand, or module.'
-    ].filter(Boolean).join('\n'),
     fields: [
       {
         name: 'Quick start',
         value: codeBlock([
-          `${prefix}help moderation`,
+          `Syntax: ${prefix}help command`,
           `${prefix}help economy`,
-          `${prefix}help antinuke status`,
-          `${prefix}help command subcommand`
+          `Syntax: ${prefix}help command subcommand`,
+          `${prefix}help antinuke status`
         ]),
         inline: false
       },
@@ -382,7 +375,7 @@ function buildMainPayload({ author, prefix, ownerId, sessionId, page, catalog })
       },
       {
         name: 'Tip',
-        value: `Try \`${prefix}help play\`, \`${prefix}help variables\`, or \`${prefix}help economy 2\` for paged results.`,
+        value: 'Use the dashboard for the searchable command browser, or search here by command, subcommand, or module.',
         inline: false
       }
     ],

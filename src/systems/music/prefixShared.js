@@ -9,14 +9,6 @@ try {
   recordMusicPlay = async () => null;
 }
 
-const MUSIC_COLORS = {
-  default: respond.DEFAULT_EMBED_COLOR,
-  panel: respond.DEFAULT_EMBED_COLOR,
-  success: respond.DEFAULT_EMBED_COLOR,
-  warn: respond.DEFAULT_EMBED_COLOR,
-  error: respond.ERROR_EMBED_COLOR
-};
-
 const FILTER_MODES = [
   'off',
   'clear',
@@ -53,7 +45,7 @@ const SETTINGS_HELP = [
   'musicsettings volume 80',
   'musicsettings autoplay on',
   'musicsettings announce off',
-  'musicsettings djrole @dj',
+  'musicsettings search soundcloud',
   'musicsettings idle 180',
   'musicsettings restrict dj'
 ];
@@ -62,9 +54,9 @@ const LEGACY_OVERVIEW = [
   ['Playback', ['play <query>', 'queue', 'nowplaying', 'skip', 'pause', 'resume', 'stop', 'leave']],
   ['Queue tools', ['remove <index>', 'move <from> <to>', 'skipto <index>', 'clear', 'shuffle', 'musichistory']],
   ['Tuning', ['volume <value>', 'seek <position>', 'loop <off|track|queue>', 'filter <mode>', 'autoplay <on|off>']],
-  ['Utilities', ['lyrics', 'stats', 'musicpanel', 'musicexport', 'musicimport <code>', 'musicsettings ...']],
-  ['Extras', ['247 <on|off>', 'playlist', 'radio <station>', 'vibe <preset>', 'musicprofile']],
-  ['Fallbacks', ['music play <query>', 'music queue', 'musicsettings volume 80']]
+  ['Sources', ['musicsettings search soundcloud', 'musicsettings search spotify', 'musicsettings search apple']],
+  ['Utilities', ['lyrics', 'stats', 'musicsettings ...']],
+  ['Extras', ['247 <on|off>', 'playlist', 'radio <station>', 'vibe <preset>', 'musicprofile']]
 ];
 
 function buildMusicOptions(message, extra = {}) {
@@ -90,11 +82,6 @@ function failureText(payload, fallback = 'I could not reach the music service ri
   }
 
   return payload.error || fallback;
-}
-
-function normalizeColor(value, fallback = MUSIC_COLORS.default) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
 }
 
 function normalizeFooter(footer) {
@@ -149,13 +136,14 @@ function toEmbedOptions(payload = {}, fallbackTitle = 'Music') {
     fields: normalizeFields(payload.fields),
     thumbnail: normalizeThumbnail(payload.thumbnail),
     footer: normalizeFooter(payload.footer),
-    color: normalizeColor(payload.color),
-    components: payload.components || []
+    emoji: payload.emoji || undefined,
+    color: Number.isFinite(Number(payload.color)) ? Number(payload.color) : undefined
   };
 }
 
 async function replyPayload(message, payload, fallbackTitle) {
-  return respond.reply(message, 'info', null, toEmbedOptions(payload, fallbackTitle));
+  const type = payload.replyType || (payload.ok ? 'info' : 'bad');
+  return respond.reply(message, type, null, toEmbedOptions(payload, fallbackTitle));
 }
 
 function normalizeBooleanLike(value) {
@@ -182,22 +170,17 @@ function joinArgs(args = []) {
 
 function overviewEmbed() {
   return {
-    title: 'Rumi Music',
-    description: [
-      'Premium playback with clean controls, richer source matching, and a softer queue flow.',
-      '',
-      '`play <song or URL>`  Start music',
-      '`queue`  View what is next',
-      '`nowplaying`  Current track',
-      '`skip`  Next song',
-      '`pause` / `resume`  Playback control',
-      '`musicsearch <query>`  Browse matches',
-      '',
-      'Spotify, SoundCloud, Apple Music, YouTube, direct audio, and playlists are supported where available.'
-    ].join('\n'),
-    color: MUSIC_COLORS.panel,
+    replyType: 'list',
+    emoji: '',
+    title: 'Music Commands',
+    description: 'SoundCloud-first music is enabled. YouTube cookies are not required.',
+    fields: LEGACY_OVERVIEW.map(([name, lines]) => ({
+      name,
+      value: lines.map((line) => `\`${line}\``).join('\n'),
+      inline: false
+    })),
     footer: {
-      text: 'Rumi music · sleek node backend'
+      text: 'Short direct commands are live.'
     }
   };
 }
@@ -219,7 +202,9 @@ async function runMusic(message, serviceCommand, options = {}, fallbackTitle = '
     : await musicService.runCommand(message.guild.id, serviceCommand, buildMusicOptions(message, options));
 
   if (!payload?.ok) {
-    await respond.reply(message, 'bad', failureText(payload));
+    await respond.reply(message, payload?.replyType || 'bad', failureText(payload), {
+      emoji: payload?.emoji || undefined
+    });
     return null;
   }
 
@@ -311,6 +296,11 @@ function parseMusicSettings(args = []) {
   if (key === 'volume') {
     const value = String(args.shift() || '').trim();
     return value ? { command: 'settings.volume', options: { value } } : null;
+  }
+
+  if (key === 'search' || key === 'source' || key === 'engine') {
+    const engine = String(args.shift() || '').trim();
+    return engine ? { command: 'settings.search', options: { engine } } : null;
   }
 
   if (key === 'autoplay' || key === 'announce') {
@@ -427,23 +417,24 @@ function createMusicOverviewCommand() {
     name: 'music',
     aliases: ['musicstatus'],
     category: 'music',
-    description: 'Show music status, get a direct command overview, or use the legacy `music <command>` format.',
-    usage: ['music', 'music status', 'music play <query>', 'music settings volume 80'],
-    examples: ['music', 'music play pink pony club', 'music queue', 'music settings volume 80'],
+    description: 'Show music status, command overview, or use the legacy `music <command>` format.',
+    usage: ['music', 'music status', 'music play <query>', 'music settings search soundcloud'],
+    examples: ['music', 'music play pink pony club', 'music queue', 'music settings search soundcloud'],
     guildOnly: true,
     typing: true,
 
     async execute({ message, args }) {
       if (!args.length) {
-        return respond.reply(message, 'info', null, overviewEmbed());
+        return respond.reply(message, 'list', null, overviewEmbed());
       }
 
       const parsed = parseLegacyMusic(args);
+
       if (!parsed) {
         return respond.reply(
           message,
           'info',
-          'Use a direct command like `play`, `queue`, `musicsearch`, or `musicsettings`, or stick with `music <command>`.',
+          'Use a direct command like `play`, `queue`, `musicsearch`, or `musicsettings`.',
           overviewEmbed()
         );
       }
@@ -454,7 +445,6 @@ function createMusicOverviewCommand() {
 }
 
 module.exports = {
-  MUSIC_COLORS,
   FILTER_MODES,
   LOOP_MODES,
   SETTINGS_HELP,
