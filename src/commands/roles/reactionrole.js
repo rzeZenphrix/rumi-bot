@@ -24,7 +24,7 @@ module.exports = {
   category: 'moderation',
   description: 'Manage reaction roles.',
   usage: 'rr [message emoji role|delete|clear|list]',
-  examples: ['rr 123 ✅ Member', 'rr delete 123 ✅', 'rr clear 123', 'rr'],
+  examples: ['rr 123 emoji Member', 'rr delete 123 emoji', 'rr clear 123', 'rr'],
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageRoles],
   botPermissions: [PermissionFlagsBits.ManageRoles, PermissionFlagsBits.AddReactions, PermissionFlagsBits.ReadMessageHistory],

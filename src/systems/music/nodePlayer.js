@@ -1,16 +1,28 @@
-const { ChannelType } = require('discord.js');
-const { Player, QueueRepeatMode } = require('discord-player');
-const { DefaultExtractors } = require('@discord-player/extractor');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  MessageFlags
+} = require('discord.js');
+const { Player, QueueRepeatMode, QueryType } = require('discord-player');
+const {
+  AppleMusicExtractor,
+  DefaultExtractors,
+  SoundCloudExtractor,
+  SpotifyExtractor
+} = require('@discord-player/extractor');
 process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
 const { YoutubeExtractor } = require('discord-player-youtube');
 
 const logger = require('../logging/logger');
 const db = require('../../services/database');
+const respond = require('../../utils/respond');
 
-const MUSIC_COLOR = Number.parseInt(process.env.MUSIC_EMBED_COLOR || '8fb7ff', 16);
-const MUSIC_PANEL_COLOR = Number.parseInt(process.env.MUSIC_PANEL_COLOR || 'b7a7ff', 16);
-const MUSIC_OK_COLOR = Number.parseInt(process.env.MUSIC_OK_COLOR || 'a7f3d0', 16);
-const ERROR_COLOR = Number.parseInt(process.env.MUSIC_ERROR_COLOR || 'ff6b8a', 16);
+const MUSIC_COLOR = Number.parseInt(process.env.MUSIC_EMBED_COLOR || 'c8d8f2', 16);
+const MUSIC_PANEL_COLOR = Number.parseInt(process.env.MUSIC_PANEL_COLOR || 'c8d8f2', 16);
+const MUSIC_OK_COLOR = Number.parseInt(process.env.MUSIC_OK_COLOR || 'c8d8f2', 16);
+const ERROR_COLOR = Number.parseInt(process.env.MUSIC_ERROR_COLOR || 'ed4245', 16);
 const INVISIBLE = '\u200B';
 
 const FILTER_ALIASES = new Map([
@@ -129,6 +141,33 @@ function toFooter(text, iconUrl = null) {
 
   if (iconUrl) footer.icon_url = iconUrl;
   return footer;
+}
+
+function musicControls(queue) {
+  if (!queue || queue.deleted) return [];
+
+  const paused = Boolean(queue.node?.isPaused?.());
+  const pause = new ButtonBuilder()
+    .setCustomId(`music:${paused ? 'resume' : 'pause'}`)
+    .setLabel(paused ? 'Resume' : 'Pause')
+    .setStyle(ButtonStyle.Secondary);
+
+  const skip = new ButtonBuilder()
+    .setCustomId('music:skip')
+    .setLabel('Skip')
+    .setStyle(ButtonStyle.Primary);
+
+  const queueButton = new ButtonBuilder()
+    .setCustomId('music:queue')
+    .setLabel('Queue')
+    .setStyle(ButtonStyle.Secondary);
+
+  const stop = new ButtonBuilder()
+    .setCustomId('music:stop')
+    .setLabel('Stop')
+    .setStyle(ButtonStyle.Danger);
+
+  return [new ActionRowBuilder().addComponents(pause, skip, queueButton, stop)];
 }
 
 function avatarUrl(user) {
@@ -446,6 +485,53 @@ function queueLine(track, index) {
   return `\`${String(index + 1).padStart(2, '0')}\` ${label} \`${duration}\``;
 }
 
+function envValue(...names) {
+  for (const name of names) {
+    const value = String(process.env[name] || '').trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function extractorOptions() {
+  return {
+    [SpotifyExtractor.identifier]: {
+      clientId: envValue('DP_SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_ID'),
+      clientSecret: envValue('DP_SPOTIFY_CLIENT_SECRET', 'SPOTIFY_CLIENT_SECRET')
+    },
+    [SoundCloudExtractor.identifier]: {
+      clientId: envValue('SOUNDCLOUD_CLIENT_ID', 'SOUNDCLOUD_CLIENTID'),
+      oauthToken: envValue('SOUNDCLOUD_OAUTH_TOKEN', 'SOUNDCLOUD_TOKEN')
+    },
+    [AppleMusicExtractor.identifier]: {}
+  };
+}
+
+function youtubeOptions() {
+  return {
+    cookie: envValue('YOUTUBE_COOKIE', 'YOUTUBE_COOKIES'),
+    filterAutoplayTracks: true,
+    disableYTJSLog: true,
+    sabrPlaybackOptions: {
+      audioQuality: 'high',
+      preferOpus: true,
+      maxRetries: 12,
+      stallDetectionMs: 45000
+    }
+  };
+}
+
+function preferredSearchEngine(query) {
+  const value = String(query || '').trim();
+  if (/^https?:\/\//i.test(value)) return QueryType.AUTO;
+
+  const preferred = String(process.env.MUSIC_SEARCH_ENGINE || 'spotify').trim().toLowerCase();
+  if (preferred === 'youtube') return QueryType.YOUTUBE_SEARCH;
+  if (preferred === 'soundcloud') return QueryType.SOUNDCLOUD_SEARCH;
+  if (preferred === 'auto') return QueryType.AUTO_SEARCH;
+  return QueryType.SPOTIFY_SEARCH;
+}
+
 async function ensurePlayback(queue) {
   if (!queue || queue.deleted) return false;
 
@@ -556,13 +642,15 @@ async function loadExtractors() {
   if (extractorLoadPromise) return extractorLoadPromise;
 
   extractorLoadPromise = (async () => {
-    await player.extractors.loadMulti(DefaultExtractors).catch((error) => {
+    await player.extractors.loadMulti(DefaultExtractors, extractorOptions()).catch((error) => {
       logger.warn({ error }, 'Default music extractors failed to load');
     });
 
-    await player.extractors.register(YoutubeExtractor, {}).catch((error) => {
-      logger.warn({ error }, 'YouTube music extractor failed to load');
-    });
+    if (!player.extractors.isRegistered(YoutubeExtractor.identifier)) {
+      await player.extractors.register(YoutubeExtractor, youtubeOptions()).catch((error) => {
+        logger.warn({ error }, 'YouTube music extractor failed to load');
+      });
+    }
   })();
 
   return extractorLoadPromise;
@@ -579,8 +667,11 @@ async function initializeMusicPlayer(client) {
   clientRef = client;
 
   player = new Player(client, {
+    skipFFmpeg: false,
     ytdlOptions: {
       quality: 'highestaudio',
+      filter: 'audioonly',
+      dlChunkSize: 0,
       highWaterMark: 1 << 25
     }
   });
@@ -651,25 +742,22 @@ async function getState(guildId) {
   if (!queue) {
     return success('', '`idle`\nNothing is currently playing in this server.', {
       color: MUSIC_PANEL_COLOR,
-      fields: [
-        { name: 'Backend', value: 'Node / discord-player', inline: true },
-        { name: 'Sources', value: String(player?.extractors?.size || 0), inline: true }
-      ]
+      footer: toFooter(`${player?.extractors?.size || 0} sources ready`)
     });
   }
 
   const tracks = queueTracks(queue);
 
-  return success('', [`\`${playbackState(queue).toLowerCase()}\``, formatTrack(queue.currentTrack), queueSummary(queue)].join('\n'), {
+  return success('', [
+    `\`${playbackState(queue).toLowerCase()}\``,
+    formatTrack(queue.currentTrack),
+    progressLine(queue),
+    `Up next: **${tracks.length}**`
+  ].join('\n'), {
     color: MUSIC_PANEL_COLOR,
     thumbnail: toThumbnail(queue.currentTrack?.thumbnail),
-    fields: [
-      { name: 'Progress', value: progressLine(queue), inline: false },
-      { name: 'Volume', value: `${queue.node?.volume ?? 100}%`, inline: true },
-      { name: 'Queue', value: `${tracks.length} waiting`, inline: true },
-      { name: 'Loop', value: repeatModeName(queue.repeatMode), inline: true },
-      { name: 'Filters', value: activeFilters(queue), inline: true }
-    ]
+    components: musicControls(queue),
+    footer: toFooter(`${queue.node?.volume ?? 100}% volume - Loop ${repeatModeName(queue.repeatMode)}`)
   });
 }
 
@@ -699,9 +787,13 @@ async function play(guildId, options = {}) {
     }));
 
     const stay247 = Boolean(settings.stay247);
+    const existingQueue = getQueue(guildId);
+    const wasIdle = !existingQueue?.currentTrack && queueTracks(existingQueue).length === 0;
 
-    const result = await player.play(context.voiceChannel, query, {
+    const playOptions = {
       requestedBy: context.user || undefined,
+      searchEngine: preferredSearchEngine(query),
+      fallbackSearchEngine: QueryType.AUTO_SEARCH,
       nodeOptions: {
         metadata: {
           channel: context.textChannel,
@@ -714,7 +806,18 @@ async function play(guildId, options = {}) {
         leaveOnStop: false,
         selfDeaf: true
       }
-    });
+    };
+
+    let result;
+    try {
+      result = await player.play(context.voiceChannel, query, playOptions);
+    } catch (error) {
+      if (playOptions.searchEngine === QueryType.AUTO_SEARCH || /^https?:\/\//i.test(query)) throw error;
+      result = await player.play(context.voiceChannel, query, {
+        ...playOptions,
+        searchEngine: QueryType.AUTO_SEARCH
+      });
+    }
 
     const queue = result.queue || getQueue(guildId);
     const playbackStarted = await ensurePlayback(queue);
@@ -728,21 +831,16 @@ async function play(guildId, options = {}) {
       return success(
         '',
         [
-          '`playlist added`',
+          wasIdle ? '`started playing`' : '`playlist added`',
           `**${escapeMarkdown(result.playlist.title || 'Playlist')}**`,
-          `${playlistSize} tracks`
+          `${playlistSize} tracks - ${tracks.length} waiting`
         ].join('\n'),
         {
           color: MUSIC_PANEL_COLOR,
           thumbnail: toThumbnail(result.playlist?.thumbnail || track?.thumbnail),
-          fields: [
-            { name: 'Playback', value: playbackStarted ? 'Playing now' : 'Queued', inline: true },
-            { name: 'Queue', value: `${tracks.length} waiting`, inline: true },
-            { name: 'Volume', value: `${queue?.node?.volume ?? Number(settings.defaultVolume || 75)}%`, inline: true },
-            { name: '24/7', value: stay247 ? 'On' : 'Off', inline: true }
-          ],
+          components: musicControls(queue),
           footer: toFooter(
-            context.user ? `Requested by ${userLabel(context.user)}` : null,
+            `${playbackStarted ? 'Playing now' : 'Queued'} - ${stay247 ? '24/7 on' : `${queue?.node?.volume ?? Number(settings.defaultVolume || 75)}% volume`}`,
             avatarUrl(context.user)
           )
         }
@@ -751,24 +849,17 @@ async function play(guildId, options = {}) {
 
     return success(
       '',
-      ['`added`', formatTrack(track)].join('\n'),
+      [
+        wasIdle ? '`started playing`' : '`added to queue`',
+        formatTrack(track),
+        trackDuration(track)
+      ].join('\n'),
       {
         color: MUSIC_PANEL_COLOR,
         thumbnail: toThumbnail(track?.thumbnail),
-        fields: [
-          { name: 'Duration', value: trackDuration(track), inline: true },
-          { name: 'Queue', value: `${tracks.length} waiting`, inline: true },
-          { name: 'Volume', value: `${queue?.node?.volume ?? Number(settings.defaultVolume || 75)}%`, inline: true },
-          {
-            name: 'Playback',
-            value: playbackStarted
-              ? 'Playing now'
-              : 'Queued. Check voice permissions or source availability if playback does not start.',
-            inline: false
-          }
-        ],
+        components: musicControls(queue),
         footer: toFooter(
-          context.user ? `Requested by ${userLabel(context.user)}` : null,
+          `${playbackStarted ? 'Playing now' : 'Queued'} - ${tracks.length} waiting - ${queue?.node?.volume ?? Number(settings.defaultVolume || 75)}% volume`,
           avatarUrl(context.user)
         )
       }
@@ -801,8 +892,16 @@ async function search(guildId, options = {}) {
   if (context.error) return context.error;
 
   try {
-    const result = await player.search(query, {
-      requestedBy: context.user || undefined
+    let result = await player.search(query, {
+      requestedBy: context.user || undefined,
+      searchEngine: preferredSearchEngine(query),
+      fallbackSearchEngine: QueryType.AUTO_SEARCH
+    }).catch(async (error) => {
+      if (/^https?:\/\//i.test(query)) throw error;
+      return player.search(query, {
+        requestedBy: context.user || undefined,
+        searchEngine: QueryType.AUTO_SEARCH
+      });
     });
 
     const tracks = result?.tracks || [];
@@ -823,16 +922,9 @@ async function search(guildId, options = {}) {
       return `\`${index + 1}\` **${escapeMarkdown(title)}** — ${escapeMarkdown(author)} \`${duration}\``;
     });
 
-    return success('', ['`search results`', `**${escapeMarkdown(query)}**`].join('\n'), {
+    return success('', ['`search results`', `**${escapeMarkdown(query)}**`, '', fitLines(lines, 1400)].join('\n'), {
       color: MUSIC_PANEL_COLOR,
       thumbnail: toThumbnail(tracks[0]?.thumbnail),
-      fields: [
-        {
-          name: INVISIBLE,
-          value: fitLines(lines),
-          inline: false
-        }
-      ],
       footer: toFooter('Use play <song name or URL> to queue a result.')
     });
   } catch (error) {
@@ -893,6 +985,43 @@ async function nowPlaying(guildId) {
   });
 }
 
+async function minimalQueuePayload(guildId) {
+  const { queue, error } = requireQueue(guildId);
+  if (error) return error;
+
+  const tracks = queueTracks(queue);
+  const lines = tracks.slice(0, 10).map(queueLine);
+
+  return success('', [
+    '`queue`',
+    formatTrack(queue.currentTrack),
+    progressLine(queue),
+    '',
+    lines.length ? fitLines(lines, 1500) : 'Nothing else queued.'
+  ].join('\n'), {
+    color: MUSIC_PANEL_COLOR,
+    thumbnail: toThumbnail(queue.currentTrack?.thumbnail),
+    components: musicControls(queue),
+    footer: tracks.length > 10
+      ? toFooter(`Showing 10 of ${tracks.length} queued tracks`)
+      : undefined
+  });
+}
+
+async function minimalNowPlaying(guildId) {
+  const { queue, error } = requireQueue(guildId);
+  if (error) return error;
+
+  const tracks = queueTracks(queue);
+
+  return success('', ['`now playing`', formatTrack(queue.currentTrack), progressLine(queue)].join('\n'), {
+    color: MUSIC_PANEL_COLOR,
+    thumbnail: toThumbnail(queue.currentTrack?.thumbnail),
+    components: musicControls(queue),
+    footer: toFooter(`${tracks.length} waiting - ${queue.node?.volume ?? 100}% volume - Loop ${repeatModeName(queue.repeatMode)}`)
+  });
+}
+
 async function runQueueAction(guildId, action, onDone) {
   const { queue, error } = requireQueue(guildId);
   if (error) return error;
@@ -920,8 +1049,8 @@ async function runCommand(guildId, command, options = {}) {
   if (normalized === 'play') return play(guildId, options);
   if (normalized === 'search') return search(guildId, options);
   if (normalized === 'status') return getState(guildId);
-  if (normalized === 'queue') return queuePayload(guildId);
-  if (normalized === 'nowplaying' || normalized === 'np') return nowPlaying(guildId);
+  if (normalized === 'queue') return minimalQueuePayload(guildId);
+  if (normalized === 'nowplaying' || normalized === 'np') return minimalNowPlaying(guildId);
 
   if (normalized === 'pause') {
     return runQueueAction(
@@ -1235,8 +1364,69 @@ async function runCommand(guildId, command, options = {}) {
   );
 }
 
+function musicInteractionPayload(interaction, payload) {
+  const type = payload?.ok === false ? 'bad' : 'info';
+  const footer = payload?.footer
+    ? {
+        text: String(payload.footer.text || '').slice(0, 2048),
+        iconURL: payload.footer.icon_url || payload.footer.iconURL || undefined
+      }
+    : undefined;
+
+  const output = respond.buildPayload(type, interaction.user, null, {
+    mentionUser: false,
+    allowTitle: false,
+    description: payload?.description || payload?.error || 'Music updated.',
+    thumbnail: typeof payload?.thumbnail === 'string' ? payload.thumbnail : payload?.thumbnail?.url,
+    footer,
+    color: payload?.color || (type === 'bad' ? ERROR_COLOR : MUSIC_PANEL_COLOR),
+    components: payload?.components || [],
+    message: {
+      member: interaction.member,
+      guild: interaction.guild
+    },
+    allowedMentions: { parse: [] }
+  });
+
+  return output;
+}
+
+async function handleMusicInteraction(interaction) {
+  if (!interaction.isButton?.() || !interaction.customId?.startsWith('music:')) return false;
+  if (!interaction.guildId) return false;
+
+  const action = interaction.customId.split(':')[1];
+  const command = ['pause', 'resume', 'skip', 'stop', 'queue'].includes(action) ? action : null;
+  if (!command) return false;
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
+
+  const options = {
+    userId: interaction.user.id,
+    textChannelId: interaction.channelId,
+    voiceChannelId: interaction.member?.voice?.channelId || interaction.member?.voice?.channel?.id || null
+  };
+
+  const payload = command === 'queue'
+    ? await minimalQueuePayload(interaction.guildId)
+    : await runCommand(interaction.guildId, command, options);
+
+  await interaction.editReply(musicInteractionPayload(interaction, payload)).catch(() => null);
+
+  if (payload?.ok && command !== 'queue') {
+    const state = await getState(interaction.guildId).catch(() => null);
+    if (state?.ok) {
+      const editPayload = musicInteractionPayload(interaction, state);
+      await interaction.message?.edit?.(editPayload).catch(() => null);
+    }
+  }
+
+  return true;
+}
+
 module.exports = {
   getState,
+  handleMusicInteraction,
   health,
   initializeMusicPlayer,
   isNodeMusicEnabled,

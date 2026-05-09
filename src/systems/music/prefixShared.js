@@ -10,11 +10,11 @@ try {
 }
 
 const MUSIC_COLORS = {
-  default: 0x8fb7ff,
-  panel: 0xb7a7ff,
-  success: 0xa7f3d0,
-  warn: 0xffd166,
-  error: 0xff6b8a
+  default: respond.DEFAULT_EMBED_COLOR,
+  panel: respond.DEFAULT_EMBED_COLOR,
+  success: respond.DEFAULT_EMBED_COLOR,
+  warn: respond.DEFAULT_EMBED_COLOR,
+  error: respond.ERROR_EMBED_COLOR
 };
 
 const FILTER_MODES = [
@@ -149,7 +149,8 @@ function toEmbedOptions(payload = {}, fallbackTitle = 'Music') {
     fields: normalizeFields(payload.fields),
     thumbnail: normalizeThumbnail(payload.thumbnail),
     footer: normalizeFooter(payload.footer),
-    color: normalizeColor(payload.color)
+    color: normalizeColor(payload.color),
+    components: payload.components || []
   };
 }
 
@@ -181,13 +182,19 @@ function joinArgs(args = []) {
 
 function overviewEmbed() {
   return {
-    title: 'Music Commands',
-    description: 'Short direct commands are live. Use `music <command>` only when you want the legacy format.',
-    fields: LEGACY_OVERVIEW.map(([name, lines]) => ({
-      name,
-      value: lines.map((line) => `\`${line}\``).join('\n'),
-      inline: false
-    })),
+    title: 'Rumi Music',
+    description: [
+      'Premium playback with clean controls, richer source matching, and a softer queue flow.',
+      '',
+      '`play <song or URL>`  Start music',
+      '`queue`  View what is next',
+      '`nowplaying`  Current track',
+      '`skip`  Next song',
+      '`pause` / `resume`  Playback control',
+      '`musicsearch <query>`  Browse matches',
+      '',
+      'Spotify, SoundCloud, Apple Music, YouTube, direct audio, and playlists are supported where available.'
+    ].join('\n'),
     color: MUSIC_COLORS.panel,
     footer: {
       text: 'Rumi music · sleek node backend'

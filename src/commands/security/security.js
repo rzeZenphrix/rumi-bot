@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
+const emojis = require('../../utils/botEmojis');
 const {
   getSecuritySettings,
   setSecurityFlag
@@ -15,7 +16,7 @@ const FLAGS = {
 };
 
 function statusLine(label, value) {
-  return `${value ? '✅' : '❌'} **${label}:** \`${value ? 'on' : 'off'}\``;
+  return `${value ? emojis.good : emojis.bad} **${label}:** \`${value ? 'on' : 'off'}\``;
 }
 
 function buildStatus(config) {

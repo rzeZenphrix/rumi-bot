@@ -1,6 +1,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const db = require('../../services/database');
 const logger = require('../logging/logger');
+const emojis = require('../../utils/botEmojis');
 
 const DISBOARD_BOT_ID = String(process.env.DISBOARD_BOT_ID || '302050872383242240');
 const TASK_TYPE = 'disboard_bump_reminder';
@@ -10,7 +11,7 @@ const DEFAULT_COOLDOWN_MS = Math.max(
 );
 
 const DEFAULT_REMINDER_MESSAGE = '{ping} **{server}** can be bumped again on Disboard. Run `/bump` now.';
-const DEFAULT_SUCCESS_MESSAGE = '✅ Bump detected for **{server}**. I will remind you again {next_bump}.';
+const DEFAULT_SUCCESS_MESSAGE = `${emojis.good} Bump detected for **{server}**. I will remind you again {next_bump}.`;
 
 function nowIso() {
   return new Date().toISOString();

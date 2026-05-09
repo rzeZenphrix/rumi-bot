@@ -1,4 +1,5 @@
 const respond = require('../../utils/respond');
+const emojis = require('../../utils/botEmojis');
 const db = require('../../services/database');
 const { createPagedMessage } = require('../../utils/pagedMessages');
 
@@ -53,7 +54,7 @@ module.exports = {
           title: 'Todo list',
           allowTitle: true,
           description: chunk
-            .map((row, rowIndex) => `**${index + rowIndex + 1}.** ${row.completed ? '✅' : '⬜'} ${row.task}\n\`${row.id}\``)
+            .map((row, rowIndex) => `**${index + rowIndex + 1}.** ${row.completed ? emojis.good : emojis.info} ${row.task}\n\`${row.id}\``)
             .join('\n\n')
         });
       }

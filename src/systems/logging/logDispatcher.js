@@ -3,17 +3,7 @@ const emojis = require('../../utils/botEmojis');
 const respond = require('../../utils/respond');
 const { getGuildLogConfig } = require('./logConfigStore');
 
-const EVENT_EMOJIS = {
-  messageDelete: '🗑️', messageUpdate: '✏️', messageBulkDelete: '🧹',
-  memberJoin: '📥', memberLeave: '📤', memberUpdate: '👤', memberBan: '🔨', memberUnban: '🕊️',
-  roleCreate: '🎭', roleDelete: '🎭', roleUpdate: '🎭',
-  channelCreate: '#️⃣', channelDelete: '#️⃣', channelUpdate: '#️⃣',
-  emojiCreate: '😀', emojiDelete: '😀', emojiUpdate: '😀',
-  stickerCreate: '🏷️', stickerDelete: '🏷️', stickerUpdate: '🏷️',
-  inviteCreate: '🔗', inviteDelete: '🔗', webhookUpdate: '🪝', guildUpdate: '🏠',
-  threadCreate: '🧵', threadDelete: '🧵', threadUpdate: '🧵', voiceStateUpdate: '🔊',
-  hardbanReapply: '⛔', antinukeAction: '🛡️', automodAction: '🚧', moderationAction: '⚖️'
-};
+const EVENT_EMOJIS = {};
 
 function parseHexColor(value, fallback = respond.DEFAULT_EMBED_COLOR) {
   const raw = String(value || '').replace('#', '');
@@ -52,7 +42,7 @@ function eventLabel(eventType) {
 }
 
 function buildLogEmbed(guild, eventType, payload, config) {
-  const icon = payload.emoji || EVENT_EMOJIS[eventType] || emojis.info || 'ℹ️';
+  const icon = payload.emoji || EVENT_EMOJIS[eventType] || emojis.info;
   const color = parseHexColor(config.colors[eventType] || config.colors.all, payload.color || respond.DEFAULT_EMBED_COLOR);
   const header = `**${icon} ${payload.title || eventLabel(eventType)}**`;
   const desc = payload.description ? String(payload.description).slice(0, 3800) : 'I recorded this server event.';

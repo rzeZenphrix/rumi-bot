@@ -57,7 +57,7 @@ module.exports = {
 
       await clearAfkByCommand(message.member).catch(() => null);
 
-      return respond.reply(message, 'info', `👋 ${message.author}: Welcome back, your afk status has been cleared.`, {
+      return respond.reply(message, 'info', 'Welcome back, your afk status has been cleared.', {
         mentionUser: false
       });
     }
@@ -71,7 +71,7 @@ module.exports = {
     const reason = cleanReason(args.join(' '));
     await setAfk(message.member, 'guild', reason, wantsRename);
 
-    return respond.reply(message, 'good', `✅ ${message.author}: You're now afk with the status: \`${reason}\``, {
+    return respond.reply(message, 'good', `You're now afk with the status: \`${reason}\``, {
       mentionUser: false
     });
   }

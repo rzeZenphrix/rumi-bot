@@ -11,8 +11,9 @@ const ticketDb = require('../../systems/tickets/ticketDb');
 const ticketManager = require('../../systems/tickets/ticketManager');
 const db = require('../../services/database');
 const respond = require('../../utils/respond');
+const emojis = require('../../utils/botEmojis');
 
-const TICKET_EMOJI = '<:information:1502337289844428841>';
+const TICKET_EMOJI = emojis.info;
 const PANEL_SELECTION_NAMESPACE = 'tickets:selectedPanel';
 
 function cleanId(value) {

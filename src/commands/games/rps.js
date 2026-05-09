@@ -20,19 +20,16 @@ const SESSION_PREFIX = 'rps';
 const CHOICE_NAMES = ['rock', 'paper', 'scissors'];
 const CHOICES = {
   rock: {
-    emoji: '🪨',
     label: 'Rock',
     beats: 'scissors',
     verb: 'crushes'
   },
   paper: {
-    emoji: '📄',
     label: 'Paper',
     beats: 'rock',
     verb: 'covers'
   },
   scissors: {
-    emoji: '✂️',
     label: 'Scissors',
     beats: 'paper',
     verb: 'cuts'
@@ -57,9 +54,9 @@ function defaultStats() {
 
 function normalizeChoice(input) {
   const value = String(input || '').trim().toLowerCase();
-  if (['r', 'rock', 'stone', '🪨', '✊'].includes(value)) return 'rock';
-  if (['p', 'paper', 'page', '📄', '✋'].includes(value)) return 'paper';
-  if (['s', 'scissor', 'scissors', 'shears', '✂', '✂️', '✌'].includes(value)) return 'scissors';
+  if (['r', 'rock', 'stone'].includes(value)) return 'rock';
+  if (['p', 'paper', 'page'].includes(value)) return 'paper';
+  if (['s', 'scissor', 'scissors', 'shears'].includes(value)) return 'scissors';
   if (['random', 'rand', 'shuffle', '?'].includes(value)) return randomChoice();
   return null;
 }
@@ -98,7 +95,7 @@ function neededWins(bestOf) {
 
 function choiceText(choice) {
   const item = CHOICES[choice];
-  return item ? `${item.emoji} **${item.label}**` : '`none`';
+  return item ? `**${item.label}**` : '`none`';
 }
 
 function explainRound(leftChoice, rightChoice, leftName = 'Player 1', rightName = 'Player 2') {
@@ -211,8 +208,8 @@ function statusText(state) {
   }
 
   if (state.mode === 'duel') {
-    const ownerLocked = state.choices[state.ownerId] ? '✅ locked' : 'waiting';
-    const opponentLocked = state.choices[state.opponentId] ? '✅ locked' : 'waiting';
+    const ownerLocked = state.choices[state.ownerId] ? 'locked' : 'waiting';
+    const opponentLocked = state.choices[state.opponentId] ? 'locked' : 'waiting';
     return [
       `Round **${state.round}** — choose secretly using the buttons below.`,
       `<@${state.ownerId}>: ${ownerLocked}`,
@@ -251,7 +248,6 @@ function buildEmbed(state) {
 function choiceButton(sessionId, choice, disabled) {
   return new ButtonBuilder()
     .setCustomId(`${SESSION_PREFIX}:${sessionId}:choice:${choice}`)
-    .setEmoji(CHOICES[choice].emoji)
     .setLabel(CHOICES[choice].label)
     .setStyle(ButtonStyle.Primary)
     .setDisabled(Boolean(disabled));
@@ -267,7 +263,6 @@ function buildRows(state) {
       choiceButton(state.id, 'scissors', inactive),
       new ButtonBuilder()
         .setCustomId(`${SESSION_PREFIX}:${state.id}:choice:random`)
-        .setEmoji('🎲')
         .setLabel('Random')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(inactive)
@@ -275,19 +270,16 @@ function buildRows(state) {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`${SESSION_PREFIX}:${state.id}:control:rematch`)
-        .setEmoji('🔁')
         .setLabel('Rematch')
         .setStyle(ButtonStyle.Success)
         .setDisabled(state.status !== 'finished'),
       new ButtonBuilder()
         .setCustomId(`${SESSION_PREFIX}:${state.id}:control:forfeit`)
-        .setEmoji('🏳️')
         .setLabel('Forfeit')
         .setStyle(ButtonStyle.Danger)
         .setDisabled(state.status !== 'active'),
       new ButtonBuilder()
         .setCustomId(`${SESSION_PREFIX}:${state.id}:control:close`)
-        .setEmoji('✖️')
         .setLabel('Close')
         .setStyle(ButtonStyle.Secondary)
     )

@@ -1,8 +1,9 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
+const emojis = require('../../utils/botEmojis');
 
 const LETTERS = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'];
-const YES_NO = ['✅', '❌'];
+const YES_NO = [emojis.good, emojis.bad];
 
 function clean(text, max = 180) {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, max);

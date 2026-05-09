@@ -1,13 +1,14 @@
 const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
+const emojis = require('../../utils/botEmojis');
 const { resolveUser } = require('../../utils/resolveUser');
 const { logModerationAction } = require('../../systems/logging/auditLog');
 const { addHardban } = require('../../systems/security/hardbanStore');
 
-const GOOD_EMOJI = process.env.GOOD_EMOJI || process.env.RUMI_GOOD_EMOJI || '✅';
+const GOOD_EMOJI = process.env.GOOD_EMOJI || process.env.RUMI_GOOD_EMOJI || emojis.good;
 
 async function reactGood(message) {
-  return message.react(GOOD_EMOJI).catch(() => message.react('✅').catch(() => null));
+  return message.react(GOOD_EMOJI).catch(() => null);
 }
 
 module.exports = {

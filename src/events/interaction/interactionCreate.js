@@ -7,6 +7,7 @@ const { handleVerificationInteraction } = require('../../systems/verification/ve
 const { handleDisboardBumpInteraction } = require('../../systems/bump/disboardBumpReminder');
 const { handleGiveawayButton } = require('../../systems/giveaways/manager');
 const respond = require('../../utils/respond');
+const { handleMusicInteraction } = require('../../systems/music/nodePlayer');
 
 function ephemeralPayload(interaction, type, text) {
   const payload = respond.buildPayload(type, interaction.user, text, {
@@ -116,6 +117,10 @@ module.exports = {
     }
 
     if (await handleDisboardBumpInteraction(client, interaction).catch(() => false)) {
+      return;
+    }
+
+    if (await handleMusicInteraction(interaction).catch(() => false)) {
       return;
     }
 

@@ -15,7 +15,7 @@ module.exports = {
   category: 'tools',
   description: 'Inspect characters, unicode codepoints, and UTF-8 bytes.',
   usage: 'charinfo <text>',
-  examples: ['charinfo A', 'charinfo ✅ test'],
+  examples: ['charinfo A', 'charinfo test'],
 
   async execute({ message, args }) {
     const text = args.join(' ');
