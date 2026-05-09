@@ -8,6 +8,20 @@ const logger = require('../logging/logger');
 const db = require('../../services/database');
 const emojis = require('../../utils/botEmojis');
 
+let ffmpegPath = process.env.FFMPEG_PATH || null;
+
+try {
+  const ffmpegStatic = require('ffmpeg-static');
+  const ffmpeg = require('fluent-ffmpeg');
+
+  if (!ffmpegPath && ffmpegStatic) ffmpegPath = ffmpegStatic;
+  if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+
+  logger.info({ ffmpegPath }, 'Music FFmpeg path configured');
+} catch (error) {
+  logger.warn({ error }, 'Music FFmpeg path could not be configured');
+}
+
 const INVISIBLE = '\u200B';
 
 const FILTER_ALIASES = new Map([
@@ -63,7 +77,8 @@ const ICONS = {
   bad: icon('bad', '×'),
   volume: icon('volume', '▰'),
   loop: icon('loop', '↻'),
-  filter: icon('sparkles', icon('stars', '✦'))
+  filter: icon('stars', '✦'),
+  settings: icon('settings', '⚙')
 };
 
 function envFlag(name, fallback = false) {
@@ -83,7 +98,7 @@ function isNodeMusicEnabled() {
 async function getMusicSettings(guildId) {
   return db.getKv(`music:settings:${guildId}`, 'config', {
     stay247: false,
-    defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 70),
+    defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 65),
     searchEngine: String(process.env.MUSIC_SEARCH_ENGINE || 'soundcloud').toLowerCase()
   });
 }
@@ -91,7 +106,7 @@ async function getMusicSettings(guildId) {
 async function saveMusicSettings(guildId, patch = {}) {
   const current = await getMusicSettings(guildId).catch(() => ({
     stay247: false,
-    defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 70),
+    defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 65),
     searchEngine: 'soundcloud'
   }));
 
@@ -124,16 +139,18 @@ function escapeLinkLabel(value) {
     .replace(/\)/g, '\\)');
 }
 
-function prunePayload(payload) {
-  for (const key of Object.keys(payload)) {
-    if (payload[key] === undefined || payload[key] === null) delete payload[key];
-    if (Array.isArray(payload[key]) && payload[key].length === 0) delete payload[key];
+function cleanPayload(payload) {
+  const next = { ...payload };
+
+  for (const key of Object.keys(next)) {
+    if (next[key] === undefined || next[key] === null) delete next[key];
+    if (Array.isArray(next[key]) && !next[key].length) delete next[key];
   }
 
-  delete payload.title;
-  delete payload.color;
+  delete next.title;
+  delete next.color;
 
-  return payload;
+  return next;
 }
 
 function toThumbnail(url) {
@@ -163,28 +180,27 @@ function userLabel(user) {
   return user.globalName || user.username || user.tag || user.id || null;
 }
 
-function payload(replyType, description, extra = {}) {
-  return prunePayload({
+function ok(description, extra = {}) {
+  return cleanPayload({
     ok: true,
-    replyType,
-    description: truncate(description || '', 4096),
-    ...extra
-  });
-}
-
-function success(description, extra = {}) {
-  return payload('good', description, {
+    replyType: 'good',
     emoji: ICONS.good,
+    description: truncate(description, 4096),
     ...extra
   });
 }
 
 function panel(description, extra = {}) {
-  return payload('info', description, extra);
+  return cleanPayload({
+    ok: true,
+    replyType: 'info',
+    description: truncate(description, 4096),
+    ...extra
+  });
 }
 
-function failure(error, detail, code = 'music_node_error') {
-  return {
+function fail(error, detail, code = 'music_node_error') {
+  return cleanPayload({
     ok: false,
     code,
     error,
@@ -192,7 +208,7 @@ function failure(error, detail, code = 'music_node_error') {
     replyType: 'bad',
     emoji: ICONS.bad,
     description: `**${escapeMarkdown(error)}**\n${escapeMarkdown(detail)}`
-  };
+  });
 }
 
 function trackTitle(track) {
@@ -208,16 +224,24 @@ function trackUrl(track) {
 }
 
 function trackSource(track) {
-  const raw = String(track?.source || track?.raw?.source || track?.extractor?.identifier || '').toLowerCase();
+  const raw = String(
+    track?.source ||
+    track?.raw?.source ||
+    track?.extractor?.identifier ||
+    track?.extractor?.protocols?.[0] ||
+    ''
+  ).toLowerCase();
 
   if (raw.includes('soundcloud')) return 'SoundCloud';
   if (raw.includes('spotify')) return 'Spotify';
   if (raw.includes('apple')) return 'Apple Music';
   if (raw.includes('vimeo')) return 'Vimeo';
+  if (raw.includes('reverbnation')) return 'ReverbNation';
   if (raw.includes('attachment')) return 'Attachment';
   if (raw.includes('arbitrary')) return 'Direct link';
+  if (raw.includes('youtube')) return 'YouTube';
 
-  return raw ? raw : 'Music';
+  return raw || 'Music';
 }
 
 function formatTrack(track, compact = false) {
@@ -328,65 +352,6 @@ function getQueue(guildId) {
   return player.nodes?.get?.(guildId) || player.queues?.get?.(guildId) || null;
 }
 
-function normalizeFilterName(mode) {
-  const raw = String(mode || '').trim();
-  if (!raw) return '';
-  return FILTER_ALIASES.get(raw) || FILTER_ALIASES.get(raw.toLowerCase()) || raw;
-}
-
-function activeFilters(queue) {
-  const current = queue?.filters?.ffmpeg?.filters || [];
-  return current.length ? current.map((filter) => `\`${filter}\``).join(', ') : 'off';
-}
-
-async function setAudioFilter(queue, mode) {
-  if (envFlag('MUSIC_DISABLE_FILTERS', true)) {
-    return {
-      error: failure(
-        'Audio filters are disabled.',
-        'Filters can cause buffering on weak hosts. Set `MUSIC_DISABLE_FILTERS=false` only if your host can handle FFmpeg filters.',
-        'music_filters_disabled'
-      )
-    };
-  }
-
-  const ffmpeg = queue?.filters?.ffmpeg;
-
-  if (!ffmpeg?.setFilters) {
-    return {
-      error: failure(
-        'Audio filters are unavailable.',
-        'Install FFmpeg support and use a discord-player version that supports FFmpeg filters.',
-        'music_filters_unavailable'
-      )
-    };
-  }
-
-  const filter = normalizeFilterName(mode);
-
-  if (!filter || filter === 'off') {
-    await ffmpeg.setFilters([]);
-    return { filter: 'off', active: [] };
-  }
-
-  if (ffmpeg.isValidFilter && !ffmpeg.isValidFilter(filter)) {
-    return {
-      error: failure(
-        'Unknown audio filter.',
-        'Try bassboost, nightcore, vaporwave, lofi, 8d, karaoke, tremolo, vibrato, phaser, treble, normalizer, mono, or off.',
-        'music_unknown_filter'
-      )
-    };
-  }
-
-  await ffmpeg.setFilters([filter]);
-
-  return {
-    filter,
-    active: ffmpeg.filters || []
-  };
-}
-
 function repeatModeName(mode) {
   if (mode === QueueRepeatMode.TRACK) return 'Track';
   if (mode === QueueRepeatMode.QUEUE) return 'Queue';
@@ -422,43 +387,35 @@ function progressLine(queue) {
   const width = 18;
   const ratio = Math.max(0, Math.min(1, current / total));
   const marker = Math.min(width - 1, Math.round(ratio * (width - 1)));
-
   const bar = `${'─'.repeat(marker)}●${'─'.repeat(width - marker - 1)}`;
+
   return `\`${bar}\` ${msToDuration(current)} / ${msToDuration(total)}`;
 }
 
-function compactFooter(queue, user, extra = []) {
-  const parts = [
-    queue ? `${queueTracks(queue).length} waiting` : null,
-    queue ? `${queue.node?.volume ?? 100}%` : null,
-    queue ? `Loop ${repeatModeName(queue.repeatMode)}` : null,
-    ...extra.filter(Boolean)
-  ].filter(Boolean);
-
-  const request = user ? `Requested by ${userLabel(user)}` : 'Rumi music';
-  return `${request} · ${parts.join(' · ')}`;
+function queueCount(queue) {
+  return queueTracks(queue).length;
 }
 
-function queueSummary(queue) {
-  const waiting = queueTracks(queue).length;
-  const volume = queue?.node?.volume ?? 100;
-  const loop = repeatModeName(queue?.repeatMode);
-  return `${playbackState(queue)} · ${waiting} waiting · ${volume}% · Loop ${loop}`;
+function activeFilters(queue) {
+  const current = queue?.filters?.ffmpeg?.filters || [];
+  return current.length ? current.join(', ') : 'off';
 }
 
-function fitLines(lines, max = 1000) {
-  const output = [];
-  let length = 0;
+function compactFooter(queue, user = null, extra = []) {
+  const parts = [];
 
-  for (const line of lines) {
-    const nextLength = length + line.length + 1;
-    if (nextLength > max) break;
-
-    output.push(line);
-    length = nextLength;
+  if (queue) {
+    parts.push(`${queueCount(queue)} waiting`);
+    parts.push(`${queue.node?.volume ?? 100}%`);
+    parts.push(`Loop ${repeatModeName(queue.repeatMode)}`);
   }
 
-  return output.join('\n');
+  for (const item of extra) {
+    if (item) parts.push(item);
+  }
+
+  const prefix = user ? `Requested by ${userLabel(user)}` : 'Rumi music';
+  return `${prefix}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
 }
 
 function queueLine(track, index) {
@@ -473,28 +430,44 @@ function queueLine(track, index) {
   return `\`${String(index + 1).padStart(2, '0')}\` ${label} \`${duration}\``;
 }
 
-function isYoutubeUrl(query) {
-  return /(?:youtube\.com|youtu\.be|music\.youtube\.com)/i.test(String(query || ''));
+function fitLines(lines, max = 1800) {
+  const output = [];
+  let length = 0;
+
+  for (const line of lines) {
+    const nextLength = length + line.length + 1;
+    if (nextLength > max) break;
+    output.push(line);
+    length = nextLength;
+  }
+
+  return output.join('\n');
 }
 
 function isUrl(query) {
   return /^https?:\/\//i.test(String(query || '').trim());
 }
 
+function isYoutubeUrl(query) {
+  return /(?:youtube\.com|youtu\.be|music\.youtube\.com)/i.test(String(query || ''));
+}
+
 function searchEngineName(engine) {
   const raw = String(engine || '').toLowerCase();
+
   if (raw === 'spotify') return 'Spotify';
-  if (raw === 'applemusic' || raw === 'apple') return 'Apple Music';
+  if (raw === 'apple' || raw === 'applemusic') return 'Apple Music';
   if (raw === 'auto') return 'Auto';
+
   return 'SoundCloud';
 }
 
 function preferredSearchEngine(query, settings = {}) {
-  const value = String(query || '').trim();
+  if (isUrl(query)) return QueryType.AUTO;
 
-  if (isUrl(value)) return QueryType.AUTO;
-
-  const engine = String(settings.searchEngine || process.env.MUSIC_SEARCH_ENGINE || 'soundcloud').trim().toLowerCase();
+  const engine = String(settings.searchEngine || process.env.MUSIC_SEARCH_ENGINE || 'soundcloud')
+    .trim()
+    .toLowerCase();
 
   if (engine === 'spotify') return QueryType.SPOTIFY_SEARCH;
   if (engine === 'apple' || engine === 'applemusic') return QueryType.APPLE_MUSIC_SEARCH || QueryType.AUTO_SEARCH;
@@ -503,42 +476,60 @@ function preferredSearchEngine(query, settings = {}) {
   return QueryType.SOUNDCLOUD_SEARCH;
 }
 
-async function ensurePlayback(queue) {
-  if (!queue || queue.deleted) return false;
-
-  if (queue.node?.isPaused?.()) queue.node.resume();
-
-  if (queue.node?.isPlaying?.() || queue.node?.isBuffering?.()) return true;
-
-  try {
-    await queue.node.play(null);
-    return true;
-  } catch (error) {
-    logger.warn({ guildId: queue.guild?.id, error }, 'Music queue failed to start immediate playback');
-    return false;
-  }
+function normalizeFilterName(mode) {
+  const raw = String(mode || '').trim();
+  if (!raw) return '';
+  return FILTER_ALIASES.get(raw) || FILTER_ALIASES.get(raw.toLowerCase()) || raw;
 }
 
-function requireQueue(guildId) {
-  const queue = getQueue(guildId);
-
-  if (!queue || queue.deleted) {
+async function setAudioFilter(queue, mode) {
+  if (envFlag('MUSIC_DISABLE_FILTERS', true)) {
     return {
-      error: failure(
-        'Nothing is playing.',
-        'Start something with `play <song or URL>` first.',
-        'music_no_queue'
+      error: fail(
+        'Audio filters are disabled.',
+        'Filters can cause buffering on small hosts. Set `MUSIC_DISABLE_FILTERS=false` only when the host is strong enough.',
+        'music_filters_disabled'
       )
     };
   }
 
-  return { queue };
+  const ffmpeg = queue?.filters?.ffmpeg;
+
+  if (!ffmpeg?.setFilters) {
+    return {
+      error: fail(
+        'Audio filters are unavailable.',
+        'FFmpeg filters are not available in this runtime.',
+        'music_filters_unavailable'
+      )
+    };
+  }
+
+  const filter = normalizeFilterName(mode);
+
+  if (!filter || filter === 'off') {
+    await ffmpeg.setFilters([]);
+    return { filter: 'off' };
+  }
+
+  if (ffmpeg.isValidFilter && !ffmpeg.isValidFilter(filter)) {
+    return {
+      error: fail(
+        'Unknown audio filter.',
+        'Try bassboost, nightcore, vaporwave, lofi, 8d, tremolo, vibrato, mono, or off.',
+        'music_unknown_filter'
+      )
+    };
+  }
+
+  await ffmpeg.setFilters([filter]);
+  return { filter };
 }
 
 async function resolveContext(guildId, options = {}) {
   if (!clientRef) {
     return {
-      error: failure(
+      error: fail(
         'Music is still starting.',
         'Try again in a few seconds.',
         'music_not_initialized'
@@ -550,7 +541,7 @@ async function resolveContext(guildId, options = {}) {
 
   if (!guild) {
     return {
-      error: failure(
+      error: fail(
         'I could not find that server.',
         'The music request had an invalid guild ID.',
         'music_invalid_guild'
@@ -575,7 +566,7 @@ async function resolveContext(guildId, options = {}) {
 
 function voiceChannelError(voiceChannel) {
   if (!voiceChannel) {
-    return failure(
+    return fail(
       'Join a voice channel first.',
       'I need to know where to play music.',
       'music_no_voice_channel'
@@ -583,7 +574,7 @@ function voiceChannelError(voiceChannel) {
   }
 
   if (![ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(voiceChannel.type)) {
-    return failure(
+    return fail(
       'That is not a playable voice channel.',
       'Join a voice or stage channel first.',
       'music_invalid_voice_channel'
@@ -594,7 +585,7 @@ function voiceChannelError(voiceChannel) {
   const permissions = me ? voiceChannel.permissionsFor(me) : null;
 
   if (permissions && (!permissions.has('Connect') || !permissions.has('Speak'))) {
-    return failure(
+    return fail(
       'I cannot play in that voice channel.',
       'I need Connect and Speak permissions.',
       'music_missing_voice_permissions'
@@ -602,6 +593,22 @@ function voiceChannelError(voiceChannel) {
   }
 
   return null;
+}
+
+function requireQueue(guildId) {
+  const queue = getQueue(guildId);
+
+  if (!queue || queue.deleted) {
+    return {
+      error: fail(
+        'Nothing is playing.',
+        'Start something with `play <song or URL>` first.',
+        'music_no_queue'
+      )
+    };
+  }
+
+  return { queue };
 }
 
 async function loadExtractors() {
@@ -613,9 +620,22 @@ async function loadExtractors() {
       logger.warn({ error }, 'Default music extractors failed to load');
     });
 
+    const loaded = [];
+
+    try {
+      for (const extractor of player.extractors.store?.values?.() || []) {
+        loaded.push(extractor.identifier || extractor.constructor?.name || 'unknown');
+      }
+    } catch {
+      // ignore listing errors
+    }
+
     logger.info(
-      { extractors: player.extractors?.size || 0 },
-      'Music extractors loaded. YouTube extractor is intentionally disabled; SoundCloud search is the default.'
+      {
+        extractors: player.extractors?.size || 0,
+        loaded
+      },
+      'Music extractors loaded'
     );
   })();
 
@@ -639,13 +659,22 @@ async function initializeMusicPlayer(client) {
       dlChunkSize: 0,
       liveBuffer: 4900
     },
-    skipFFmpeg: envFlag('MUSIC_SKIP_FFMPEG', false),
-    connectionTimeout: Number(process.env.MUSIC_VOICE_CONNECTION_TIMEOUT_MS || 30000)
+    skipFFmpeg: false,
+    connectionTimeout: Number(process.env.MUSIC_VOICE_CONNECTION_TIMEOUT_MS || 45000)
   });
 
   client.rumiMusicPlayer = player;
 
   player.events.on('playerStart', (queue, track) => {
+    logger.info(
+      {
+        guildId: queue?.guild?.id,
+        title: trackTitle(track),
+        source: trackSource(track)
+      },
+      'Music playback started'
+    );
+
     const channel = queue.metadata?.channel;
     if (!channel?.send || !envFlag('MUSIC_ANNOUNCE_TRACKS', false)) return;
 
@@ -666,11 +695,26 @@ async function initializeMusicPlayer(client) {
           )
         }
       ]
-    }).catch(() => {});
+    }).catch(() => null);
   });
 
-  player.events.on('connection', (queue) => {
-    logger.info({ guildId: queue?.guild?.id }, 'Music voice connection created');
+  player.events.on('audioTrackAdd', (queue, track) => {
+    logger.info(
+      {
+        guildId: queue?.guild?.id,
+        title: trackTitle(track),
+        source: trackSource(track)
+      },
+      'Music track added'
+    );
+  });
+
+  player.events.on('emptyQueue', (queue) => {
+    logger.info({ guildId: queue?.guild?.id }, 'Music queue ended');
+  });
+
+  player.events.on('disconnect', (queue) => {
+    logger.info({ guildId: queue?.guild?.id }, 'Music disconnected');
   });
 
   player.events.on('error', (queue, error) => {
@@ -683,7 +727,15 @@ async function initializeMusicPlayer(client) {
 
   await loadExtractors();
 
-  logger.info({ extractors: player.extractors.size }, 'Node music backend is ready');
+  logger.info(
+    {
+      extractors: player.extractors?.size || 0,
+      ffmpegPath: ffmpegPath || null,
+      searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'
+    },
+    'Node music backend is ready'
+  );
+
   return player;
 }
 
@@ -693,8 +745,8 @@ async function health() {
     backend: 'node',
     ready: Boolean(player),
     extractors: player?.extractors?.size || 0,
+    ffmpegPath: ffmpegPath || null,
     searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'soundcloud',
-    youtube: 'disabled',
     filtersDisabled: envFlag('MUSIC_DISABLE_FILTERS', true)
   };
 }
@@ -728,15 +780,15 @@ async function play(guildId, options = {}) {
   const query = String(options.query || '').trim();
 
   if (!query) {
-    return failure(
+    return fail(
       'Tell me what to play.',
       'Use `play <song name or URL>`.',
       'music_missing_query'
     );
   }
 
-  if (isYoutubeUrl(query)) {
-    return failure(
+  if (isYoutubeUrl(query) && envFlag('MUSIC_BLOCK_YOUTUBE', true)) {
+    return fail(
       'YouTube playback is disabled.',
       'Use SoundCloud search, Spotify/Apple links, Vimeo links, or direct audio links.',
       'music_youtube_disabled'
@@ -752,12 +804,23 @@ async function play(guildId, options = {}) {
   try {
     const settings = await getMusicSettings(guildId).catch(() => ({
       stay247: false,
-      defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 70),
+      defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 65),
       searchEngine: 'soundcloud'
     }));
 
-    const stay247 = Boolean(settings.stay247);
     const searchEngine = preferredSearchEngine(query, settings);
+    const stay247 = Boolean(settings.stay247);
+
+    logger.info(
+      {
+        guildId,
+        query,
+        voiceChannelId: context.voiceChannel.id,
+        searchEngine,
+        ffmpegPath: ffmpegPath || null
+      },
+      'Music play request starting'
+    );
 
     const result = await player.play(context.voiceChannel, query, {
       requestedBy: context.user || undefined,
@@ -767,26 +830,35 @@ async function play(guildId, options = {}) {
           channel: context.textChannel,
           requestedBy: context.user || null
         },
-        volume: Number(settings.defaultVolume || process.env.MUSIC_DEFAULT_VOLUME || 70),
+        volume: Number(settings.defaultVolume || process.env.MUSIC_DEFAULT_VOLUME || 65),
         leaveOnEmpty: !stay247,
         leaveOnEmptyCooldown: Number(process.env.MUSIC_EMPTY_LEAVE_MS || 60000),
         leaveOnEnd: false,
         leaveOnStop: false,
-        bufferingTimeout: Number(process.env.MUSIC_BUFFERING_TIMEOUT_MS || 60000),
+        bufferingTimeout: Number(process.env.MUSIC_BUFFERING_TIMEOUT_MS || 90000),
         selfDeaf: true
       }
     });
 
     const queue = result.queue || getQueue(guildId);
-    const playbackStarted = await ensurePlayback(queue);
     const tracks = queueTracks(queue);
-
     const track = result.track || queue?.currentTrack;
     const isPlaylist = Boolean(result.playlist);
     const playlistSize = result.playlist?.tracks?.length || 0;
 
+    logger.info(
+      {
+        guildId,
+        title: trackTitle(track),
+        source: trackSource(track),
+        queueSize: tracks.length,
+        isPlaylist
+      },
+      'Music play request queued'
+    );
+
     if (isPlaylist) {
-      return success(
+      return ok(
         [
           `${ICONS.arrow} \`playlist added\``,
           `**${escapeMarkdown(result.playlist.title || 'Playlist')}**`,
@@ -796,8 +868,8 @@ async function play(guildId, options = {}) {
           thumbnail: toThumbnail(result.playlist?.thumbnail || track?.thumbnail),
           footer: toFooter(
             compactFooter(queue, context.user, [
-              playbackStarted ? 'Playing' : 'Queued',
-              `${tracks.length} waiting`
+              `${tracks.length} waiting`,
+              trackSource(track)
             ]),
             avatarUrl(context.user)
           )
@@ -805,18 +877,16 @@ async function play(guildId, options = {}) {
       );
     }
 
-    return success(
+    return ok(
       [
         `${ICONS.arrow} \`added\``,
-        formatTrack(track),
-        progressLine(queue)
+        formatTrack(track)
       ].join('\n'),
       {
         thumbnail: toThumbnail(track?.thumbnail),
         footer: toFooter(
           compactFooter(queue, context.user, [
-            playbackStarted ? 'Playing' : 'Queued',
-            `${trackDuration(track)}`,
+            trackDuration(track),
             trackSource(track)
           ]),
           avatarUrl(context.user)
@@ -826,7 +896,7 @@ async function play(guildId, options = {}) {
   } catch (error) {
     logger.warn({ guildId, query, error }, 'Node music play failed');
 
-    return failure(
+    return fail(
       'I could not start playback.',
       error.message || 'The selected source could not be played.',
       'music_play_failed'
@@ -840,15 +910,15 @@ async function search(guildId, options = {}) {
   const query = String(options.query || '').trim();
 
   if (!query) {
-    return failure(
+    return fail(
       'Tell me what to search for.',
       'Use `musicsearch <song name or URL>`.',
       'music_missing_query'
     );
   }
 
-  if (isYoutubeUrl(query)) {
-    return failure(
+  if (isYoutubeUrl(query) && envFlag('MUSIC_BLOCK_YOUTUBE', true)) {
+    return fail(
       'YouTube search is disabled.',
       'Search by song name or use SoundCloud/Spotify/Apple links.',
       'music_youtube_disabled'
@@ -869,7 +939,7 @@ async function search(guildId, options = {}) {
     const tracks = result?.tracks || [];
 
     if (!tracks.length) {
-      return failure(
+      return fail(
         'No music results found.',
         'Try a more specific song, artist, or SoundCloud link.',
         'music_no_results'
@@ -884,14 +954,14 @@ async function search(guildId, options = {}) {
       return `\`${index + 1}\` **${escapeMarkdown(title)}** — ${escapeMarkdown(author)} \`${duration}\``;
     });
 
-    return panel(`${ICONS.search} \`search results\`\n${fitLines(lines, 1600)}`, {
+    return panel(`${ICONS.search} \`search results\`\n${fitLines(lines)}`, {
       thumbnail: toThumbnail(tracks[0]?.thumbnail),
       footer: toFooter(`Search ${searchEngineName(settings.searchEngine)} · Use play <song name or URL>`)
     });
   } catch (error) {
     logger.warn({ guildId, query, error }, 'Node music search failed');
 
-    return failure(
+    return fail(
       'I could not search music right now.',
       error.message || 'The music source did not return results.',
       'music_search_failed'
@@ -910,7 +980,7 @@ async function queuePayload(guildId) {
     `${ICONS.queue} \`queue\``,
     formatTrack(queue.currentTrack),
     '',
-    lines.length ? fitLines(lines, 1800) : 'Nothing else queued.'
+    lines.length ? fitLines(lines) : 'Nothing else queued.'
   ].join('\n'), {
     thumbnail: toThumbnail(queue.currentTrack?.thumbnail),
     footer: toFooter(compactFooter(queue, null, [
@@ -951,7 +1021,7 @@ async function runCommand(guildId, command, options = {}) {
   if (!player && clientRef) await initializeMusicPlayer(clientRef);
 
   if (!player) {
-    return failure(
+    return fail(
       'Music is not initialized.',
       'The Node music backend has not started yet.',
       'music_not_initialized'
@@ -980,7 +1050,7 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.resume(),
-      (queue) => success(`${ICONS.play} \`resumed\`\n${formatTrack(queue.currentTrack, true)}`, {
+      (queue) => ok(`${ICONS.play} \`resumed\`\n${formatTrack(queue.currentTrack, true)}`, {
         footer: toFooter(compactFooter(queue, null))
       })
     );
@@ -990,7 +1060,7 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.skip(),
-      (queue) => success(
+      (queue) => ok(
         queue.currentTrack
           ? [`${ICONS.skip} \`skipped\``, formatTrack(queue.currentTrack)].join('\n')
           : `${ICONS.skip} \`skipped\`\nSkipped the current track.`,
@@ -1042,7 +1112,7 @@ async function runCommand(guildId, command, options = {}) {
     const value = Math.max(0, Math.min(150, Number.parseInt(String(options.value || ''), 10)));
 
     if (!Number.isFinite(value)) {
-      return failure(
+      return fail(
         'Invalid volume.',
         'Use a number from 0 to 150.',
         'music_invalid_volume'
@@ -1072,7 +1142,7 @@ async function runCommand(guildId, command, options = {}) {
     const ms = parseDuration(options.position);
 
     if (!ms && ms !== 0) {
-      return failure(
+      return fail(
         'Invalid seek position.',
         'Use `1:30`, `90`, or `2m30s`.',
         'music_invalid_seek'
@@ -1092,7 +1162,7 @@ async function runCommand(guildId, command, options = {}) {
     const index = oneBasedIndex(options.index);
 
     if (index === null) {
-      return failure(
+      return fail(
         'Invalid queue number.',
         'Use the number shown in `queue`.',
         'music_invalid_index'
@@ -1106,7 +1176,7 @@ async function runCommand(guildId, command, options = {}) {
 
         return removed
           ? { removed }
-          : failure(
+          : fail(
               'I could not remove that track.',
               'That queue number does not exist.',
               'music_invalid_index'
@@ -1123,7 +1193,7 @@ async function runCommand(guildId, command, options = {}) {
     const to = oneBasedIndex(options.to);
 
     if (from === null || to === null) {
-      return failure(
+      return fail(
         'Invalid queue numbers.',
         'Use numbers shown in `queue`.',
         'music_invalid_index'
@@ -1146,7 +1216,7 @@ async function runCommand(guildId, command, options = {}) {
     const index = oneBasedIndex(options.index);
 
     if (index === null) {
-      return failure(
+      return fail(
         'Invalid queue number.',
         'Use the number shown in `queue`.',
         'music_invalid_index'
@@ -1156,7 +1226,7 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.skipTo(index),
-      (queue) => success(`${ICONS.skip} \`skip to\`\nSkipped to track **${index + 1}**.`, {
+      (queue) => ok(`${ICONS.skip} \`skip to\`\nSkipped to track **${index + 1}**.`, {
         footer: toFooter(compactFooter(queue, null))
       })
     );
@@ -1205,6 +1275,7 @@ async function runCommand(guildId, command, options = {}) {
       footer: toFooter([
         `${player.extractors?.size || 0} sources`,
         `Search ${process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'}`,
+        ffmpegPath ? 'FFmpeg ready' : 'FFmpeg unknown',
         stats?.eventLoopLag ? `${Math.round(stats.eventLoopLag)}ms lag` : null
       ].filter(Boolean).join(' · '))
     });
@@ -1223,7 +1294,7 @@ async function runCommand(guildId, command, options = {}) {
           .reverse()
           .map((track, index) => `\`${index + 1}\` ${escapeMarkdown(trackTitle(track))}`);
 
-        return panel(`${ICONS.queue} \`history\`\n${lines.length ? fitLines(lines, 1800) : 'No recent tracks.'}`, {
+        return panel(`${ICONS.queue} \`history\`\n${lines.length ? fitLines(lines) : 'No recent tracks.'}`, {
           footer: toFooter(compactFooter(queue, null))
         });
       }
@@ -1231,7 +1302,7 @@ async function runCommand(guildId, command, options = {}) {
   }
 
   if (normalized === 'lyrics') {
-    return panel(`${ICONS.search} \`lyrics\`\nLyrics lookup is not enabled in this SoundCloud-first backend.`);
+    return panel(`${ICONS.search} \`lyrics\`\nLyrics lookup is not enabled in this backend.`);
   }
 
   if (normalized.startsWith('filter.')) {
@@ -1258,7 +1329,7 @@ async function runCommand(guildId, command, options = {}) {
     const engine = String(options.engine || options.value || '').toLowerCase();
 
     if (!['soundcloud', 'spotify', 'apple', 'applemusic', 'auto'].includes(engine)) {
-      return failure(
+      return fail(
         'Invalid search engine.',
         'Use soundcloud, spotify, apple, or auto.',
         'music_invalid_search_engine'
@@ -1266,29 +1337,29 @@ async function runCommand(guildId, command, options = {}) {
     }
 
     const saved = await saveMusicSettings(guildId, { searchEngine: engine });
-    return panel(`${ICONS.queue} \`settings\`\nSearch engine set to **${searchEngineName(saved.searchEngine)}**.`);
+    return panel(`${ICONS.settings} \`settings\`\nSearch engine set to **${searchEngineName(saved.searchEngine)}**.`);
   }
 
   if (normalized === 'settings.announce') {
-    return panel(`${ICONS.queue} \`settings\`\nTrack announcements are controlled with \`MUSIC_ANNOUNCE_TRACKS=true\` in your env.`);
+    return panel(`${ICONS.settings} \`settings\`\nTrack announcements are controlled with \`MUSIC_ANNOUNCE_TRACKS=true\` in your env.`);
   }
 
   if (normalized === 'settings' || normalized.startsWith('settings.')) {
     const settings = await getMusicSettings(guildId).catch(() => null);
 
     return panel([
-      `${ICONS.queue} \`settings\``,
+      `${ICONS.settings} \`settings\``,
       `24/7: **${settings?.stay247 ? 'on' : 'off'}**`,
-      `Default volume: **${settings?.defaultVolume || Number(process.env.MUSIC_DEFAULT_VOLUME || 70)}%**`,
+      `Default volume: **${settings?.defaultVolume || Number(process.env.MUSIC_DEFAULT_VOLUME || 65)}%**`,
       `Search: **${searchEngineName(settings?.searchEngine)}**`
     ].join('\n'));
   }
 
   if (['panel', 'export', 'import', 'node.failover'].includes(normalized)) {
-    return panel(`${ICONS.queue} \`music\`\nThis sidecar-era utility is not needed with the Node backend.`);
+    return panel(`${ICONS.settings} \`music\`\nThis sidecar-era utility is not needed with the Node backend.`);
   }
 
-  return failure(
+  return fail(
     'Unknown music command.',
     `The Node backend does not recognize \`${command}\`.`,
     'music_unknown_command'

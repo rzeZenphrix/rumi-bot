@@ -1,6 +1,6 @@
 {
   "name": "rumi-bot",
-  "version": "0.9.0 --beta",
+  "version": "0.9.1-beta.1",
   "private": true,
   "description": "Rumi multi-function Discord bot with moderation, logging, media, AI, utility, economy, community, fun, and dashboard features.",
   "main": "src/index.js",
@@ -15,20 +15,18 @@
     "start:worker": "node ./scripts/start-worker.js",
     "deploy:commands": "node src/deployCommands.js",
     "check": "node scripts/check.js",
+    "music:check": "node -e \"console.log('discord-player', require('discord-player').version || 'ok'); console.log('ffmpeg-static', require('ffmpeg-static')); require('fluent-ffmpeg').setFfmpegPath(require('ffmpeg-static')); console.log('music deps ok')\"",
     "install:next30": "node scripts/install-next-30.js",
     "migrate:print": "node -e \"const fs=require('fs'); for (const f of fs.readdirSync('supabase/migrations').filter(f=>f.endsWith('.sql')).sort()) console.log('-- '+f+'\\n'+fs.readFileSync('supabase/migrations/'+f,'utf8'))\""
   },
   "engines": {
     "node": ">=20.19.0"
   },
-  "overrides": {
-    "node-fetch@2.7.0": {
-      "whatwg-url": "16.0.1"
-    }
-  },
   "dependencies": {
+    "@discord-player/equalizer": "^0.2.6",
     "@discord-player/extractor": "^7.2.0",
-    "@discordjs/opus": "^0.10.0",
+    "@discord-player/ffmpeg": "^0.1.0",
+    "@discord-player/opus": "^0.1.2",
     "@discordjs/voice": "^0.19.2",
     "@google/generative-ai": "^0.24.1",
     "@napi-rs/canvas": "^0.1.100",
@@ -36,12 +34,12 @@
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "discord-player": "^7.2.0",
-    "discord-player-youtube": "^0.8.4",
     "discord.js": "^14.26.3",
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
     "ffmpeg-static": "^5.2.0",
     "fluent-ffmpeg": "^2.1.3",
+    "libsodium-wrappers": "^0.7.15",
     "opusscript": "^0.0.8",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",

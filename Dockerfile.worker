@@ -2,8 +2,32 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
+ENV NODE_ENV=production
+ENV MUSIC_BACKEND=node
+ENV NODE_MUSIC_ENABLED=true
+ENV MUSIC_SEARCH_ENGINE=soundcloud
+ENV MUSIC_DEFAULT_VOLUME=65
+ENV MUSIC_BLOCK_YOUTUBE=true
+ENV MUSIC_DISABLE_FILTERS=true
+ENV MUSIC_SKIP_FFMPEG=false
+ENV MUSIC_BUFFERING_TIMEOUT_MS=90000
+ENV MUSIC_VOICE_CONNECTION_TIMEOUT_MS=45000
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    ffmpeg \
+    python3 \
+    make \
+    g++ \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
-RUN npm install
+
+RUN npm install --omit=dev \
+  && npm cache clean --force
 
 COPY . ./
 
