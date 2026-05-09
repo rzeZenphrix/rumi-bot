@@ -1,4 +1,5 @@
 const db = require('../../services/database');
+const respond = require('../../utils/respond');
 
 module.exports = {
   name: 'ping',
@@ -10,8 +11,6 @@ module.exports = {
 
   async execute({ client, message }) {
     const started = Date.now();
-    const sent = await message.channel.send({ content: 'Pong.', allowedMentions: { parse: [] } });
-    const editMs = Date.now() - started;
 
     let dbText = 'not configured';
 
@@ -25,18 +24,16 @@ module.exports = {
     const apiMs = Date.now() - started;
     const shardId = message.guild?.shardId ?? client.shard?.ids?.[0] ?? 0;
 
-    return sent.edit({
-      content: [
-        'Pong.',
-        '',
+    return respond.reply(message, 'good', null, {
+      title: 'Pong',
+      allowTitle: true,
+      description: [
         `API: ${apiMs}ms`,
         `WebSocket: ${Math.round(client.ws.ping)}ms`,
         `Database: ${dbText}`,
         `Shard: ${shardId}`,
-        `Cluster: ${process.env.CLUSTER_ID || 'local'}`,
-        `Edit: ${editMs}ms`
-      ].join('\n'),
-      allowedMentions: { parse: [] }
+        `Cluster: ${process.env.CLUSTER_ID || 'local'}`
+      ].join('\n')
     });
   }
 };

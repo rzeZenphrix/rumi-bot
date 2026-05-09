@@ -8,12 +8,15 @@ const {
 const { sendWithGuildWebhook } = require('../systems/customization/webhookReplyManager');
 const logger = require('../systems/logging/logger');
 
+const DEFAULT_EMBED_COLOR = 0xc8d8f2;
+const ERROR_EMBED_COLOR = 0xed4245;
+
 const DEFAULT_COLORS = {
-  list: 0x2b2d31,
-  info: 0x5865f2,
-  good: 0x57f287,
-  bad: 0xed4245,
-  alert: 0xfee75c
+  list: DEFAULT_EMBED_COLOR,
+  info: DEFAULT_EMBED_COLOR,
+  good: DEFAULT_EMBED_COLOR,
+  bad: ERROR_EMBED_COLOR,
+  alert: DEFAULT_EMBED_COLOR
 };
 
 function getTheme(guildId, type) {
@@ -39,14 +42,68 @@ function getTheme(guildId, type) {
   };
 }
 
-function buildDescription({ emoji, user, action, description, mentionUser }) {
+function displayAvatarUrl(entity) {
+  if (!entity?.displayAvatarURL) return undefined;
+
+  try {
+    return entity.displayAvatarURL({ size: 64 });
+  } catch {
+    return entity.displayAvatarURL();
+  }
+}
+
+function defaultAuthor(user, options = {}) {
+  const member = options.member || options.message?.member || null;
+  const authorUser = member?.user || user;
+  const name =
+    member?.displayName ||
+    member?.nick ||
+    user?.globalName ||
+    user?.displayName ||
+    user?.username ||
+    user?.tag ||
+    null;
+
+  if (!name && !authorUser) return null;
+
+  return {
+    name: String(name || 'Rumi user').slice(0, 256),
+    iconURL: displayAvatarUrl(member) || displayAvatarUrl(authorUser)
+  };
+}
+
+function buildDescription({ emoji, action, description }) {
   const body = String(description || action || '').trim();
 
   if (!body) return '';
 
-  const shouldMention = mentionUser !== false && user;
+  return `${emoji} ${body}`;
+}
 
-  return `${emoji} ${shouldMention ? `${user}, ` : ''}${body}`;
+function startsWithKnownReplyEmoji(text = '') {
+  const value = String(text || '').trim();
+  return Object.values(DEFAULT_REPLY_EMOJIS).some((emoji) => emoji && value.startsWith(emoji));
+}
+
+function normalizeFields(fields) {
+  if (!Array.isArray(fields)) return [];
+
+  return fields
+    .map((field) => {
+      if (!field) return null;
+
+      const name = field.name ?? field.id ?? field.label;
+      const value = field.value;
+      if (name === undefined || value === undefined) return null;
+
+      return {
+        name: String(name).slice(0, 256) || '\u200B',
+        value: String(value).slice(0, 1024) || '\u200B',
+        inline: Boolean(field.inline)
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 25);
 }
 
 function makeEmbed(type, user, action, options = {}) {
@@ -70,21 +127,21 @@ function makeEmbed(type, user, action, options = {}) {
 
   const description = buildDescription({
     emoji: options.emoji || theme.emoji,
-    user,
     action,
-    description: options.description,
-    mentionUser: options.mentionUser
+    description: options.description
   });
 
   if (description) {
     embed.setDescription(description.slice(0, 4096));
   }
 
-  if (Array.isArray(options.fields) && options.fields.length) {
-    embed.addFields(options.fields.slice(0, 25));
+  const fields = normalizeFields(options.fields);
+  if (fields.length) {
+    embed.addFields(fields);
   }
 
-  if (options.author) embed.setAuthor(options.author);
+  const author = options.author || (options.author !== false ? defaultAuthor(user, options) : null);
+  if (author) embed.setAuthor(author);
 
   const resolvedThumbnail = options.thumbnail || replyEmbed.thumbnailUrl || replyEmbed.thumbnail_url;
   if (resolvedThumbnail) embed.setThumbnail(resolvedThumbnail);
@@ -103,6 +160,47 @@ function makeEmbed(type, user, action, options = {}) {
   if (resolvedFooter) embed.setFooter(resolvedFooter);
 
   return embed;
+}
+
+function styleEmbed(embedLike, type = 'info', user = null, options = {}) {
+  const embed = embedLike instanceof EmbedBuilder
+    ? embedLike
+    : EmbedBuilder.from(embedLike || {});
+  const guildId =
+    options.guildId ||
+    options.message?.guild?.id ||
+    options.guild?.id ||
+    null;
+  const theme = getTheme(guildId, type);
+  const json = embed.toJSON();
+
+  embed.setColor(options.color || (type === 'bad' || type === 'error' ? ERROR_EMBED_COLOR : theme.color));
+
+  if (options.author !== false) {
+    const author = options.author || defaultAuthor(user, options);
+    if (author) embed.setAuthor(author);
+  }
+
+  if (options.prefixEmoji !== false && json.description) {
+    const description = String(json.description);
+    if (!startsWithKnownReplyEmoji(description)) {
+      embed.setDescription(`${options.emoji || theme.emoji} ${description}`.slice(0, 4096));
+    }
+  }
+
+  return embed;
+}
+
+function stylePayload(type, user, payload = {}, options = {}) {
+  const styled = { ...payload };
+  const embeds = Array.isArray(payload.embeds) ? payload.embeds : [];
+
+  if (embeds.length) {
+    styled.embeds = embeds.map((embed) => styleEmbed(embed, type, user, options));
+  }
+
+  styled.allowedMentions = payload.allowedMentions || { parse: [] };
+  return styled;
 }
 
 function buildPayload(type, user, action, options = {}) {
@@ -124,10 +222,7 @@ function buildPayload(type, user, action, options = {}) {
     components: options.components || [],
     allowedMentions:
       options.allowedMentions ||
-      {
-        users: user?.id ? [user.id] : [],
-        roles: []
-      }
+      { parse: [] }
   };
 }
 
@@ -214,6 +309,10 @@ async function send(channel, type, user, action, options = {}) {
 module.exports = {
   makeEmbed,
   buildPayload,
+  styleEmbed,
+  stylePayload,
+  DEFAULT_EMBED_COLOR,
+  ERROR_EMBED_COLOR,
   reply,
   send
 };

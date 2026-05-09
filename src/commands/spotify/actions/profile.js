@@ -36,17 +36,17 @@ module.exports = {
       thumbnail: profile.images?.[0]?.url || account.avatar_url || null,
       fields: [
         {
-  id: 'Followers',
+          name: 'Followers',
           value: compactNumber(profile.followers?.total || 0),
           inline: true
         },
         {
-  id: 'Spotify ID',
+          name: 'Spotify ID',
           value: String(profile.id || account.spotify_user_id || 'Unknown'),
           inline: true
         },
         {
-  id: 'Linked',
+          name: 'Linked',
           value: account.connected_at ? `<t:${Math.floor(new Date(account.connected_at).getTime() / 1000)}:R>` : 'Unknown',
           inline: true
         }

@@ -14,6 +14,7 @@ const {
 
 const db = require('../../services/database');
 const logger = require('../logging/logger');
+const respond = require('../../utils/respond');
 const {
   getProtectionSettings,
   updateProtectionSection
@@ -334,7 +335,7 @@ function verificationEmbed(config) {
     return new EmbedBuilder()
       .setTitle('Verify to Access the Server')
       .setDescription(`React with ${emojiText} to verify and unlock the server.`)
-      .setColor(0x57F287);
+      .setColor(respond.DEFAULT_EMBED_COLOR);
   }
 
   return new EmbedBuilder()
@@ -343,7 +344,7 @@ function verificationEmbed(config) {
       'Click **Captcha** to receive your private captcha.',
       'Then click **Verify** and type the captcha exactly as shown.'
     ].join('\n'))
-    .setColor(0x5865F2);
+    .setColor(respond.DEFAULT_EMBED_COLOR);
 }
 
 function captchaRows() {
@@ -359,6 +360,23 @@ function captchaRows() {
         .setStyle(ButtonStyle.Success)
     )
   ];
+}
+
+function interactionContext(interaction) {
+  return {
+    member: interaction.member,
+    guild: interaction.guild
+  };
+}
+
+function ephemeralPayload(interaction, type, text, options = {}) {
+  const payload = respond.buildPayload(type, interaction.user, text, {
+    ...options,
+    message: interactionContext(interaction),
+    allowedMentions: { parse: [] }
+  });
+  payload.flags = MessageFlags.Ephemeral;
+  return payload;
 }
 
 async function ensureVerifyChannel(guild, config) {
@@ -662,10 +680,7 @@ async function createCaptchaChallenge(interaction) {
 
   const config = await getVerificationConfig(guild.id);
   if (!config.enabled || config.mode !== 'captcha') {
-    return interaction.reply({
-      content: 'Captcha verification is not enabled here.',
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.reply(ephemeralPayload(interaction, 'bad', 'Captcha verification is not enabled here.'));
   }
 
   await db.deleteExpiredVerificationCaptchas?.().catch(() => null);
@@ -690,20 +705,16 @@ async function createCaptchaChallenge(interaction) {
     expires_at: expiresAt
   });
 
-  return interaction.reply({
-    flags: MessageFlags.Ephemeral,
-    embeds: [
-      new EmbedBuilder()
-        .setTitle('Your Captcha')
-        .setDescription([
-          'Type this code exactly when you press **Verify**:',
-          '',
-          `\`\`\`txt\n${code}\n\`\`\``,
-          `Expires in **${config.captchaExpiresMinutes} minute(s)**.`
-        ].join('\n'))
-        .setColor(0x5865F2)
-    ]
-  });
+  return interaction.reply(ephemeralPayload(interaction, 'info', null, {
+    allowTitle: true,
+    title: 'Your Captcha',
+    description: [
+      'Type this code exactly when you press **Verify**:',
+      '',
+      `\`\`\`txt\n${code}\n\`\`\``,
+      `Expires in **${config.captchaExpiresMinutes} minute(s)**.`
+    ].join('\n')
+  }));
 }
 
 async function showCaptchaModal(interaction) {
@@ -733,19 +744,13 @@ async function handleCaptchaSubmit(interaction) {
   const captcha = await db.getVerificationCaptcha(guild.id, user.id).catch(() => null);
 
   if (!captcha) {
-    return interaction.reply({
-      content: 'You do not have an active captcha. Click **Captcha** first.',
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.reply(ephemeralPayload(interaction, 'bad', 'You do not have an active captcha. Click **Captcha** first.'));
   }
 
   if (new Date(captcha.expires_at).getTime() <= Date.now()) {
     await db.deleteVerificationCaptcha(guild.id, user.id).catch(() => null);
 
-    return interaction.reply({
-      content: 'Your captcha expired. Click **Captcha** to get a new one.',
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.reply(ephemeralPayload(interaction, 'bad', 'Your captcha expired. Click **Captcha** to get a new one.'));
   }
 
   const answer = interaction.fields.getTextInputValue('captcha_answer');
@@ -759,35 +764,25 @@ async function handleCaptchaSubmit(interaction) {
     if (attempts >= maxAttempts) {
       await db.deleteVerificationCaptcha(guild.id, user.id).catch(() => null);
 
-      return interaction.reply({
-        content: 'Captcha failed too many times. Click **Captcha** to generate a new one.',
-        flags: MessageFlags.Ephemeral
-      });
+      return interaction.reply(ephemeralPayload(interaction, 'bad', 'Captcha failed too many times. Click **Captcha** to generate a new one.'));
     }
 
-    return interaction.reply({
-      content: `Incorrect captcha. Attempts: **${attempts}/${maxAttempts}**.`,
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.reply(ephemeralPayload(interaction, 'bad', `Incorrect captcha. Attempts: **${attempts}/${maxAttempts}**.`));
   }
 
   const member = await guild.members.fetch(user.id).catch(() => null);
 
   if (!member) {
-    return interaction.reply({
-      content: 'I could not find your member profile in this server.',
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.reply(ephemeralPayload(interaction, 'bad', 'I could not find your member profile in this server.'));
   }
 
   const result = await verifyMember(member, 'Rumi captcha verification completed');
 
-  return interaction.reply({
-    content: result.ok
-      ? 'You are now verified. Welcome!'
-      : `Verification failed: ${result.reason}`,
-    flags: MessageFlags.Ephemeral
-  });
+  return interaction.reply(ephemeralPayload(
+    interaction,
+    result.ok ? 'good' : 'bad',
+    result.ok ? 'You are now verified. Welcome!' : `Verification failed: ${result.reason}`
+  ));
 }
 
 async function safeInteractionError(interaction, error) {
@@ -801,10 +796,7 @@ async function safeInteractionError(interaction, error) {
     'Verification interaction failed'
   );
 
-  const payload = {
-    content: `Verification failed: ${error.message || 'Unknown error.'}`,
-    flags: MessageFlags.Ephemeral
-  };
+  const payload = ephemeralPayload(interaction, 'bad', `Verification failed: ${error.message || 'Unknown error.'}`);
 
   if (interaction.replied || interaction.deferred) {
     return interaction.followUp(payload).catch(() => null);

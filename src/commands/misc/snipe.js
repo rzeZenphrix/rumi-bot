@@ -4,10 +4,10 @@ const respond = require('../../utils/respond');
 const { getSnipe } = require('../../systems/snipe/snipeStore');
 
 const RUMI_COLORS = {
-  info: 0x7c8cff,
-  alert: 0xff6b8a,
-  good: 0x57f287,
-  bad: 0xed4245
+  info: respond.DEFAULT_EMBED_COLOR,
+  alert: respond.ERROR_EMBED_COLOR,
+  good: respond.DEFAULT_EMBED_COLOR,
+  bad: respond.ERROR_EMBED_COLOR
 };
 
 function truncate(text, max = 950) {
@@ -58,7 +58,7 @@ function mediaSummary(media) {
     .join('\n');
 }
 
-function buildSnipeEmbeds(snipe, type, index) {
+function buildSnipeEmbeds(message, snipe, type, index) {
   const media = allMedia(snipe);
   const color = type === 'edit' ? RUMI_COLORS.info : RUMI_COLORS.alert;
   const actionVerb = type === 'edit' ? 'Edited message' : 'Deleted message';
@@ -125,7 +125,7 @@ function buildSnipeEmbeds(snipe, type, index) {
     main.setImage(firstRenderable.url);
   }
 
-  const embeds = [main];
+  const embeds = [respond.styleEmbed(main, type === 'edit' ? 'info' : 'bad', message.author, { message })];
 
   for (const item of media.filter((m) => m.url && m.url !== firstRenderable?.url).slice(0, 7)) {
     const mediaEmbed = new EmbedBuilder()
@@ -142,7 +142,7 @@ function buildSnipeEmbeds(snipe, type, index) {
       });
     }
 
-    embeds.push(mediaEmbed);
+    embeds.push(respond.styleEmbed(mediaEmbed, type === 'edit' ? 'info' : 'bad', message.author, { message }));
   }
 
   return embeds.slice(0, 10);
@@ -227,7 +227,7 @@ module.exports = {
       );
     }
 
-    const embeds = buildSnipeEmbeds(snipe, type, index);
+    const embeds = buildSnipeEmbeds(message, snipe, type, index);
     const files = buildAttachmentFiles(snipe);
 
     try {

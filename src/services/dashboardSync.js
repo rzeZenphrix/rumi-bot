@@ -26,6 +26,38 @@ function getBackendUrl() {
   return normalized.replace(/\/studio$/i, '');
 }
 
+function inviteUrlForGuild(guild, client) {
+  if (guild.vanityURLCode) return `https://discord.gg/${guild.vanityURLCode}`;
+  const clientId = client.user?.id || process.env.DISCORD_CLIENT_ID || '';
+  if (!clientId) return process.env.BOT_INVITE_URL || 'https://discord.com/oauth2/authorize';
+  return `https://discord.com/oauth2/authorize?client_id=${clientId}&scope=bot%20applications.commands&permissions=8&guild_id=${guild.id}&disable_guild_select=true`;
+}
+
+async function publicGuildShowcase(guild, client) {
+  let owner = null;
+  try {
+    const fetchedOwner = await guild.fetchOwner?.();
+    owner = fetchedOwner
+      ? {
+          id: fetchedOwner.id,
+          name: fetchedOwner.user?.globalName || fetchedOwner.user?.username || fetchedOwner.displayName || 'Server owner',
+          avatar: fetchedOwner.user?.displayAvatarURL?.({ extension: 'png', size: 96 }) || null
+        }
+      : null;
+  } catch (_error) {
+    owner = guild.ownerId ? { id: guild.ownerId, name: 'Server owner', avatar: null } : null;
+  }
+
+  return {
+    id: guild.id,
+    name: guild.name,
+    icon: guild.iconURL?.({ extension: 'png', size: 128 }) || null,
+    memberCount: guild.memberCount || null,
+    owner,
+    inviteUrl: inviteUrlForGuild(guild, client)
+  };
+}
+
 async function postJson(url, payload) {
   const headers = { 'content-type': 'application/json' };
   if (process.env.BOT_SYNC_SECRET) {
@@ -54,13 +86,20 @@ async function syncDashboardBackend(client) {
   if (!base) return false;
 
   const guilds = [...(client.guilds?.cache?.values?.() || [])];
+  const serverShowcase = await Promise.all(
+    guilds
+      .sort((left, right) => Number(right.memberCount || 0) - Number(left.memberCount || 0))
+      .slice(0, 36)
+      .map((guild) => publicGuildShowcase(guild, client))
+  );
   const database = await db.dbHealthCheck().catch((error) => ({ ok: false, error: error.message }));
   const botInfo = {
     name: client.user?.username || 'Rumi',
     avatar_url: client.user?.displayAvatarURL?.({ extension: 'png', size: 512 }) || null,
     description: 'Rumi is your elegant Discord companion for moderation, security, utility, fun, economy, tickets, and social features.',
     server_count: guilds.length,
-    user_count: guilds.reduce((total, guild) => total + Number(guild.memberCount || 0), 0)
+    user_count: guilds.reduce((total, guild) => total + Number(guild.memberCount || 0), 0),
+    server_showcase: serverShowcase
   };
   const runtimeStatus = {
     ok: true,
@@ -90,7 +129,8 @@ async function syncDashboardBackend(client) {
     database,
     schema: client.runtimeState?.schemaAudit || null,
     memory: process.memoryUsage(),
-    cluster: process.env.CLUSTER_ID || 'local'
+    cluster: process.env.CLUSTER_ID || 'local',
+    server_showcase: serverShowcase
   };
 
   const results = await Promise.allSettled([

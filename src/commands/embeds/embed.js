@@ -1,4 +1,5 @@
 const ce = require('../misc/ce');
+const respond = require('../../utils/respond');
 
 module.exports = {
   ...ce,
@@ -11,8 +12,10 @@ module.exports = {
     const sub = String(context.args[0] || '').toLowerCase();
 
     if (!context.args.length || sub === 'builder') {
-      return context.message.channel.send({
-        content: [
+      return respond.reply(context.message, 'info', null, {
+        title: 'Embed builder syntax',
+        allowTitle: true,
+        description: [
           '**Embed builder syntax**',
           '`embed preview {embed}$v{description: hello}`',
           '`embed send #channel {embed}$v{title: Title}$v{description: Text}$v{image: https://...}`',
@@ -25,8 +28,7 @@ module.exports = {
           '',
           '**Button syntax**',
           '`$v{button: https://example.com && Open Site && link}`'
-        ].join('\n'),
-        allowedMentions: { parse: [] }
+        ].join('\n')
       });
     }
 

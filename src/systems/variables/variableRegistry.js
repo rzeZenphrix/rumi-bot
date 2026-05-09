@@ -45,17 +45,12 @@ const VARIABLE_NAMES = [
   'bot.user_count', 'bot.command_count', 'bot.shard_id', 'bot.shard_count', 'bot.support_server', 'bot.website',
   'bot.dashboard', 'bot.invite',
   'command.name', 'command.alias', 'command.category', 'command.usage', 'command.description', 'command.user',
-  'command.user_id', 'command.user_mention', 'command.channel', 'command.channel_id', 'command.args', 'command.args_raw',
-  'args', 'args.raw',
+  'command.user_id', 'command.user_mention', 'command.channel', 'command.channel_id',
   'economy.balance', 'economy.bank', 'economy.wallet', 'economy.networth', 'economy.rank', 'economy.daily_streak',
   'invite.code', 'invite.url', 'invite.inviter', 'invite.inviter_id', 'invite.inviter_mention', 'invite.uses',
   'invite.max_uses', 'invite.created_at', 'invite.created_at_timestamp', 'invite.channel', 'invite.channel_id',
   'newline', 'prefix', 'date', 'time', 'timestamp'
 ];
-
-for (let index = 1; index <= 80; index += 1) {
-  VARIABLE_NAMES.push(`arg.${index}`, `args.after.${index}`);
-}
 
 function define(name) {
   return {
@@ -134,6 +129,48 @@ function uptime(ms) {
   return `${hours}h ${minutes}m`;
 }
 
+function normalizeArgs(args, argsRaw = '') {
+  if (Array.isArray(args)) return args.map((arg) => String(arg));
+  if (typeof args === 'string') {
+    return args.match(/"([^"]+)"|'([^']+)'|\S+/g)?.map((part) => part.replace(/^["']|["']$/g, '')) || [];
+  }
+  if (argsRaw) return normalizeArgs(argsRaw);
+  return [];
+}
+
+function firstValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== '');
+}
+
+function buildLevelVariables(source = {}) {
+  const level = source || {};
+  const newRank = firstValue(level.new_rank, level.newRank, level.new_level, level.newLevel, level.level, level.rank);
+  const oldRank = firstValue(level.old_rank, level.oldRank, level.old_level, level.oldLevel, level.previous_level, level.previousLevel);
+  const nextRank = firstValue(level.next_rank, level.nextRank, level.next_level, level.nextLevel, Number.isFinite(Number(newRank)) ? Number(newRank) + 1 : null);
+  const userXp = firstValue(level.user_xp, level.userXp, level.xp, level.current_xp, level.currentXp, level.user?.xp);
+  const serverXp = firstValue(level.server_xp, level.serverXp, level.guild_xp, level.guildXp);
+  const userXpTotal = firstValue(level.user_xp_total, level.userXpTotal, level.total_xp, level.totalXp, level.user?.totalXp, userXp);
+  const serverXpTotal = firstValue(level.server_xp_total, level.serverXpTotal, level.guild_xp_total, level.guildXpTotal, serverXp);
+  const xpNeeded = firstValue(level.xp_needed, level.xpNeeded, level.needed_xp, level.neededXp, level.next_xp, level.nextXp);
+  const progress = firstValue(level.progress, level.progress_percent, level.progressPercent);
+  const rankPosition = firstValue(level.rank_position, level.rankPosition, level.position, level.leaderboard_position, level.leaderboardPosition);
+
+  return {
+    'level.new_rank': newRank,
+    'level.old_rank': oldRank,
+    'level.next_rank': nextRank,
+    'level.user_xp': userXp,
+    'level.server_xp': serverXp,
+    'level.user_xp_total': userXpTotal,
+    'level.server_xp_total': serverXpTotal,
+    'level.xp_needed': xpNeeded,
+    'level.progress': progress,
+    'level.rank_position': rankPosition,
+    level: newRank,
+    xp: userXp
+  };
+}
+
 function buildBaseContext(context = {}) {
   const message = context.message || null;
   const client = context.client || message?.client || context.guild?.client || null;
@@ -143,14 +180,14 @@ function buildBaseContext(context = {}) {
   const channel = context.channel || message?.channel || null;
   const moderator = context.moderator || context.moderatorMember || null;
   const moderatorUser = moderator?.user || context.moderatorUser || moderator || null;
-  const args = context.args || [];
+  const args = normalizeArgs(context.args, context.argsRaw || context.command?.args_raw || context.command?.args);
   const custom = guild ? getGuildCustomization(guild.id) : null;
 
   return { client, guild, member, user, channel, moderator, moderatorUser, args, custom };
 }
 
 function staticMap(context = {}) {
-  const { client, guild, member, user, channel, moderator, moderatorUser, args, custom } = buildBaseContext(context);
+  const { client, guild, member, user, channel, moderator, moderatorUser, custom } = buildBaseContext(context);
   const now = new Date();
   const punishment = context.punishment || {};
   const giveaway = context.giveaway || {};
@@ -158,6 +195,9 @@ function staticMap(context = {}) {
   const ticket = context.ticket || {};
   const verification = context.verification || {};
   const command = context.command || {};
+  const commandVariables = flatObject('command', command);
+  delete commandVariables['command.args'];
+  delete commandVariables['command.args_raw'];
   const economy = context.economy || {};
   const invite = context.invite || {};
   const prefix = context.prefix || guild?.preferredPrefix || process.env.DEFAULT_PREFIX || ',';
@@ -302,14 +342,14 @@ function staticMap(context = {}) {
     'moderator.created_at': moderatorUser?.createdTimestamp ? discordTime(moderatorUser.createdTimestamp) : null,
     'moderator.id': moderatorUser?.id,
 
-    ...flatObject('level', context.level),
+    ...buildLevelVariables(context.level),
     ...flatObject('boost', context.boost),
     ...flatObject('punishment', punishment),
     ...flatObject('giveaway', giveaway),
     ...flatObject('winner', winner),
     ...flatObject('ticket', ticket),
     ...flatObject('verification', verification),
-    ...flatObject('command', command),
+    ...commandVariables,
     ...flatObject('economy', economy),
     ...flatObject('invite', invite),
 
@@ -317,9 +357,7 @@ function staticMap(context = {}) {
     prefix,
     date: formatDate(now, 'America/Los_Angeles', { noTime: true }),
     time: now.toLocaleTimeString(),
-    timestamp: Math.floor(now.getTime() / 1000),
-    args: args.join(' '),
-    'args.raw': context.argsRaw || args.join(' ')
+    timestamp: Math.floor(now.getTime() / 1000)
   };
 }
 
@@ -333,17 +371,6 @@ function flatObject(prefix, source = {}) {
 
 async function resolveVariable(name, context = {}) {
   const map = staticMap(context);
-  const args = context.args || [];
-
-  if (name.startsWith('arg.')) {
-    const index = Number(name.split('.')[1]) - 1;
-    return valueOrNA(args[index]);
-  }
-
-  if (name.startsWith('args.after.')) {
-    const index = Number(name.split('.')[2]);
-    return valueOrNA(args.slice(index).join(' '));
-  }
 
   return valueOrNA(map[name]);
 }

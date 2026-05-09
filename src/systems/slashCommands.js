@@ -6,6 +6,7 @@ const logger = require('./logging/logger');
 const { parseArgs } = require('./prefix/commandHandler');
 const { isSlashSupported, listSupportedSlashCommands } = require('./slashManifest');
 const { normalizeCommandMeta } = require('../utils/normalizeCommandMeta');
+const respond = require('../utils/respond');
 
 const registryCache = new WeakMap();
 let fallbackRegistry = null;
@@ -568,19 +569,50 @@ function getSlashCommandData(client = null) {
   return getRegistry(client).map((entry) => entry.data.toJSON());
 }
 
-function normalizePayload(payload) {
-  if (typeof payload === 'string') {
-    return { content: payload, allowedMentions: { parse: [] } };
-  }
-
+function interactionMessageContext(interaction) {
   return {
-    ...(payload || {}),
-    allowedMentions: payload?.allowedMentions || { parse: [] }
+    member: interaction.member,
+    guild: interaction.guild
   };
 }
 
+function inferPayloadType(payload) {
+  const embeds = Array.isArray(payload?.embeds) ? payload.embeds : [];
+
+  for (const embed of embeds) {
+    const json = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
+    const color = Number(json?.color || 0);
+    const description = String(json?.description || '');
+    if (color === respond.ERROR_EMBED_COLOR || description.includes('<:bad:')) return 'bad';
+  }
+
+  return 'info';
+}
+
+function normalizePayload(payload, interaction) {
+  if (typeof payload === 'string') {
+    return respond.buildPayload('info', interaction.user, payload, {
+      message: interactionMessageContext(interaction),
+      allowedMentions: { parse: [] }
+    });
+  }
+
+  const normalized = {
+    ...(payload || {}),
+    allowedMentions: payload?.allowedMentions || { parse: [] }
+  };
+
+  if (Array.isArray(normalized.embeds) && normalized.embeds.length) {
+    return respond.stylePayload(inferPayloadType(normalized), interaction.user, normalized, {
+      message: interactionMessageContext(interaction)
+    });
+  }
+
+  return normalized;
+}
+
 async function sendInteractionPayload(interaction, payload) {
-  const normalized = normalizePayload(payload);
+  const normalized = normalizePayload(payload, interaction);
 
   if (interaction.deferred && !interaction.replied) {
     await interaction.editReply(normalized).catch(() => null);
@@ -638,10 +670,10 @@ async function handleSlashCommandInteraction(interaction) {
   } catch (error) {
     logger.error({ error, command: interaction.commandName }, 'Slash command failed');
 
-    const payload = {
-      content: `Something broke while running /${interaction.commandName}.`,
-      flags: MessageFlags.Ephemeral
-    };
+    const payload = respond.buildPayload('bad', interaction.user, `Something broke while running /${interaction.commandName}.`, {
+      message: interactionMessageContext(interaction)
+    });
+    payload.flags = MessageFlags.Ephemeral;
 
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp(payload).catch(() => null);

@@ -73,7 +73,7 @@ function buildPollPayload({ question, options, author, type = 'choice' }) {
 
 module.exports = {
   name: 'poll',
-  aliases: ['polls', 'vote'],
+  aliases: ['polls'],
   category: 'community',
   description: 'Create clean reaction polls for your community.',
   usage: 'poll <create|yesno|help> ...',

@@ -74,7 +74,7 @@ async function saveAnalytics(guildId, data) {
 
 module.exports = {
   name: 'messagecount',
-  aliases: ['msgcount', 'msg'],
+  aliases: ['msgcount'],
   category: 'analytics',
   description: 'Inspect real stored message activity for the server, a channel, or a member.',
   usage: 'messagecount <server|user|channel|leaderboard|daily|weekly|monthly|reset> ...',

@@ -6,6 +6,7 @@ const {
   StringSelectMenuBuilder
 } = require('discord.js');
 const { resolveVariables } = require('../variables/variableRegistry');
+const respond = require('../../utils/respond');
 
 function parseBlocks(input) {
   const text = String(input || '');
@@ -49,7 +50,7 @@ function splitKeyValue(block) {
 function normalizeColor(value) {
   const clean = String(value || '').replace('#', '').trim();
 
-  if (!/^[0-9a-f]{6}$/i.test(clean)) return 0x2b2d31;
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return respond.DEFAULT_EMBED_COLOR;
 
   return Number.parseInt(clean, 16);
 }
@@ -158,7 +159,7 @@ async function parseEmbedScript(script, context = {}) {
   const blocks = parseBlocks(script);
 
   const config = {
-    color: 0x2b2d31,
+    color: respond.DEFAULT_EMBED_COLOR,
     fields: [],
     buttons: [],
     dropdowns: [],

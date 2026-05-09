@@ -2,7 +2,7 @@ const respond = require('../../utils/respond');
 
 module.exports = {
   name: 'mocktext',
-  aliases: ["spongebob","sarcasm"],
+  aliases: ['sarcasm'],
   category: 'text',
   description: "Turns text into alternating mock case.",
   usage: "mocktext <text>",

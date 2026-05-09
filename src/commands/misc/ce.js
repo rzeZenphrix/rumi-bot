@@ -10,7 +10,7 @@ function takeName(args) {
 
 module.exports = {
   name: 'ce',
-  aliases: ['embed', 'customembed'],
+  aliases: ['customembed'],
   category: 'utility',
   description: 'I send, preview, validate, save, and load Bleed/Greed-style embed scripts.',
   usage: 'ce [save|load|list|delete|preview|validate] ...',

@@ -6,21 +6,23 @@ const CUSTOMIZATION_ENABLED = true;
 const GUILD_NAMESPACE = 'customization:guild';
 const GLOBAL_NAMESPACE = 'customization:global';
 const GLOBAL_KEY = 'default';
+const DEFAULT_EMBED_HEX = '#c8d8f2';
+const ERROR_EMBED_HEX = '#ed4245';
 
 const DEFAULT_REPLY_COLORS = {
-  list: '#2b2d31',
-  info: '#faeabe',
-  good: '#57f287',
-  bad: '#ed4245',
-  alert: '#fee75c'
+  list: DEFAULT_EMBED_HEX,
+  info: DEFAULT_EMBED_HEX,
+  good: DEFAULT_EMBED_HEX,
+  bad: ERROR_EMBED_HEX,
+  alert: DEFAULT_EMBED_HEX
 };
 
 const DEFAULT_REPLY_EMOJIS = {
-  list: emojis.list,
   info: emojis.info,
   good: emojis.good,
   bad: emojis.bad,
-  alert: emojis.alert
+  list: emojis.info,
+  alert: emojis.info
 };
 
 const DEFAULT_GLOBAL_CUSTOMIZATION = {

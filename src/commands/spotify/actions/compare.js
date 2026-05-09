@@ -42,14 +42,14 @@ module.exports = {
       description: `Comparing **${mine.display_name || message.member.displayName}** with **${theirs.display_name || target.displayName}**.`,
       fields: [
         {
-  id: 'Shared artists',
+          name: 'Shared artists',
           value: sharedArtists.length
             ? sharedArtists.slice(0, 8).map((artist) => `• ${artist.name}`).join('\n')
             : 'No shared top artists in this window.',
           inline: false
         },
         {
-  id: 'Shared tracks',
+          name: 'Shared tracks',
           value: sharedTracks.length
             ? sharedTracks.slice(0, 8).map((track) => `• ${track.name}`).join('\n')
             : 'No shared top tracks in this window.',

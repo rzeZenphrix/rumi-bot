@@ -1,5 +1,6 @@
 const { EmbedBuilder, WebhookClient } = require('discord.js');
 const emojis = require('../../utils/botEmojis');
+const respond = require('../../utils/respond');
 const { getGuildLogConfig } = require('./logConfigStore');
 
 const EVENT_EMOJIS = {
@@ -14,7 +15,7 @@ const EVENT_EMOJIS = {
   hardbanReapply: '⛔', antinukeAction: '🛡️', automodAction: '🚧', moderationAction: '⚖️'
 };
 
-function parseHexColor(value, fallback = 0x2b2d31) {
+function parseHexColor(value, fallback = respond.DEFAULT_EMBED_COLOR) {
   const raw = String(value || '').replace('#', '');
   if (!/^[0-9a-f]{6}$/i.test(raw)) return fallback;
   return Number.parseInt(raw, 16);
@@ -52,7 +53,7 @@ function eventLabel(eventType) {
 
 function buildLogEmbed(guild, eventType, payload, config) {
   const icon = payload.emoji || EVENT_EMOJIS[eventType] || emojis.info || 'ℹ️';
-  const color = parseHexColor(config.colors[eventType] || config.colors.all, payload.color || 0x2b2d31);
+  const color = parseHexColor(config.colors[eventType] || config.colors.all, payload.color || respond.DEFAULT_EMBED_COLOR);
   const header = `**${icon} ${payload.title || eventLabel(eventType)}**`;
   const desc = payload.description ? String(payload.description).slice(0, 3800) : 'I recorded this server event.';
   const at = `<t:${Math.floor(Date.now() / 1000)}:F>`;

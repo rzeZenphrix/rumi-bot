@@ -15,6 +15,7 @@ const {
 
 const emojis = require('../../config/botEmojis');
 const { parseComponentEmoji } = require('../../utils/componentEmoji');
+const respond = require('../../utils/respond');
 const ticketDb = require('./ticketDb');
 
 function trim(value, length) {
@@ -274,7 +275,7 @@ async function validatePanel(guild, panelId = null) {
 }
 
 function panelValidationEmbed(result) {
-  const embed = new EmbedBuilder().setColor(result.errors.length ? 0xed4245 : result.warnings.length ? 0xfee75c : 0x57f287);
+  const embed = new EmbedBuilder().setColor(result.errors.length ? respond.ERROR_EMBED_COLOR : respond.DEFAULT_EMBED_COLOR);
 
   const description = [
     result.errors.length
@@ -324,7 +325,7 @@ async function publishPanel({ guild, channel, mode = null, userId, panelId = nul
   const chosenMode = mode || panel.mode || 'dropdown';
 
   const embed = new EmbedBuilder()
-    .setColor(0x8b5e3c)
+    .setColor(respond.DEFAULT_EMBED_COLOR)
     .setDescription(`${emojis.chat} Need help? Choose a ticket type below.`);
 
   if (types.length) {
@@ -387,14 +388,38 @@ function ticketControls(ticket, type, locked = false) {
   return [new ActionRowBuilder().addComponents(claim, close, transcript)];
 }
 
+function interactionContext(interaction) {
+  return {
+    member: interaction.member,
+    guild: interaction.guild
+  };
+}
+
+function ephemeralPayload(interaction, type, text, options = {}) {
+  const payload = respond.buildPayload(type, interaction.user, text, {
+    ...options,
+    message: interactionContext(interaction),
+    allowedMentions: { parse: [] }
+  });
+  payload.flags = MessageFlags.Ephemeral;
+  return payload;
+}
+
+function ephemeralEditPayload(interaction, type, text, options = {}) {
+  const payload = ephemeralPayload(interaction, type, text, options);
+  delete payload.flags;
+  return payload;
+}
+
 async function failEphemeral(interaction, message, adminDetails = null) {
   const content = adminDetails ? `${message}\n\n${adminDetails}` : message;
+  const payload = ephemeralPayload(interaction, 'bad', content);
 
   if (interaction.deferred || interaction.replied) {
-    return interaction.followUp({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
+    return interaction.followUp(payload).catch(() => null);
   }
 
-  return interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
+  return interaction.reply(payload).catch(() => null);
 }
 
 async function ensureTicketCanOpen({ guild, member, type }) {
@@ -597,9 +622,12 @@ async function openTicket({ guild, member, typeKey, panelId = null, formAnswers 
     type
   });
 
-  const embed = new EmbedBuilder()
-    .setColor(0x8b5e3c)
-    .setDescription(welcome);
+  const embed = respond.styleEmbed(
+    new EmbedBuilder().setDescription(welcome),
+    'info',
+    member.user,
+    { message: { member, guild } }
+  );
 
   if (formSummary) {
     embed.addFields({
@@ -663,10 +691,7 @@ async function createTicketModal(interaction, typeKey, panelId = null) {
 
     if (!result.ok) return failEphemeral(interaction, result.reason, result.admin);
 
-    return interaction.reply({
-      content: `${emojis.good} Your ticket was created: <#${result.channel.id}>`,
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.reply(ephemeralPayload(interaction, 'good', `Your ticket was created: <#${result.channel.id}>`));
   }
 
   const modal = new ModalBuilder()
@@ -717,14 +742,14 @@ async function handleModalSubmit(interaction) {
   });
 
   if (!result.ok) {
-    return interaction.editReply({
-      content: `${emojis.bad} ${result.reason}${result.admin ? `\n\n${result.admin}` : ''}`
-    });
+    return interaction.editReply(ephemeralEditPayload(
+      interaction,
+      'bad',
+      `${result.reason}${result.admin ? `\n\n${result.admin}` : ''}`
+    ));
   }
 
-  return interaction.editReply({
-    content: `${emojis.good} Your ticket was created: <#${result.channel.id}>`
-  });
+  return interaction.editReply(ephemeralEditPayload(interaction, 'good', `Your ticket was created: <#${result.channel.id}>`));
 }
 
 async function fetchTicketTypeForTicket(ticket) {
@@ -742,7 +767,7 @@ async function sendTicketLog(guild, type, data) {
   const ticket = data.ticket;
 
   const embed = new EmbedBuilder()
-    .setColor(0x8b5e3c)
+    .setColor(respond.DEFAULT_EMBED_COLOR)
     .setDescription(`${emojis.documents} **${data.eventType}**`)
     .addFields(
       { name: 'Ticket', value: ticket ? `#${ticket.ticket_number} \`${ticket.id}\`` : 'Unknown', inline: true },
@@ -1134,9 +1159,11 @@ async function handleTicketInteraction(interaction) {
       ticketId: parts[2]
     });
 
-    return interaction.editReply({
-      content: result.ok ? `${emojis.good} Ticket claimed.` : `${emojis.bad} ${result.reason}`
-    });
+    return interaction.editReply(ephemeralEditPayload(
+      interaction,
+      result.ok ? 'good' : 'bad',
+      result.ok ? 'Ticket claimed.' : result.reason
+    ));
   }
 
   if (action === 'close') {
@@ -1148,24 +1175,26 @@ async function handleTicketInteraction(interaction) {
       reason: 'Closed from ticket button.'
     });
 
-    return interaction.editReply({
-      content: result.ok ? `${emojis.lock} Ticket closed.` : `${emojis.bad} ${result.reason}`
-    });
+    return interaction.editReply(ephemeralEditPayload(
+      interaction,
+      result.ok ? 'good' : 'bad',
+      result.ok ? 'Ticket closed.' : result.reason
+    ));
   }
 
   if (action === 'transcript') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const ticket = await ticketDb.getTicket(parts[2]);
-    if (!ticket) return interaction.editReply(`${emojis.bad} Ticket not found.`);
+    if (!ticket) return interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'Ticket not found.'));
 
     const type = await fetchTicketTypeForTicket(ticket);
     if (!canUseStaffAction(interaction.member, type, 'transcript_role_ids') && ticket.opener_id !== interaction.user.id) {
-      return interaction.editReply(`${emojis.bad} You do not have permission to generate this transcript.`);
+      return interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'You do not have permission to generate this transcript.'));
     }
 
     const channel = ticket.channel_id ? await interaction.guild.channels.fetch(ticket.channel_id).catch(() => null) : interaction.channel;
-    if (!channel) return interaction.editReply(`${emojis.bad} Ticket channel not found.`);
+    if (!channel) return interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'Ticket channel not found.'));
 
     const transcript = await generateTranscript({
       guild: interaction.guild,
@@ -1174,11 +1203,9 @@ async function handleTicketInteraction(interaction) {
       actorId: interaction.user.id
     });
 
-    return interaction.followUp({
-      content: `${emojis.documents} Transcript generated.`,
-      files: [transcript.file],
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.followUp(ephemeralPayload(interaction, 'good', 'Transcript generated.', {
+      files: [transcript.file]
+    }));
   }
 
   return false;

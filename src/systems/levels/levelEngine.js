@@ -1,16 +1,37 @@
 const { getGuildLevels, updateGuildLevels, addXp } = require('./levelStore');
+const { resolveVariables } = require('../variables/variableRegistry');
 
 function randomBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function resolveTemplate(template, message, levelData) {
-  return String(template || '')
-    .replaceAll('{user}', message.author.username)
-    .replaceAll('{user.mention}', `<@${message.author.id}>`)
-    .replaceAll('{level}', String(levelData.level))
-    .replaceAll('{xp}', String(levelData.xp))
-    .replaceAll('{guild.name}', message.guild.name);
+async function resolveTemplate(template, message, levelData, beforeLevel = 0) {
+  const level = Number(levelData.level || 0);
+  const xp = Number(levelData.xp || 0);
+  const nextLevelXp = 100 + (level + 1) * (level + 1) * 35;
+  const progress = nextLevelXp > 0 ? `${Math.min(100, Math.floor((xp / nextLevelXp) * 100))}%` : '0%';
+  const rendered = await resolveVariables(String(template || ''), {
+    client: message.client,
+    message,
+    guild: message.guild,
+    member: message.member,
+    user: message.author,
+    channel: message.channel,
+    level: {
+      new_rank: level,
+      old_rank: beforeLevel,
+      next_rank: level + 1,
+      user_xp: xp,
+      user_xp_total: xp,
+      xp_needed: Math.max(0, nextLevelXp - xp),
+      progress
+    },
+    args: []
+  });
+
+  return rendered
+    .replaceAll('{level}', String(level))
+    .replaceAll('{xp}', String(xp));
 }
 
 async function applyLevelRoles(message, config, level) {
@@ -190,7 +211,7 @@ async function handleLevelXp(client, message) {
 
     if (outputChannel?.send) {
       await outputChannel.send({
-        content: resolveTemplate(config.levelMessage, message, after),
+        content: await resolveTemplate(config.levelMessage, message, after, beforeLevel),
         allowedMentions: { users: [message.author.id], roles: [] }
       }).catch(() => null);
     }

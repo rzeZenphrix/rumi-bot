@@ -19,12 +19,12 @@ module.exports = {
       description: `Linked as **${account.display_name || account.spotify_user_id || 'Spotify'}**.`,
       fields: [
         {
-  id: 'Connected',
+          name: 'Connected',
           value: account.connected_at ? `<t:${Math.floor(new Date(account.connected_at).getTime() / 1000)}:R>` : 'Unknown',
           inline: true
         },
         {
-  id: 'Token expiry',
+          name: 'Token expiry',
           value: account.token_expires_at ? `<t:${Math.floor(new Date(account.token_expires_at).getTime() / 1000)}:R>` : 'Unknown',
           inline: true
         }

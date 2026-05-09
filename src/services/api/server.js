@@ -39,13 +39,44 @@ async function verifyDashboardToken(req, res, next) {
   return next();
 }
 
-function publicGuild(guild) {
+function inviteUrlForGuild(guild) {
+  if (guild.vanityURLCode) return `https://discord.gg/${guild.vanityURLCode}`;
+  const clientId = guild.client?.user?.id || process.env.DISCORD_CLIENT_ID || '';
+  if (!clientId) return process.env.BOT_INVITE_URL || 'https://discord.com/oauth2/authorize';
+  return `https://discord.com/oauth2/authorize?client_id=${clientId}&scope=bot%20applications.commands&permissions=8&guild_id=${guild.id}&disable_guild_select=true`;
+}
+
+async function publicGuild(guild) {
+  let owner = null;
+  try {
+    const fetchedOwner = await guild.fetchOwner?.();
+    owner = fetchedOwner
+      ? {
+          id: fetchedOwner.id,
+          name: fetchedOwner.user?.globalName || fetchedOwner.user?.username || fetchedOwner.displayName || 'Server owner',
+          avatar: fetchedOwner.user?.displayAvatarURL?.({ size: 96, extension: 'png' }) || null
+        }
+      : null;
+  } catch (_error) {
+    owner = guild.ownerId ? { id: guild.ownerId, name: 'Server owner', avatar: null } : null;
+  }
+
   return {
     id: guild.id,
     name: guild.name,
     icon: guild.iconURL?.({ size: 128, extension: 'png' }) || null,
-    memberCount: guild.memberCount || null
+    memberCount: guild.memberCount || null,
+    owner,
+    inviteUrl: inviteUrlForGuild(guild)
   };
+}
+
+async function publicGuilds(client, limit = 30) {
+  const guilds = [...(client.guilds?.cache?.values?.() || [])]
+    .sort((left, right) => Number(right.memberCount || 0) - Number(left.memberCount || 0))
+    .slice(0, Math.max(1, Math.min(60, Number(limit || 30))));
+
+  return Promise.all(guilds.map(publicGuild));
 }
 
 function runtimeStatus(client, database) {
@@ -124,6 +155,13 @@ function startApiServer(client) {
     res.json(getCommandCatalog(client));
   });
 
+  app.get('/servers', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const limit = Math.max(1, Math.min(60, Number(req.query.limit || 30)));
+    const guilds = await publicGuilds(client, limit);
+    res.json({ ok: true, guilds, count: guilds.length });
+  });
+
   app.get('/premium/catalog', async (_req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(await getCatalog());
@@ -188,7 +226,7 @@ function startApiServer(client) {
 
     for (const guild of client.guilds?.cache?.values?.() || []) {
       if (session.guild_id && guild.id !== session.guild_id) continue;
-      guilds.push(publicGuild(guild));
+      guilds.push(await publicGuild(guild));
     }
 
     res.json({ ok: true, guilds });

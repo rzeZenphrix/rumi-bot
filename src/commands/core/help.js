@@ -131,12 +131,12 @@ function linkRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setStyle(ButtonStyle.Link)
-      .setLabel('Docs')
+      .setLabel('Open Docs')
       .setURL(DOCS_URL),
 
     new ButtonBuilder()
       .setStyle(ButtonStyle.Link)
-      .setLabel('Dashboard')
+      .setLabel('Open Dashboard')
       .setURL(DASHBOARD_URL)
   );
 }
@@ -279,13 +279,24 @@ function formatEntryPage(prefix, entry, currentPage, pageCount, moduleName) {
     entry.ownerOnly ? 'Owner only' : null,
     entry.slashLabel || 'Prefix only'
   ].filter(Boolean);
-  const fields = details.length
-    ? [{ name: 'Info', value: clampText(details.join('\n')), inline: false }]
-    : [];
+  const fields = [
+    {
+      name: 'Usage',
+      value: clampText(codeBlock(usageLines.length ? usageLines : [syntax])),
+      inline: false
+    },
+    {
+      name: 'Examples',
+      value: clampText(codeBlock(exampleLines.length ? exampleLines : [example])),
+      inline: false
+    }
+  ];
+
+  if (details.length) {
+    fields.push({ name: 'Details', value: clampText(details.join('\n')), inline: false });
+  }
 
   const more = [
-    usageLines.length > 1 ? `More syntax:\n${usageLines.slice(1).join('\n')}` : null,
-    exampleLines.length > 1 ? `More examples:\n${exampleLines.slice(1).join('\n')}` : null,
     entry.flags?.length ? `Flags: ${formatList(entry.flags)}` : null
   ].filter(Boolean).join('\n\n');
 
@@ -300,18 +311,11 @@ function formatEntryPage(prefix, entry, currentPage, pageCount, moduleName) {
   const module = String(moduleName || entry.module || entry.category || 'misc').toLowerCase();
 
   return {
-    description: [
-      entry.description || 'No description saved yet.',
-      '',
-      codeBlock([
-        `Syntax: ${syntax}`,
-        `Example: ${example}`
-      ])
-    ].join('\n'),
+    description: entry.description || 'No description saved yet.',
     fields,
     footer: {
       text: pageCount > 1
-        ? `${entryTypeLabel(entry)} ${currentPage}/${pageCount} • Module: ${module}`
+        ? `${entryTypeLabel(entry)} ${currentPage}/${pageCount} | Module: ${module}`
         : `Module: ${module}`
     }
   };
@@ -348,30 +352,42 @@ function buildMainPayload({ author, prefix, ownerId, sessionId, page, catalog })
     counts.subcommands ? `${counts.subcommands} subcommands` : null,
     counts.aliasCommands ? `${counts.aliasCommands} aliases` : null,
     counts.musicAliases ? `${counts.musicAliases} music aliases` : null
-  ].filter(Boolean).join(' • ');
+  ].filter(Boolean).join(' | ');
 
   return {
     mentionUser: false,
     author,
     description: [
-      `**${emojis.ai} Rumi Help**`,
-      `Rumi currently has **${catalog.displayCount}** public command entries.`,
+      `**${emojis.ai} Rumi command center**`,
+      `I found **${catalog.displayCount}** public command entries for this server.`,
       statsLine ? `_${statsLine}_` : null,
       '',
-      'Use the dashboard for the full searchable command browser.',
-      '',
-      '**Quick Guide**',
-      '```txt',
-      `Command details: ${prefix}help command`,
-      `Subcommand details: ${prefix}help command subcommand`,
-      `Module browser: ${prefix}help category page`,
-      '```',
-      '',
-      '**Modules**',
-      result.slice.length ? result.slice.join(' • ') : 'No categories found.'
+      'Use the dashboard for the searchable command browser, or search here by command, subcommand, or module.'
     ].filter(Boolean).join('\n'),
+    fields: [
+      {
+        name: 'Quick start',
+        value: codeBlock([
+          `${prefix}help moderation`,
+          `${prefix}help economy`,
+          `${prefix}help antinuke status`,
+          `${prefix}help command subcommand`
+        ]),
+        inline: false
+      },
+      {
+        name: 'Modules',
+        value: result.slice.length ? clampText(result.slice.join(' | ')) : 'No categories found.',
+        inline: false
+      },
+      {
+        name: 'Tip',
+        value: `Try \`${prefix}help play\`, \`${prefix}help variables\`, or \`${prefix}help economy 2\` for paged results.`,
+        inline: false
+      }
+    ],
     footer: {
-      text: `Page ${result.currentPage}/${result.pageCount} (${categories.length} modules) • Commands: ${catalog.displayCount}`
+      text: `Page ${result.currentPage}/${result.pageCount} (${categories.length} modules) | Commands: ${catalog.displayCount}`
     },
     components: buildComponents({
       includeLinks: true,

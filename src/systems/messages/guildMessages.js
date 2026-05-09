@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const db = require('../../services/database');
+const respond = require('../../utils/respond');
 const { resolveVariables } = require('../variables/variableRegistry');
 
 const stickyRuntime = new Map();
@@ -153,7 +154,7 @@ function buildEmbed(content, user) {
   if (!content) return null;
   return new EmbedBuilder()
     .setDescription(content)
-    .setColor(0xF4A7B9)
+    .setColor(respond.DEFAULT_EMBED_COLOR)
     .setThumbnail(user?.displayAvatarURL?.({ size: 256 }) || null);
 }
 

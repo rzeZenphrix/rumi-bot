@@ -6,6 +6,18 @@ const { musicSlashOwnedBySidecar } = require('../../systems/slashManifest');
 const { handleVerificationInteraction } = require('../../systems/verification/verificationManager');
 const { handleDisboardBumpInteraction } = require('../../systems/bump/disboardBumpReminder');
 const { handleGiveawayButton } = require('../../systems/giveaways/manager');
+const respond = require('../../utils/respond');
+
+function ephemeralPayload(interaction, type, text) {
+  const payload = respond.buildPayload(type, interaction.user, text, {
+    message: {
+      member: interaction.member,
+      guild: interaction.guild
+    }
+  });
+  payload.flags = MessageFlags.Ephemeral;
+  return payload;
+}
 
 function getCommand(client, ...names) {
   for (const name of names) {
@@ -64,10 +76,9 @@ module.exports = {
         return;
       }
 
-      await interaction.reply({
-        content: 'This slash command is currently unavailable. Try syncing commands again, or use the prefix version for now.',
-        flags: MessageFlags.Ephemeral
-      }).catch(() => null);
+      await interaction.reply(
+        ephemeralPayload(interaction, 'bad', 'This slash command is currently unavailable. Try syncing commands again, or use the prefix version for now.')
+      ).catch(() => null);
 
       return;
     }
@@ -84,10 +95,9 @@ module.exports = {
         if (handled) return;
       }
 
-      await interaction.reply({
-        content: 'The help system is still loading. Try again in a moment.',
-        flags: MessageFlags.Ephemeral
-      }).catch(() => null);
+      await interaction.reply(
+        ephemeralPayload(interaction, 'info', 'The help system is still loading. Try again in a moment.')
+      ).catch(() => null);
 
       return;
     }

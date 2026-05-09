@@ -24,7 +24,7 @@ function formatTimestamp(ts) {
 
 module.exports = {
   name: 'time',
-  aliases: ['timestamp'],
+  aliases: [],
   category: 'utility',
   description: 'Build Discord timestamps from now, unix values, dates, or snowflakes.',
   usage: 'time [now|unix <ts>|parse <date>|snowflake <id>]',

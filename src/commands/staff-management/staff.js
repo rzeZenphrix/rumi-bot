@@ -72,7 +72,7 @@ module.exports = {
   name: 'staff',
   aliases: [],
   category: 'security',
-  description: 'Manage Rumi staff roles and fake permissions.',
+  description: 'Manage server staff roles and fake permissions.',
   usage: [
     'staff status',
     'staff role add @role',
@@ -186,7 +186,7 @@ module.exports = {
           return respond.reply(message, 'bad', 'I could not save that staff role.');
         }
 
-        return respond.reply(message, 'good', `${role} is now a Rumi staff role.`);
+        return respond.reply(message, 'good', `${role} is now a server staff role.`);
       }
 
       if (action === 'remove' || action === 'delete') {
@@ -196,7 +196,7 @@ module.exports = {
           clearFakePermissions: false
         }).catch(() => null);
 
-        return respond.reply(message, 'good', `${role} is no longer a Rumi staff role.`);
+        return respond.reply(message, 'good', `${role} is no longer a server staff role.`);
       }
 
       return respond.reply(message, 'info', 'Use `staff role <add|remove|list> <@role>`.');

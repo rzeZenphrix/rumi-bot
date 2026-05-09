@@ -682,7 +682,7 @@ async function convert(parsed, date = null) {
 
 module.exports = {
   name: 'currency',
-  aliases: ['convertcurrency', 'fx', 'forex', 'moneyconvert', 'convertmoney', 'rate'],
+  aliases: ['convertcurrency', 'fx', 'forex', 'moneyconvert', 'convertmoney'],
   category: 'utility',
   description: 'Convert currencies, view rates, compare currencies, and search currency codes.',
   usage: 'currency <convert|rates|list|search|info|popular|compare|inverse|history|symbols|help> ...',

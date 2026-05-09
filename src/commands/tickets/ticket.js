@@ -10,11 +10,9 @@ const {
 const ticketDb = require('../../systems/tickets/ticketDb');
 const ticketManager = require('../../systems/tickets/ticketManager');
 const db = require('../../services/database');
+const respond = require('../../utils/respond');
 
-const TICKET_EMOJI = '<:chat:1497571865051398346>';
-const GOOD_EMOJI = '<:good:1497281757144154203>';
-const BAD_EMOJI = '<:bad:1497281754510266548>';
-const INFO_EMOJI = '<:info:1497281758188536050>';
+const TICKET_EMOJI = '<:information:1502337289844428841>';
 const PANEL_SELECTION_NAMESPACE = 'tickets:selectedPanel';
 
 function cleanId(value) {
@@ -46,31 +44,17 @@ function msToText(ms) {
 }
 
 function makeEmbed(type, description, fields = []) {
-  const colors = {
-    info: 0x5865f2,
-    good: 0x57f287,
-    bad: 0xed4245,
-    list: 0x2b2d31
-  };
+  const embed = respond.makeEmbed(type, null, description, {
+    mentionUser: false,
+    fields
+  });
 
-  const emoji = {
-    info: INFO_EMOJI,
-    good: GOOD_EMOJI,
-    bad: BAD_EMOJI,
-    list: TICKET_EMOJI
-  }[type] || INFO_EMOJI;
-
-  const embed = new EmbedBuilder()
-    .setColor(colors[type] || colors.info)
-    .setDescription(`${emoji} ${description}`.slice(0, 4096));
-
-  if (fields.length) embed.addFields(fields.slice(0, 25));
   return embed;
 }
 
 async function send(message, type, description, fields = []) {
   return message.channel.send({
-    embeds: [makeEmbed(type, description, fields)],
+    embeds: [respond.styleEmbed(makeEmbed(type, description, fields), type, message.author, { message, prefixEmoji: false })],
     allowedMentions: { parse: [] }
   });
 }
@@ -304,7 +288,7 @@ async function cmdPanel({ message, args }) {
   if (action === 'validate') {
     const result = await ticketManager.validatePanel(message.guild, panel.id);
     return message.channel.send({
-      embeds: [ticketManager.panelValidationEmbed(result)],
+      embeds: [respond.styleEmbed(ticketManager.panelValidationEmbed(result), result.errors.length ? 'bad' : 'info', message.author, { message })],
       allowedMentions: { parse: [] }
     });
   }
@@ -328,7 +312,7 @@ async function cmdPanel({ message, args }) {
     } catch (error) {
       if (error.validation) {
         return message.channel.send({
-          embeds: [ticketManager.panelValidationEmbed(error.validation)],
+          embeds: [respond.styleEmbed(ticketManager.panelValidationEmbed(error.validation), error.validation.errors.length ? 'bad' : 'info', message.author, { message })],
           allowedMentions: { parse: [] }
         });
       }
@@ -649,7 +633,7 @@ async function cmdTranscript({ message }) {
   });
 
   return message.channel.send({
-    embeds: [makeEmbed('good', 'Transcript generated.')],
+    embeds: [respond.styleEmbed(makeEmbed('good', 'Transcript generated.'), 'good', message.author, { message, prefixEmoji: false })],
     files: [transcript.file],
     allowedMentions: { parse: [] }
   });
@@ -676,7 +660,7 @@ async function cmdDelete({ message }) {
   });
 
   await message.channel.send({
-    embeds: [makeEmbed('good', 'Deleting ticket channel in 3 seconds.')],
+    embeds: [respond.styleEmbed(makeEmbed('good', 'Deleting ticket channel in 3 seconds.'), 'good', message.author, { message, prefixEmoji: false })],
     allowedMentions: { parse: [] }
   });
 

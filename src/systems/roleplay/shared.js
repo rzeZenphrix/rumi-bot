@@ -25,8 +25,8 @@ const path = require('path');
  * ROLEPLAY_ALLOW_BOTS=false
  */
 
-const DEFAULT_COLOR = 0xff8cc6;
-const ERROR_COLOR = 0xff5c5c;
+const DEFAULT_COLOR = respond.DEFAULT_EMBED_COLOR;
+const ERROR_COLOR = respond.ERROR_EMBED_COLOR;
 const NL = String.fromCharCode(10);
 const COOLDOWN_MS = Number(process.env.ROLEPLAY_COOLDOWN_MS || 2500);
 const ALLOW_BOT_TARGETS = String(process.env.ROLEPLAY_ALLOW_BOTS || 'false').toLowerCase() === 'true';
@@ -442,8 +442,12 @@ function isRoleplayBlocked(message, commandName) {
   return blocked.has(commandName) || blocked.has('all');
 }
 
+function sendStyled(message, type, payload) {
+  return message.channel.send(respond.stylePayload(type, message.author, payload, { message }));
+}
+
 async function sendModOnly(message) {
-  return message.channel.send({
+  return sendStyled(message, 'bad', {
     embeds: [{
       title: 'Staff Only',
       description: 'You need Manage Server, Moderate Members, Manage Messages, or Administrator permission to change roleplay settings.',
@@ -454,12 +458,12 @@ async function sendModOnly(message) {
 }
 
 async function handleRoleplayBlock(message, args, shouldBlock) {
-  if (!message.guild) return message.channel.send('Roleplay settings can only be changed inside a server.');
+  if (!message.guild) return respond.reply(message, 'bad', 'Roleplay settings can only be changed inside a server.');
   if (!isStaff(message)) return sendModOnly(message);
 
   const targets = parseBlockTargets(args);
   if (!targets.length) {
-    return message.channel.send({
+    return sendStyled(message, 'bad', {
       embeds: [{
         title: shouldBlock ? 'Block Roleplay Commands' : 'Unblock Roleplay Commands',
         description: [
@@ -483,25 +487,25 @@ async function handleRoleplayBlock(message, args, shouldBlock) {
   }
   setGuildBlockSet(message.guild.id, blocked);
 
-  return message.channel.send({
+  return sendStyled(message, 'good', {
       embeds: [{
         title: shouldBlock ? 'Roleplay Commands Blocked' : 'Roleplay Commands Unblocked',
         description: targets.map((name) => `\`${name}\``).join(', '),
-        color: 0xf3a4d3,
+        color: respond.DEFAULT_EMBED_COLOR,
         footer: { text: `${blocked.size} roleplay command(s) currently blocked in this server` }
       }]
     });
 }
 
 async function handleRoleplayBlockedList(message) {
-  if (!message.guild) return message.channel.send('Roleplay settings can only be viewed inside a server.');
+  if (!message.guild) return respond.reply(message, 'bad', 'Roleplay settings can only be viewed inside a server.');
   const blocked = [...getGuildBlockSet(message.guild.id)].sort();
 
-  return message.channel.send({
+  return sendStyled(message, 'info', {
     embeds: [{
       title: 'Blocked Roleplay Commands',
       description: blocked.length ? blocked.map((name) => `\`${name}\``).join(', ') : 'No roleplay commands are blocked in this server.',
-      color: 0xf3a4d3,
+      color: respond.DEFAULT_EMBED_COLOR,
       footer: { text: 'Moderators can use roleplayblock and roleplayunblock.' }
     }]
   });
@@ -846,7 +850,7 @@ function buildEmbed(commandName, actionData, message, target, gifData, count = 1
 }
 
 async function sendRoleplay(message, commandName, actionData, target, gifData, count = 1) {
-  return message.channel.send({
+  return sendStyled(message, 'info', {
     embeds: [buildEmbed(commandName, actionData, message, target, gifData, count)],
     allowedMentions: {
       users: [message.author.id, target?.id].filter(Boolean),
@@ -893,14 +897,14 @@ function buildListEmbed() {
   return {
     title: 'Roleplay Directory',
     description: 'Each roleplay action is now its own command, so help and search stay a lot cleaner. Examples: `,hug @user`, `,bonk username`, `,dance`, `,roleplaylist`.',
-    color: 0xf3a4d3,
+    color: respond.DEFAULT_EMBED_COLOR,
     fields,
     footer: { text: `${ACTION_NAMES.length} direct roleplay commands` }
   };
 }
 
 async function sendBlocked(message, usedCommand) {
-  return message.channel.send({
+  return sendStyled(message, 'bad', {
     embeds: [{
       title: `${prettifyCommandName(usedCommand)} is not available`,
       description: BLOCKED_ACTIONS[usedCommand] || 'That command is not available.',
@@ -919,7 +923,7 @@ async function executeRoleplayAction({ message, args, actionName }) {
   }
 
   if (isRoleplayBlocked(message, usedCommand)) {
-    return message.channel.send({
+    return sendStyled(message, 'bad', {
       embeds: [{
         title: 'Roleplay Command Blocked',
         description: `The \`${usedCommand}\` command is blocked in this server by moderators.`,
@@ -932,15 +936,12 @@ async function executeRoleplayAction({ message, args, actionName }) {
   const actionData = ROLEPLAY_ACTIONS[usedCommand];
   if (!actionData) {
     if (respond?.reply) return respond.reply(message, 'bad', 'That roleplay action does not exist.');
-    return message.channel.send('That roleplay action does not exist.');
+    return respond.reply(message, 'bad', 'That roleplay action does not exist.');
   }
 
   const remaining = checkCooldown(message.author.id);
   if (remaining > 0) {
-    return message.channel.send({
-      content: `Slow down a little. Try again in ${(remaining / 1000).toFixed(1)}s.`,
-      allowedMentions: { users: [], roles: [], repliedUser: false }
-    });
+    return respond.reply(message, 'info', `Slow down a little. Try again in ${(remaining / 1000).toFixed(1)}s.`);
   }
 
   const target = await findMemberByText(message, args);
@@ -1014,7 +1015,7 @@ function createRoleplayListCommand() {
     usage: ['roleplaylist', 'rplist'],
     examples: ['roleplaylist', 'rplist'],
     async execute({ message }) {
-      return message.channel.send({ embeds: [buildListEmbed()] });
+      return sendStyled(message, 'info', { embeds: [buildListEmbed()] });
     }
   };
 }

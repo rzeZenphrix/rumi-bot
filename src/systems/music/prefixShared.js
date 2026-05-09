@@ -2,21 +2,52 @@ const respond = require('../../utils/respond');
 const musicService = require('../../services/musicService');
 const { isMusicReady, MUSIC_NOT_READY } = require('../runtime/featureGates');
 
+let recordMusicPlay = async () => null;
+try {
+  ({ recordMusicPlay } = require('./musicExtras'));
+} catch (_error) {
+  recordMusicPlay = async () => null;
+}
+
+const MUSIC_COLORS = {
+  default: 0x8fb7ff,
+  panel: 0xb7a7ff,
+  success: 0xa7f3d0,
+  warn: 0xffd166,
+  error: 0xff6b8a
+};
+
 const FILTER_MODES = [
   'off',
   'clear',
   'bassboost',
+  'bassboost_low',
+  'bassboost_high',
   'nightcore',
   'vaporwave',
+  'lofi',
+  '8d',
+  'rotation',
   'karaoke',
   'tremolo',
   'vibrato',
-  'rotation',
-  'lowpass'
+  'phaser',
+  'subboost',
+  'treble',
+  'normalizer',
+  'normalizer2',
+  'surrounding',
+  'pulsator',
+  'mono',
+  'reverse',
+  'flanger',
+  'chorus',
+  'compressor'
 ];
 
 const LOOP_MODES = ['off', 'track', 'queue'];
 const TOGGLE_MODES = ['on', 'off'];
+
 const SETTINGS_HELP = [
   'musicsettings',
   'musicsettings volume 80',
@@ -32,6 +63,7 @@ const LEGACY_OVERVIEW = [
   ['Queue tools', ['remove <index>', 'move <from> <to>', 'skipto <index>', 'clear', 'shuffle', 'musichistory']],
   ['Tuning', ['volume <value>', 'seek <position>', 'loop <off|track|queue>', 'filter <mode>', 'autoplay <on|off>']],
   ['Utilities', ['lyrics', 'stats', 'musicpanel', 'musicexport', 'musicimport <code>', 'musicsettings ...']],
+  ['Extras', ['247 <on|off>', 'playlist', 'radio <station>', 'vibe <preset>', 'musicprofile']],
   ['Fallbacks', ['music play <query>', 'music queue', 'musicsettings volume 80']]
 ];
 
@@ -51,9 +83,7 @@ function buildMusicOptions(message, extra = {}) {
 }
 
 function failureText(payload, fallback = 'I could not reach the music service right now.') {
-  if (!payload) {
-    return fallback;
-  }
+  if (!payload) return fallback;
 
   if (payload.detail) {
     return `${payload.error || fallback}\n${payload.detail}`;
@@ -62,15 +92,64 @@ function failureText(payload, fallback = 'I could not reach the music service ri
   return payload.error || fallback;
 }
 
-function toEmbedOptions(payload, fallbackTitle) {
+function normalizeColor(value, fallback = MUSIC_COLORS.default) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeFooter(footer) {
+  if (!footer) return undefined;
+
+  if (typeof footer === 'string') {
+    const text = footer.trim();
+    return text ? { text: text.slice(0, 2048) } : undefined;
+  }
+
+  if (typeof footer === 'object') {
+    const text = String(footer.text || footer.footerText || '').trim();
+    const iconURL = footer.iconURL || footer.icon_url || footer.iconUrl || undefined;
+
+    if (!text) return undefined;
+
+    return {
+      text: text.slice(0, 2048),
+      ...(iconURL ? { iconURL } : {})
+    };
+  }
+
+  return undefined;
+}
+
+function normalizeThumbnail(thumbnail) {
+  if (!thumbnail) return null;
+  if (typeof thumbnail === 'string') return thumbnail;
+  if (typeof thumbnail === 'object') return thumbnail.url || null;
+  return null;
+}
+
+function normalizeFields(fields) {
+  if (!Array.isArray(fields)) return [];
+
+  return fields
+    .filter((field) => field && field.name !== undefined && field.value !== undefined)
+    .slice(0, 25)
+    .map((field) => ({
+      name: String(field.name).slice(0, 256) || '\u200B',
+      value: String(field.value).slice(0, 1024) || '\u200B',
+      inline: Boolean(field.inline)
+    }));
+}
+
+function toEmbedOptions(payload = {}, fallbackTitle = 'Music') {
   return {
     mentionUser: false,
-    title: payload.title || fallbackTitle || 'Music',
+    allowTitle: false,
+    title: payload.title || fallbackTitle,
     description: payload.description || 'The music service returned an empty response.',
-    fields: Array.isArray(payload.fields) ? payload.fields : [],
-    thumbnail: payload.thumbnail || null,
-    footer: payload.footer ? { text: payload.footer } : undefined,
-    color: Number.isFinite(Number(payload.color)) ? Number(payload.color) : undefined
+    fields: normalizeFields(payload.fields),
+    thumbnail: normalizeThumbnail(payload.thumbnail),
+    footer: normalizeFooter(payload.footer),
+    color: normalizeColor(payload.color)
   };
 }
 
@@ -90,6 +169,9 @@ function normalizeLoopMode(value) {
 
 function normalizeFilterMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'rotate' || normalized === 'rotation') return '8d';
+  if (normalized === 'clear') return 'off';
   return FILTER_MODES.includes(normalized) ? normalized : normalized;
 }
 
@@ -100,15 +182,15 @@ function joinArgs(args = []) {
 function overviewEmbed() {
   return {
     title: 'Music Commands',
-    description: 'You can use these directly now, so you do not need to type `music <command>` unless you want the legacy format.',
+    description: 'Short direct commands are live. Use `music <command>` only when you want the legacy format.',
     fields: LEGACY_OVERVIEW.map(([name, lines]) => ({
       name,
       value: lines.map((line) => `\`${line}\``).join('\n'),
       inline: false
     })),
-    color: 0x7c9cff,
+    color: MUSIC_COLORS.panel,
     footer: {
-      text: 'Short direct commands are live. Collision-prone ones stay music-prefixed.'
+      text: 'Rumi music · sleek node backend'
     }
   };
 }
@@ -118,6 +200,7 @@ async function ensureReady(message) {
     await respond.reply(message, 'info', MUSIC_NOT_READY);
     return false;
   }
+
   return true;
 }
 
@@ -131,6 +214,13 @@ async function runMusic(message, serviceCommand, options = {}, fallbackTitle = '
   if (!payload?.ok) {
     await respond.reply(message, 'bad', failureText(payload));
     return null;
+  }
+
+  if (serviceCommand === 'play' && options.query) {
+    await recordMusicPlay(message.guild.id, message.author.id, {
+      type: 'play',
+      query: options.query
+    }).catch(() => null);
   }
 
   await replyPayload(message, payload, fallbackTitle);
@@ -147,14 +237,22 @@ function createMusicCommand(spec) {
     examples: spec.examples,
     guildOnly: true,
     typing: true,
+
     async execute({ message, args }) {
       const built = await spec.build(StringArray(args), message);
+
       if (built?.reply) {
         return built.reply();
       }
+
       if (!built || !built.command) {
-        return respond.reply(message, 'info', spec.help || `Use \`${Array.isArray(spec.usage) ? spec.usage[0] : spec.usage}\`.`);
+        return respond.reply(
+          message,
+          'info',
+          spec.help || `Use \`${Array.isArray(spec.usage) ? spec.usage[0] : spec.usage}\`.`
+        );
       }
+
       return runMusic(message, built.command, built.options || {}, spec.title || spec.name);
     }
   };
@@ -173,6 +271,7 @@ function simpleCommand(name, serviceCommand, description, usage, examples, optio
     usage,
     examples,
     help: options.help,
+
     async build(args) {
       return {
         command: serviceCommand,
@@ -185,9 +284,11 @@ function simpleCommand(name, serviceCommand, description, usage, examples, optio
 function requiredStringCommand(spec) {
   return createMusicCommand({
     ...spec,
+
     async build(args) {
       const value = joinArgs(args);
       if (!value) return null;
+
       return {
         command: spec.serviceCommand,
         options: spec.optionsBuilder(value, args)
@@ -232,16 +333,33 @@ function parseLegacyMusic(args = []) {
   const command = String(args.shift() || 'status').toLowerCase();
 
   if (command === 'status') return { command: 'status', options: {} };
+
   if (command === 'play') {
     const query = joinArgs(args);
     return query ? { command: 'play', options: { query } } : null;
   }
+
   if (command === 'search') {
     const query = joinArgs(args);
     return query ? { command: 'search', options: { query } } : null;
   }
 
-  if (['queue', 'nowplaying', 'skip', 'pause', 'resume', 'stop', 'leave', 'shuffle', 'history', 'stats', 'lyrics', 'panel', 'export', 'clear'].includes(command)) {
+  if ([
+    'queue',
+    'nowplaying',
+    'skip',
+    'pause',
+    'resume',
+    'stop',
+    'leave',
+    'shuffle',
+    'history',
+    'stats',
+    'lyrics',
+    'panel',
+    'export',
+    'clear'
+  ].includes(command)) {
     return { command, options: {} };
   }
 
@@ -283,7 +401,7 @@ function parseLegacyMusic(args = []) {
 
   if (command === 'filter') {
     const mode = normalizeFilterMode(args.shift());
-    return mode ? { command: mode === 'clear' ? 'filter.off' : `filter.${mode}`, options: {} } : null;
+    return mode ? { command: `filter.${mode}`, options: {} } : null;
   }
 
   if (command === 'settings') {
@@ -307,6 +425,7 @@ function createMusicOverviewCommand() {
     examples: ['music', 'music play pink pony club', 'music queue', 'music settings volume 80'],
     guildOnly: true,
     typing: true,
+
     async execute({ message, args }) {
       if (!args.length) {
         return respond.reply(message, 'info', null, overviewEmbed());
@@ -314,7 +433,12 @@ function createMusicOverviewCommand() {
 
       const parsed = parseLegacyMusic(args);
       if (!parsed) {
-        return respond.reply(message, 'info', 'Use a direct command like `play`, `queue`, `musicsearch`, or `musicsettings`, or stick with `music <command>`.', overviewEmbed());
+        return respond.reply(
+          message,
+          'info',
+          'Use a direct command like `play`, `queue`, `musicsearch`, or `musicsettings`, or stick with `music <command>`.',
+          overviewEmbed()
+        );
       }
 
       return runMusic(message, parsed.command, parsed.options || {}, 'Music');
@@ -323,6 +447,7 @@ function createMusicOverviewCommand() {
 }
 
 module.exports = {
+  MUSIC_COLORS,
   FILTER_MODES,
   LOOP_MODES,
   SETTINGS_HELP,
