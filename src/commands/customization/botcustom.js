@@ -46,13 +46,13 @@ function imageHint(field) {
 function usage(prefix = '') {
   const p = prefix || '';
   return [
-    `Usage: \`${p}botcustom view\``,
-    `\`${p}botcustom nick <nickname>\``,
-    `\`${p}botcustom avatar <image URL or attachment>\``,
-    `\`${p}botcustom banner <image URL or attachment>\``,
-    `\`${p}botcustom bio <text>\``,
-    `\`${p}botcustom clear <nick|avatar|banner|bio>\``,
-    `\`${p}botcustom apply\``
+    `Usage: \`${p}custom view\``,
+    `\`${p}custom nick <nickname>\``,
+    `\`${p}custom avatar <image URL or attachment>\``,
+    `\`${p}custom banner <image URL or attachment>\``,
+    `\`${p}custom bio <text>\``,
+    `\`${p}custom clear <nick|avatar|banner|bio>\``,
+    `\`${p}custom apply\``
   ].join('\n');
 }
 
@@ -106,65 +106,65 @@ async function applySingle(message, field, value) {
 }
 
 module.exports = {
-  name: 'botcustom',
-  aliases: ['botcustomize', 'custombot', 'botprofile', 'rumiprofile'],
+  name: 'custom',
+  aliases: ['customize'],
   category: 'config',
   description: 'Customize Rumi profile for this server live.',
-  usage: 'botcustom <view|nick|avatar|banner|bio|clear|apply>',
+  usage: 'custom <view|nick|avatar|banner|bio|clear|apply>',
   examples: [
-    'botcustom view',
-    'botcustom nick Rumi',
-    'botcustom avatar <attachment>',
-    'botcustom banner https://example.com/banner.png',
-    'botcustom bio Calm chaos manager.',
-    'botcustom clear avatar',
-    'botcustom apply'
+    'custom view',
+    'custom nick Rumi',
+    'custom avatar <attachment>',
+    'custom banner https://example.com/banner.png',
+    'custom bio Calm chaos manager.',
+    'custom clear avatar',
+    'custom apply'
   ],
   subcommands: [
     {
       name: 'view',
       description: 'View this server bot profile customization.',
-      usage: 'botcustom view',
-      examples: ['botcustom view']
+      usage: 'custom view',
+      examples: ['custom view']
     },
     {
       name: 'nick',
       aliases: ['nickname'],
       description: 'Set Rumi nickname in this server.',
-      usage: 'botcustom nick <nickname>',
-      examples: ['botcustom nick Rumi']
+      usage: 'custom nick <nickname>',
+      examples: ['custom nick Rumi']
     },
     {
       name: 'avatar',
       description: 'Set Rumi server avatar from image URL or attachment.',
-      usage: 'botcustom avatar <image URL or attachment>',
-      examples: ['botcustom avatar <attachment>']
+      usage: 'custom avatar <image URL or attachment>',
+      examples: ['custom avatar <attachment>']
     },
     {
       name: 'banner',
       description: 'Set Rumi server banner from image URL or attachment.',
-      usage: 'botcustom banner <image URL or attachment>',
-      examples: ['botcustom banner <attachment>']
+      usage: 'custom banner <image URL or attachment>',
+      examples: ['custom banner <attachment>']
     },
     {
       name: 'bio',
       description: 'Set Rumi server bio/about me.',
-      usage: 'botcustom bio <text>',
-      examples: ['botcustom bio Calm chaos manager.']
+      usage: 'custom bio <text>',
+      examples: ['custom bio im so awesome!']
     },
     {
       name: 'clear',
       aliases: ['reset', 'remove'],
       description: 'Clear one bot profile field.',
-      usage: 'botcustom clear <nick|avatar|banner|bio>',
-      examples: ['botcustom clear avatar']
+      usage: 'custom clear <nick|avatar|banner|bio>',
+      examples: ['custom clear avatar']
     },
     {
       name: 'apply',
       aliases: ['sync', 'refresh'],
       description: 'Re-apply saved profile customization live.',
-      usage: 'botcustom apply',
-      examples: ['botcustom apply']
+      usage: 'custom apply',
+      examples: ['custom apply']
     }
   ],
   guildOnly: true,
@@ -207,7 +207,7 @@ module.exports = {
         const field = normalizeField(args.shift());
 
         if (!VALID_FIELDS.has(field)) {
-          return safeReply(message, 'info', 'Usage: `botcustom clear <nick|avatar|banner|bio>`.');
+          return safeReply(message, 'info', 'Usage: `custom clear <nick|avatar|banner|bio>`.');
         }
 
         await clearProfileField(message.guild, field, {
@@ -255,7 +255,7 @@ module.exports = {
           return safeReply(
             message,
             'info',
-            'Usage: `botcustom profile nick <name> bio <text>` or use individual commands like `botcustom avatar <attachment>`.'
+            'Usage: `custom profile nick <name> bio <text>` or use individual commands like `custom avatar <attachment>`.'
           );
         }
 

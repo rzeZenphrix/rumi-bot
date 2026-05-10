@@ -19,9 +19,9 @@ function memoryMb() {
 
 module.exports = {
   name: 'about',
-  aliases: [],
+  aliases: ['botinfo'],
   category: 'core',
-  description: 'Show Rumi runtime, shard, database, and service information.',
+  description: '',
   usage: 'about',
   examples: ['about'],
   async execute({ client, message }) {
@@ -38,9 +38,7 @@ module.exports = {
     const dashboard = process.env.DASHBOARD_URL || process.env.BOT_WEBSITE || 'not configured';
 
     return respond.reply(message, 'info', null, {
-      title: 'Rumi',
       description: [
-        'I am Rumi, a moderation, security, utility, and automation bot.',
         '',
         `Version: \`${pkg.version}\``,
         `Uptime: \`${formatUptime(process.uptime() * 1000)}\``,

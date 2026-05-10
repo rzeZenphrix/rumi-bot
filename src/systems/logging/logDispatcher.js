@@ -41,6 +41,34 @@ function eventLabel(eventType) {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
+function safeEmbedColor(value, fallback = 0x2b2d31) {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffff) {
+    return value;
+  }
+
+  if (Array.isArray(value) && value.length === 3) {
+    const [r, g, b] = value.map(Number);
+    if ([r, g, b].every((x) => Number.isInteger(x) && x >= 0 && x <= 255)) {
+      return [r, g, b];
+    }
+  }
+
+  if (typeof value === 'string') {
+    const raw = value.trim();
+
+    if (/^#?[0-9a-f]{6}$/i.test(raw)) {
+      return Number.parseInt(raw.replace('#', ''), 16);
+    }
+
+    const numeric = Number(raw);
+    if (Number.isInteger(numeric) && numeric >= 0 && numeric <= 0xffffff) {
+      return numeric;
+    }
+  }
+
+  return fallback;
+}
+
 function buildLogEmbed(guild, eventType, payload, config) {
   const icon = payload.emoji || EVENT_EMOJIS[eventType] || emojis.info;
   const color = parseHexColor(config.colors[eventType] || config.colors.all, payload.color || respond.DEFAULT_EMBED_COLOR);
@@ -49,7 +77,7 @@ function buildLogEmbed(guild, eventType, payload, config) {
   const at = `<t:${Math.floor(Date.now() / 1000)}:F>`;
 
   const embed = new EmbedBuilder()
-    .setColor(color)
+    .setColor(safeEmbedColor(color))
     .setDescription(`${header}\n${desc}\n\n**Event:** \`${eventType}\`\n**Logged:** ${at}`.slice(0, 4096));
 
   const fields = [

@@ -1,28 +1,25 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const {
   getGuildCustomization,
   hexToInt,
-  DEFAULT_REPLY_COLORS,
-  DEFAULT_REPLY_EMOJIS
+  DEFAULT_REPLY_COLORS
 } = require('../systems/customization/customizationStore');
 const { sendWithGuildWebhook } = require('../systems/customization/webhookReplyManager');
 const logger = require('../systems/logging/logger');
 
-const DEFAULT_EMBED_COLOR = 0xc8d8f2;
-const ERROR_EMBED_COLOR = 0xed4245;
-
 const DEFAULT_COLORS = {
-  list: DEFAULT_EMBED_COLOR,
-  info: DEFAULT_EMBED_COLOR,
-  good: DEFAULT_EMBED_COLOR,
-  bad: ERROR_EMBED_COLOR,
-  alert: DEFAULT_EMBED_COLOR
+  list: 0x2b2d31,
+  info: 0xffffff,
+  good: 0xffffff,
+  bad: 0xed4245,
+  alert: 0xfee75c,
+  add: 0xffffff,
+  remove: 0xffffff
 };
 
 function getTheme(guildId, type) {
   if (!guildId) {
     return {
-      emoji: DEFAULT_REPLY_EMOJIS[type] || DEFAULT_REPLY_EMOJIS.info,
       color: DEFAULT_COLORS[type] || DEFAULT_COLORS.info
     };
   }
@@ -30,80 +27,232 @@ function getTheme(guildId, type) {
   const config = getGuildCustomization(guildId);
 
   return {
-    emoji:
-      config.replyEmojis?.[type] ||
-      DEFAULT_REPLY_EMOJIS[type] ||
-      DEFAULT_REPLY_EMOJIS.info,
-
     color: hexToInt(
-      config.replyColors?.[type] || DEFAULT_REPLY_COLORS[type],
+      config.replyColors?.[type] || DEFAULT_REPLY_COLORS?.[type],
       DEFAULT_COLORS[type] || DEFAULT_COLORS.info
     )
   };
 }
 
-function displayAvatarUrl(entity) {
-  if (!entity?.displayAvatarURL) return undefined;
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
 
-  try {
-    return entity.displayAvatarURL({ size: 64 });
-  } catch {
-    return entity.displayAvatarURL();
+function cleanText(value, max = null) {
+  const text = String(value ?? '').trim();
+  if (!max || text.length <= max) return text;
+  return text.slice(0, max);
+}
+
+function resolveEmoji(options = {}) {
+  if (!hasOwn(options, 'emoji')) return '';
+  return cleanText(options.emoji);
+}
+
+function withOptionalEmoji(text, emoji) {
+  const body = cleanText(text);
+  const icon = cleanText(emoji);
+
+  if (!body) return icon;
+  if (!icon) return body;
+
+  return `${icon} ${body}`;
+}
+
+function normalizeUrl(value) {
+  if (!value) return null;
+
+  if (typeof value === 'string') {
+    const url = value.trim();
+    return url ? url : null;
   }
+
+  if (typeof value === 'object') {
+    const url = value.url || value.proxyURL || value.proxy_url || null;
+    return url ? String(url).trim() : null;
+  }
+
+  return null;
 }
 
-function defaultAuthor(user, options = {}) {
-  const member = options.member || options.message?.member || null;
-  const authorUser = member?.user || user;
-  const name =
-    member?.displayName ||
-    member?.nick ||
-    user?.globalName ||
-    user?.displayName ||
-    user?.username ||
-    user?.tag ||
-    null;
+function normalizeFooter(footer) {
+  if (!footer) return null;
 
-  if (!name && !authorUser) return null;
+  if (typeof footer === 'string') {
+    const text = cleanText(footer, 2048);
+    return text ? { text } : null;
+  }
 
-  return {
-    name: String(name || 'Rumi user').slice(0, 256),
-    iconURL: displayAvatarUrl(member) || displayAvatarUrl(authorUser)
-  };
+  if (typeof footer === 'object') {
+    const text = cleanText(footer.text || footer.footerText || footer.footer_text, 2048);
+    const iconURL =
+      footer.iconURL ||
+      footer.iconUrl ||
+      footer.icon_url ||
+      footer.footerIconUrl ||
+      footer.footer_icon_url ||
+      undefined;
+
+    if (!text) return null;
+
+    return {
+      text,
+      ...(iconURL ? { iconURL: String(iconURL) } : {})
+    };
+  }
+
+  return null;
 }
 
-function buildDescription({ emoji, action, description }) {
-  const body = String(description || action || '').trim();
+function normalizeAuthor(author) {
+  if (!author) return null;
 
-  if (!body) return '';
+  if (typeof author === 'string') {
+    const name = cleanText(author, 256);
+    return name ? { name } : null;
+  }
 
-  return `${emoji} ${body}`;
-}
+  if (typeof author === 'object') {
+    const name = cleanText(author.name || author.text, 256);
+    const iconURL = author.iconURL || author.iconUrl || author.icon_url || undefined;
+    const url = author.url || undefined;
 
-function startsWithKnownReplyEmoji(text = '') {
-  const value = String(text || '').trim();
-  return Object.values(DEFAULT_REPLY_EMOJIS).some((emoji) => emoji && value.startsWith(emoji));
+    if (!name) return null;
+
+    return {
+      name,
+      ...(iconURL ? { iconURL: String(iconURL) } : {}),
+      ...(url ? { url: String(url) } : {})
+    };
+  }
+
+  return null;
 }
 
 function normalizeFields(fields) {
   if (!Array.isArray(fields)) return [];
 
   return fields
-    .map((field) => {
-      if (!field) return null;
+    .filter((field) => field && field.name !== undefined && field.value !== undefined)
+    .slice(0, 25)
+    .map((field) => ({
+      name: cleanText(field.name, 256) || '\u200B',
+      value: cleanText(field.value, 1024) || '\u200B',
+      inline: Boolean(field.inline)
+    }));
+}
 
-      const name = field.name ?? field.id ?? field.label;
-      const value = field.value;
-      if (name === undefined || value === undefined) return null;
+function userDisplayNameFromMessage(message, user) {
+  return (
+    message?.member?.displayName ||
+    user?.globalName ||
+    user?.username ||
+    user?.tag ||
+    'User'
+  );
+}
 
-      return {
-        name: String(name).slice(0, 256) || '\u200B',
-        value: String(value).slice(0, 1024) || '\u200B',
-        inline: Boolean(field.inline)
-      };
-    })
-    .filter(Boolean)
-    .slice(0, 25);
+function userAvatarFromMessage(message, user) {
+  if (message?.member?.displayAvatarURL) {
+    return message.member.displayAvatarURL({ size: 128 });
+  }
+
+  if (user?.displayAvatarURL) {
+    return user.displayAvatarURL({ size: 128 });
+  }
+
+  if (user?.avatarURL) {
+    return user.avatarURL({ size: 128 });
+  }
+
+  return null;
+}
+
+function webhookIdentity(message, user, options = {}) {
+  if (options.webhookIdentity === false) return null;
+
+  return {
+    username: options.webhookUsername || userDisplayNameFromMessage(message, user),
+    avatarURL: options.webhookAvatarURL || userAvatarFromMessage(message, user)
+  };
+}
+
+function normalizeAllowedMentions(_user, options = {}) {
+  if (options.allowedMentions) return options.allowedMentions;
+
+  if (options.mentionUser === true && options.user?.id) {
+    return {
+      users: [options.user.id],
+      roles: []
+    };
+  }
+
+  return { parse: [] };
+}
+
+function buildDescription({ emoji, action, description }) {
+  const rawBody = description !== undefined ? description : action;
+  const body = cleanText(rawBody);
+
+  if (!body && !emoji) return '';
+
+  return withOptionalEmoji(body, emoji);
+}
+
+function applyEmbedVisuals(embed, options = {}, replyEmbed = {}) {
+  const resolvedThumbnail =
+    normalizeUrl(options.thumbnail) ||
+    normalizeUrl(replyEmbed.thumbnailUrl) ||
+    normalizeUrl(replyEmbed.thumbnail_url);
+
+  if (resolvedThumbnail) {
+    try {
+      embed.setThumbnail(resolvedThumbnail);
+    } catch {
+      // Ignore invalid thumbnail URL.
+    }
+  }
+
+  const resolvedImage =
+    normalizeUrl(options.image) ||
+    normalizeUrl(replyEmbed.imageUrl) ||
+    normalizeUrl(replyEmbed.image_url);
+
+  if (resolvedImage) {
+    try {
+      embed.setImage(resolvedImage);
+    } catch {
+      // Ignore invalid image URL.
+    }
+  }
+
+  const author = normalizeAuthor(options.author);
+  if (author) {
+    try {
+      embed.setAuthor(author);
+    } catch {
+      // Ignore invalid author payload.
+    }
+  }
+
+  const footer =
+    normalizeFooter(options.footer) ||
+    normalizeFooter(
+      replyEmbed.footerText || replyEmbed.footer_text
+        ? {
+            text: replyEmbed.footerText || replyEmbed.footer_text,
+            iconURL: replyEmbed.footerIconUrl || replyEmbed.footer_icon_url || undefined
+          }
+        : null
+    );
+
+  if (footer) {
+    try {
+      embed.setFooter(footer);
+    } catch {
+      // Ignore invalid footer payload.
+    }
+  }
 }
 
 function makeEmbed(type, user, action, options = {}) {
@@ -117,16 +266,16 @@ function makeEmbed(type, user, action, options = {}) {
   const customization = guildId ? getGuildCustomization(guildId) : null;
   const replyEmbed = customization?.replyEmbed || {};
 
-  const embed = new EmbedBuilder()
-    .setColor(options.color || theme.color);
+  const embed = new EmbedBuilder().setColor(options.color || theme.color);
 
   const resolvedTitle = options.title || replyEmbed.title;
   if (options.allowTitle !== false && resolvedTitle) {
-    embed.setTitle(String(resolvedTitle).slice(0, 256));
+    embed.setTitle(cleanText(resolvedTitle, 256));
   }
 
   const description = buildDescription({
-    emoji: options.emoji || theme.emoji,
+    emoji: resolveEmoji(options),
+    user,
     action,
     description: options.description
   });
@@ -140,94 +289,106 @@ function makeEmbed(type, user, action, options = {}) {
     embed.addFields(fields);
   }
 
-  const author = options.author || (options.author !== false ? defaultAuthor(user, options) : null);
-  if (author) embed.setAuthor(author);
-
-  const resolvedThumbnail = options.thumbnail || replyEmbed.thumbnailUrl || replyEmbed.thumbnail_url;
-  if (resolvedThumbnail) embed.setThumbnail(resolvedThumbnail);
-
-  const resolvedImage = options.image || replyEmbed.imageUrl || replyEmbed.image_url;
-  if (resolvedImage) embed.setImage(resolvedImage);
-
-  const resolvedFooter =
-    options.footer ||
-    (replyEmbed.footerText || replyEmbed.footer_text
-      ? {
-          text: String(replyEmbed.footerText || replyEmbed.footer_text).slice(0, 2048),
-          iconURL: replyEmbed.footerIconUrl || replyEmbed.footer_icon_url || undefined
-        }
-      : null);
-  if (resolvedFooter) embed.setFooter(resolvedFooter);
+  applyEmbedVisuals(embed, options, replyEmbed);
 
   return embed;
 }
 
-function styleEmbed(embedLike, type = 'info', user = null, options = {}) {
-  const embed = embedLike instanceof EmbedBuilder
-    ? embedLike
-    : EmbedBuilder.from(embedLike || {});
-  const guildId =
-    options.guildId ||
-    options.message?.guild?.id ||
-    options.guild?.id ||
-    null;
-  const theme = getTheme(guildId, type);
+function embedHasContent(embed) {
   const json = embed.toJSON();
 
-  embed.setColor(options.color || (type === 'bad' || type === 'error' ? ERROR_EMBED_COLOR : theme.color));
-
-  if (options.author !== false) {
-    const author = options.author || defaultAuthor(user, options);
-    if (author) embed.setAuthor(author);
-  }
-
-  if (options.prefixEmoji !== false && json.description) {
-    const description = String(json.description);
-    if (!startsWithKnownReplyEmoji(description)) {
-      embed.setDescription(`${options.emoji || theme.emoji} ${description}`.slice(0, 4096));
-    }
-  }
-
-  return embed;
+  return Boolean(
+    json.title ||
+    json.description ||
+    json.fields?.length ||
+    json.image ||
+    json.thumbnail ||
+    json.author ||
+    json.footer
+  );
 }
 
-function stylePayload(type, user, payload = {}, options = {}) {
-  const styled = { ...payload };
-  const embeds = Array.isArray(payload.embeds) ? payload.embeds : [];
+function normalizeEmbeds(embeds) {
+  if (!Array.isArray(embeds)) return [];
+  return embeds.filter(Boolean).slice(0, 10);
+}
 
-  if (embeds.length) {
-    styled.embeds = embeds.map((embed) => styleEmbed(embed, type, user, options));
-  }
-
-  styled.allowedMentions = payload.allowedMentions || { parse: [] };
-  return styled;
+function buildInteractionFlags(options = {}) {
+  if (options.flags !== undefined) return options.flags;
+  if (options.ephemeral === true) return MessageFlags.Ephemeral;
+  return undefined;
 }
 
 function buildPayload(type, user, action, options = {}) {
+  const files = options.files || [];
+  const components = options.components || [];
+  const extraEmbeds = normalizeEmbeds(options.embeds);
+
   if (options.plain === true) {
-    return {
-      content: options.content || action || '',
-      files: options.files || [],
-      components: options.components || [],
+    const emoji = resolveEmoji(options);
+    const baseContent = options.content !== undefined ? options.content : action;
+    const content = withOptionalEmoji(baseContent, emoji);
+
+    const payload = {
+      content: content || '\u200B',
+      files,
+      components,
       allowedMentions: options.allowedMentions || { parse: [] }
     };
+
+    const flags = buildInteractionFlags(options);
+    if (flags !== undefined) payload.flags = flags;
+
+    return payload;
   }
 
   const embed = makeEmbed(type, user, action, options);
+  const embeds = embedHasContent(embed) ? [embed, ...extraEmbeds] : extraEmbeds;
 
-  return {
+  const payload = {
     content: options.content || undefined,
-    embeds: [embed, ...(options.embeds || [])].filter(Boolean),
-    files: options.files || [],
-    components: options.components || [],
-    allowedMentions:
-      options.allowedMentions ||
-      { parse: [] }
+    embeds,
+    files,
+    components,
+    allowedMentions: normalizeAllowedMentions(user, { ...options, user })
   };
+
+  const flags = buildInteractionFlags(options);
+  if (flags !== undefined) payload.flags = flags;
+
+  if (!payload.content && !payload.embeds.length && !payload.files.length && !payload.components.length) {
+    payload.content = '\u200B';
+  }
+
+  return payload;
+}
+
+async function sendPayload(channel, payload, context = {}) {
+  return channel.send(payload).catch((error) => {
+    const code = Number(error?.code || error?.rawError?.code || 0);
+    const status = Number(error?.status || 0);
+
+    if (code === 50013 || status === 403) {
+      logger.warn(
+        {
+          guildId: context.guildId,
+          channelId: context.channelId,
+          userId: context.userId
+        },
+        'Could not send response because Discord denied channel permissions'
+      );
+
+      return null;
+    }
+
+    throw error;
+  });
 }
 
 async function reply(message, type, action, options = {}) {
-  const payload = buildPayload(type, options.user || message.author, action, {
+  const user = options.user || message.author;
+
+  const payload = buildPayload(type, user, action, {
     ...options,
     message,
     guildId: message.guild?.id
@@ -248,29 +409,15 @@ async function reply(message, type, action, options = {}) {
   }
 
   if (message.guild && options.useWebhook !== false) {
-    const webhookResult = await sendWithGuildWebhook(message.channel, payload).catch(() => null);
-
+    const identity = webhookIdentity(message, user, options);
+    const webhookResult = await sendWithGuildWebhook(message.channel, payload, identity).catch(() => null);
     if (webhookResult) return webhookResult;
   }
 
-  return message.channel.send(payload).catch((error) => {
-    const code = Number(error?.code || error?.rawError?.code || 0);
-    const status = Number(error?.status || 0);
-
-    if (code === 50013 || status === 403) {
-      logger.warn(
-        {
-          guildId: message.guild?.id,
-          channelId: message.channel?.id,
-          userId: message.author?.id
-        },
-        'Could not send response because Discord denied channel permissions'
-      );
-
-      return null;
-    }
-
-    throw error;
+  return sendPayload(message.channel, payload, {
+    guildId: message.guild?.id,
+    channelId: message.channel?.id,
+    userId: message.author?.id
   });
 }
 
@@ -281,38 +428,24 @@ async function send(channel, type, user, action, options = {}) {
   });
 
   if (channel.guild && options.useWebhook !== false) {
-    const webhookResult = await sendWithGuildWebhook(channel, payload).catch(() => null);
+    const identity = options.message
+      ? webhookIdentity(options.message, user, options)
+      : null;
 
+    const webhookResult = await sendWithGuildWebhook(channel, payload, identity).catch(() => null);
     if (webhookResult) return webhookResult;
   }
 
-  return channel.send(payload).catch((error) => {
-    const code = Number(error?.code || error?.rawError?.code || 0);
-    const status = Number(error?.status || 0);
-
-    if (code === 50013 || status === 403) {
-      logger.warn(
-        {
-          guildId: channel.guild?.id,
-          channelId: channel.id
-        },
-        'Could not send channel response because Discord denied channel permissions'
-      );
-
-      return null;
-    }
-
-    throw error;
+  return sendPayload(channel, payload, {
+    guildId: channel.guild?.id,
+    channelId: channel.id,
+    userId: user?.id
   });
 }
 
 module.exports = {
   makeEmbed,
   buildPayload,
-  styleEmbed,
-  stylePayload,
-  DEFAULT_EMBED_COLOR,
-  ERROR_EMBED_COLOR,
   reply,
   send
 };

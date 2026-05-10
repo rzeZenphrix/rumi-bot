@@ -4,7 +4,7 @@ const { searchAnime, animePage } = require('../../services/anime/jikan');
 
 module.exports = {
   name: 'anime',
-  aliases: ['ani', 'animefinder'],
+  aliases: [],
   category: 'anime',
   description: 'Find anime information from MyAnimeList using a clean paginated embed.',
   usage: 'anime <anime name>',

@@ -14,10 +14,10 @@ module.exports = {
 
   async execute({ client, message, args }) {
     const target = args.shift();
-    if (!target) return info(message, 'Usage: `ban <user> [reason]`.');
+    if (!target) return info(message, '> Ban a user from this server.\n \n```ban <user> [reason].```');
 
     const user = await findUser(client, target);
-    if (!user) return bad(message, 'User not found.');
+    if (!user) return bad(message, '> User not found.');
 
     const member = await message.guild.members.fetch(user.id).catch(() => null);
     if (member) {
@@ -25,7 +25,7 @@ module.exports = {
       if (!check.ok) return bad(message, check.reason);
     }
 
-    const reason = clean(args, 'Manual ban');
+    const reason = clean(args, 'None provided.');
     await message.guild.members.ban(user.id, { reason });
     await modlog(message, 'ban', user.id, reason);
 

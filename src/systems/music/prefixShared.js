@@ -182,7 +182,6 @@ function joinArgs(args = []) {
 
 function overviewEmbed() {
   return {
-    title: 'Rumi Music',
     description: [
       'Premium playback with clean controls, richer source matching, and a softer queue flow.',
       '',
@@ -193,7 +192,7 @@ function overviewEmbed() {
       '`pause` / `resume`  Playback control',
       '`musicsearch <query>`  Browse matches',
       '',
-      'Spotify, SoundCloud, Apple Music, YouTube, direct audio, and playlists are supported where available.'
+      'Spotify, SoundCloud, Apple Music, YouTube, direct audio, and playlists are supported.'
     ].join('\n'),
     color: MUSIC_COLORS.panel,
     footer: {

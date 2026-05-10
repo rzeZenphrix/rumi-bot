@@ -29,7 +29,7 @@ module.exports = {
     await clone.setPosition(position).catch(() => null);
     await message.channel.delete(reason).catch(() => null);
 
-    return respond.send(clone, 'alert', message.author, `Channel nuked. Reason: ${reason}`, {
+    return respond.send(clone, 'alert', message.author, 'first', {
       plain: true,
       useWebhook: false,
       allowedMentions: { parse: [] }

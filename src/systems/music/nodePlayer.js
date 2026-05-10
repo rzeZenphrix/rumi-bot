@@ -977,7 +977,7 @@ async function queuePayload(guildId) {
   const lines = tracks.slice(0, 10).map(queueLine);
 
   return panel([
-    `${ICONS.queue} \`queue\``,
+    `${ICONS.queue}`,
     formatTrack(queue.currentTrack),
     '',
     lines.length ? fitLines(lines) : 'Nothing else queued.'

@@ -1,5 +1,14 @@
-const { ChannelType, PermissionFlagsBits } = require('discord.js');
-const { clean, ok, bad, info, findChannel } = require('../../utils/moderationSimple');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  ComponentType,
+  EmbedBuilder,
+  PermissionFlagsBits
+} = require('discord.js');
+
+const respond = require('../../utils/respond');
 
 const TYPES = {
   text: ChannelType.GuildText,
@@ -10,18 +19,166 @@ const TYPES = {
   announcement: ChannelType.GuildAnnouncement
 };
 
+function clean(args, fallback = '') {
+  const text = Array.isArray(args) ? args.join(' ').trim() : String(args || '').trim();
+  return text || fallback;
+}
+
+function extractId(input) {
+  return String(input || '').match(/\d{17,20}/)?.[0] || null;
+}
+
 function takeFlagValue(args, names) {
   const index = args.findIndex((arg) => names.includes(String(arg || '').toLowerCase()));
   if (index === -1) return null;
+
   const value = args[index + 1] || '';
   args.splice(index, value ? 2 : 1);
+
   return value || null;
+}
+
+async function findChannel(guild, input, fallback = null) {
+  const raw = String(input || '').trim();
+
+  if (!raw) return fallback;
+
+  const id = extractId(raw);
+  if (id) {
+    return guild.channels.cache.get(id) || guild.channels.fetch(id).catch(() => null);
+  }
+
+  const query = raw.toLowerCase().replace(/^#/, '');
+
+  return guild.channels.cache.find((channel) =>
+    channel.name.toLowerCase() === query ||
+    channel.name.toLowerCase().includes(query)
+  ) || null;
 }
 
 function channelLabel(channel) {
   if (!channel) return 'N/A';
   if (channel.type === ChannelType.GuildCategory) return `**${channel.name}**`;
   return `${channel}`;
+}
+
+function isLikelyChannelInput(input) {
+  const raw = String(input || '').trim();
+  return /^<#\d{17,20}>$/.test(raw) || /^\d{17,20}$/.test(raw) || raw.startsWith('#');
+}
+
+async function resolveChannelAndRest(guild, args, fallbackChannel) {
+  const first = args[0];
+
+  if (!first) {
+    return {
+      channel: fallbackChannel,
+      rest: []
+    };
+  }
+
+  if (isLikelyChannelInput(first)) {
+    const channel = await findChannel(guild, first, null);
+    return {
+      channel,
+      rest: args.slice(1)
+    };
+  }
+
+  const maybeChannel = await findChannel(guild, first, null);
+
+  if (maybeChannel) {
+    return {
+      channel: maybeChannel,
+      rest: args.slice(1)
+    };
+  }
+
+  return {
+    channel: fallbackChannel,
+    rest: args
+  };
+}
+
+function shortChannelType(channel) {
+  if (!channel) return 'channel';
+  if (channel.type === ChannelType.GuildText) return 'text channel';
+  if (channel.type === ChannelType.GuildVoice) return 'voice channel';
+  if (channel.type === ChannelType.GuildStageVoice) return 'stage channel';
+  if (channel.type === ChannelType.GuildForum) return 'forum channel';
+  if (channel.type === ChannelType.GuildCategory) return 'category';
+  if (channel.type === ChannelType.GuildAnnouncement) return 'announcement channel';
+  return 'channel';
+}
+
+async function askDeleteConfirmation(message, channel) {
+  const embed = new EmbedBuilder()
+    .setDescription([
+      `Delete ${shortChannelType(channel)} ${channelLabel(channel)}?`,
+      '',
+      'This cannot be undone.'
+    ].join('\n'));
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`channel_delete_confirm:${message.id}:${channel.id}`)
+      .setLabel('Delete')
+      .setStyle(ButtonStyle.Danger),
+
+    new ButtonBuilder()
+      .setCustomId(`channel_delete_cancel:${message.id}:${channel.id}`)
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const prompt = await message.channel.send({
+    embeds: [embed],
+    components: [row],
+    allowedMentions: { parse: [] }
+  });
+
+  const collector = prompt.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: 30_000,
+    filter: (interaction) => interaction.user.id === message.author.id
+  });
+
+  return new Promise((resolve) => {
+    collector.on('collect', async (interaction) => {
+      await interaction.deferUpdate().catch(() => null);
+
+      if (interaction.customId.startsWith('channel_delete_cancel:')) {
+        collector.stop('cancelled');
+
+        await prompt.edit({
+          embeds: [new EmbedBuilder().setDescription('Channel delete cancelled.')],
+          components: []
+        }).catch(() => null);
+
+        return resolve(false);
+      }
+
+      collector.stop('confirmed');
+
+      await prompt.edit({
+        embeds: [new EmbedBuilder().setDescription(`Deleting ${channelLabel(channel)}...`)],
+        components: []
+      }).catch(() => null);
+
+      return resolve(true);
+    });
+
+    collector.on('end', async (_collected, reason) => {
+      if (reason === 'confirmed' || reason === 'cancelled') return;
+
+      await prompt.edit({
+        embeds: [new EmbedBuilder().setDescription('Channel delete confirmation expired.')],
+        components: []
+      }).catch(() => null);
+
+      resolve(false);
+    });
+  });
 }
 
 module.exports = {
@@ -77,70 +234,126 @@ module.exports = {
       const name = clean(args, '');
       const type = TYPES[typeName];
 
-      if (!type || !name) return info(message, 'Usage: `channel create <text|voice|category> <name> [--category <category>]`.');
+      if (!type || !name) {
+        return respond.reply(message, 'info', '> **Create a channel.**\n \n```channel create <text|voice|category> <name> [--category <category>]```', {
+          mentionUser: false
+        });
+      }
 
       let parent = null;
+
       if (categoryInput && type !== ChannelType.GuildCategory) {
         parent = await findChannel(message.guild, categoryInput);
+
         if (!parent || parent.type !== ChannelType.GuildCategory) {
-          return bad(message, 'I could not find that category.');
+          return respond.reply(message, 'bad', 'I could not find that category.', {
+            mentionUser: false
+          });
         }
       }
 
       const channel = await message.guild.channels.create({
         name: name.slice(0, 100),
         type,
-        parent: parent?.id,
+        parent: parent?.id || undefined,
         reason: `Channel created by ${message.author.tag}`
       });
 
-      return ok(message, `Created ${channelLabel(channel)}${parent ? ` in **${parent.name}**` : ''}.`);
+      return respond.reply(
+        message,
+        'good',
+        `Created ${channelLabel(channel)}${parent ? ` in **${parent.name}**` : ''}.`,
+        { mentionUser: false }
+      );
     }
 
     if (action === 'delete') {
-      const channel = await findChannel(message.guild, args.shift(), message.channel);
-      if (!channel) return info(message, 'Usage: `channel delete [channel]`.');
+      const { channel } = await resolveChannelAndRest(message.guild, args, message.channel);
+
+      if (!channel) {
+        return respond.reply(message, 'info', '> **Delete a channel.**\n \n```channel delete [channel]```', {
+          mentionUser: false
+        });
+      }
+
+      const confirmed = await askDeleteConfirmation(message, channel);
+      if (!confirmed) return null;
 
       const name = channel.name;
+      const deletingCurrentChannel = channel.id === message.channel.id;
+
       await channel.delete(`Channel deleted by ${message.author.tag}`);
 
-      return ok(message, `Deleted ${name}.`);
+      if (!deletingCurrentChannel) {
+        return respond.reply(message, 'good', `Deleted ${name}.`, {
+          mentionUser: false
+        });
+      }
+
+      return null;
     }
 
     if (action === 'rename') {
-      const first = args.shift();
-      const channel = await findChannel(message.guild, first, message.channel);
-      const name = channel?.id === message.channel.id && !String(first || '').match(/\d{17,20}|^#/)
-        ? clean([first, ...args], '')
-        : clean(args, '');
+      const { channel, rest } = await resolveChannelAndRest(message.guild, args, message.channel);
+      const name = clean(rest, '');
 
-      if (!channel || !name) return info(message, 'Usage: `channel rename [channel] <new name>`.');
+      if (!channel || !name) {
+        return respond.reply(message, 'info', '> **Rename a channel.**\n \n```channel rename [channel] <new name>```', {
+          mentionUser: false
+        });
+      }
 
       await channel.setName(name.slice(0, 100), `Channel renamed by ${message.author.tag}`);
-      return ok(message, `Renamed channel to ${channel.name}.`);
+
+      return respond.reply(message, 'good', `Renamed channel to ${channel.name}.`, {
+        mentionUser: false
+      });
     }
 
     if (action === 'move') {
-      const channel = await findChannel(message.guild, args.shift(), message.channel);
-      const target = args.join(' ').trim();
+      const { channel, rest } = await resolveChannelAndRest(message.guild, args, message.channel);
+      const target = clean(rest, '');
 
-      if (!channel || !target) return info(message, 'Usage: `channel move [channel] <position|category>`.');
+      if (!channel || !target) {
+        return respond.reply(message, 'info', '> **Move a channel.**\n \n```channel move [channel] <position|category>```', {
+          mentionUser: false
+        });
+      }
 
       const position = Number(target);
+
       if (Number.isInteger(position)) {
-        await channel.setPosition(position, { reason: `Channel moved by ${message.author.tag}` });
-        return ok(message, `Moved ${channel.name} to position ${position}.`);
+        await channel.setPosition(position, {
+          reason: `Channel moved by ${message.author.tag}`
+        });
+
+        return respond.reply(message, 'good', `Moved ${channel.name} to position ${position}.`, {
+          mentionUser: false
+        });
       }
 
       const category = await findChannel(message.guild, target);
+
       if (!category || category.type !== ChannelType.GuildCategory) {
-        return bad(message, 'Category not found.');
+        return respond.reply(message, 'bad', 'Category not found.', {
+          mentionUser: false
+        });
       }
 
-      await channel.setParent(category.id, { reason: `Channel moved by ${message.author.tag}` });
-      return ok(message, `Moved ${channel.name} to ${category.name}.`);
+      await channel.setParent(category.id, {
+        reason: `Channel moved by ${message.author.tag}`
+      });
+
+      return respond.reply(message, 'good', `Moved ${channel.name} to ${category.name}.`, {
+        mentionUser: false
+      });
     }
 
-    return info(message, 'Usage: `channel <create|delete|rename|move> ...`.');
+    return respond.reply(
+      message,
+      'info',
+      '> **Create, delete, rename, or move channels.**\n \n```channel <create|delete|rename|move> ...```\nSubcommands:\n- create: ```channel create <text|voice|category> <name> [--category <category>]```\n- delete: ```channel delete [channel]```\n- rename: ```channel rename [channel] <new name>```\n- move: ```channel move [channel] <position|category>```',
+      { mentionUser: false }
+    );
   }
 };

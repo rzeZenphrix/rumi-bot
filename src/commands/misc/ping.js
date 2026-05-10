@@ -24,9 +24,7 @@ module.exports = {
     const apiMs = Date.now() - started;
     const shardId = message.guild?.shardId ?? client.shard?.ids?.[0] ?? 0;
 
-    return respond.reply(message, 'good', null, {
-      title: 'Pong',
-      allowTitle: true,
+    return respond.reply({
       description: [
         `API: ${apiMs}ms`,
         `WebSocket: ${Math.round(client.ws.ping)}ms`,
