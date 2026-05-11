@@ -149,8 +149,14 @@ async function initializeMusicPlayer(client) {
 }
 
 function isNodeMusicEnabled() {
-  if (useWorker()) return false;
+  // Music commands should still be available when using the remote worker.
+  if (useWorker()) return true;
+
   return nodePlayer.isNodeMusicEnabled();
+}
+
+function isMusicEnabled() {
+  return isNodeMusicEnabled();
 }
 
 function isWorkerEnabled() {
@@ -161,6 +167,7 @@ module.exports = {
   health,
   initializeMusicPlayer,
   isNodeMusicEnabled,
+  isMusicEnabled,
   isWorkerEnabled,
   runCommand
 };
