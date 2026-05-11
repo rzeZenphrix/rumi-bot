@@ -448,6 +448,108 @@ async function ensurePlayback(queue) {
   }
 }
 
+function queueAlive(queue) {
+  if (!queue || queue.deleted) return false;
+  if (queue.node?.isPlaying?.()) return true;
+  if (queue.node?.isBuffering?.()) return true;
+  return false;
+}
+
+async function waitForStablePlayback(queue, stableMs = 3500, timeoutMs = 12000) {
+  const startedAt = Date.now();
+  let stableStartedAt = null;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (!queue || queue.deleted) {
+      return {
+        ok: false,
+        reason: 'Queue was deleted before playback stabilized.'
+      };
+    }
+
+    const playing = queue.node?.isPlaying?.();
+    const buffering = queue.node?.isBuffering?.();
+
+    if (playing) {
+      stableStartedAt ||= Date.now();
+
+      if (Date.now() - stableStartedAt >= stableMs) {
+        return {
+          ok: true,
+          state: 'stable_playing'
+        };
+      }
+    } else if (buffering) {
+      stableStartedAt = null;
+    } else {
+      stableStartedAt = null;
+    }
+
+    await sleep(500);
+  }
+
+  return {
+    ok: false,
+    reason: `Playback did not stabilize. State: playing=${queue.node?.isPlaying?.()} buffering=${queue.node?.isBuffering?.()} paused=${queue.node?.isPaused?.()}`
+  };
+}
+
+async function clearFailedQueue(queue) {
+  try {
+    if (queue && !queue.deleted) queue.delete();
+  } catch {
+    // ignore cleanup errors
+  }
+}
+
+async function playCandidate(context, queryOrTrack, searchEngine, settings, stay247) {
+  const result = await player.play(context.voiceChannel, queryOrTrack, {
+    requestedBy: context.user || undefined,
+    searchEngine,
+    nodeOptions: {
+      metadata: {
+        channel: context.textChannel,
+        requestedBy: context.user || null
+      },
+      volume: Number(settings.defaultVolume || process.env.MUSIC_DEFAULT_VOLUME || 65),
+      leaveOnEmpty: !stay247,
+      leaveOnEmptyCooldown: Number(process.env.MUSIC_EMPTY_LEAVE_MS || 60000),
+      leaveOnEnd: false,
+      leaveOnStop: false,
+      bufferingTimeout: Number(process.env.MUSIC_BUFFERING_TIMEOUT_MS || 90000),
+      selfDeaf: true
+    }
+  });
+
+  const queue = result.queue || getQueue(context.guild.id);
+
+  if (!queue) {
+    return {
+      ok: false,
+      result,
+      queue: null,
+      playback: {
+        ok: false,
+        reason: 'No queue was created.'
+      }
+    };
+  }
+
+  await sleep(500);
+
+  const ensured = await ensurePlayback(queue);
+  const stable = ensured.ok
+    ? await waitForStablePlayback(queue)
+    : ensured;
+
+  return {
+    ok: Boolean(stable.ok),
+    result,
+    queue,
+    playback: stable
+  };
+}
+
 function repeatModeName(mode) {
   if (mode === QueueRepeatMode.TRACK) return 'Track';
   if (mode === QueueRepeatMode.QUEUE) return 'Queue';
@@ -1059,23 +1161,68 @@ async function play(guildId, options = {}) {
       searchEngine
     });
 
-    const result = await player.play(context.voiceChannel, query, {
-      requestedBy: context.user || undefined,
-      searchEngine,
-      nodeOptions: {
-        metadata: {
-          channel: context.textChannel,
-          requestedBy: context.user || null
-        },
-        volume: Number(settings.defaultVolume || process.env.MUSIC_DEFAULT_VOLUME || 65),
-        leaveOnEmpty: !stay247,
-        leaveOnEmptyCooldown: Number(process.env.MUSIC_EMPTY_LEAVE_MS || 60000),
-        leaveOnEnd: false,
-        leaveOnStop: false,
-        bufferingTimeout: Number(process.env.MUSIC_BUFFERING_TIMEOUT_MS || 90000),
-        selfDeaf: true
+    let playable = null;
+    let lastFailure = null;
+      
+    if (isUrl(query)) {
+      playable = await playCandidate(context, query, searchEngine, settings, stay247);
+    
+      if (!playable.ok) {
+        lastFailure = playable.playback;
+        await clearFailedQueue(playable.queue);
       }
-    });
+    } else {
+      const searchResult = await player.search(query, {
+        requestedBy: context.user || undefined,
+        searchEngine
+      });
+    
+      const candidates = (searchResult?.tracks || []).slice(0, 6);
+    
+      if (!candidates.length) {
+        return fail(
+          'No music results found.',
+          'Try a more specific song, artist, or SoundCloud link.',
+          'music_no_results'
+        );
+      }
+    
+      for (const candidate of candidates) {
+        workerLog('trying playback candidate', {
+          guildId,
+          title: trackTitle(candidate),
+          source: trackSource(candidate),
+          url: trackUrl(candidate)
+        });
+      
+        playable = await playCandidate(context, candidate, searchEngine, settings, stay247);
+      
+        workerLog('candidate playback result', {
+          guildId,
+          title: trackTitle(candidate),
+          ok: playable.ok,
+          playback: playable.playback
+        });
+      
+        if (playable.ok) break;
+      
+        lastFailure = playable.playback;
+        await clearFailedQueue(playable.queue);
+        await sleep(500);
+      }
+    }
+    
+    if (!playable?.ok) {
+      return fail(
+        'I found tracks, but none stayed playable.',
+        lastFailure?.reason || 'The selected streams ended too quickly or never reached a stable playing state.',
+        'music_no_stable_stream'
+      );
+    }
+    
+    const result = playable.result;
+    const queue = playable.queue;
+    const playback = playable.playback;
 
     const queue = result.queue || getQueue(guildId);
 
