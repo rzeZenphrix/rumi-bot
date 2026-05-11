@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const http = require('node:http');
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Events } = require('discord.js');
 
 const logger = require('../systems/logging/logger');
 const nodePlayer = require('../systems/music/nodePlayer');
@@ -17,9 +17,15 @@ const TOKEN =
 
 let ready = false;
 let starting = true;
+let startupError = null;
+let client = null;
+
+function log(...args) {
+  console.log('[rumi-music-worker]', ...args);
+}
 
 function sendJson(res, status, data) {
-  const body = JSON.stringify(data);
+  const body = JSON.stringify(data, null, 2);
 
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -46,9 +52,9 @@ function readJson(req) {
       if (!body.trim()) return resolve({});
 
       try {
-        return resolve(JSON.parse(body));
+        resolve(JSON.parse(body));
       } catch {
-        return reject(new Error('Invalid JSON body.'));
+        reject(new Error('Invalid JSON body.'));
       }
     });
 
@@ -62,11 +68,7 @@ function isAuthorized(req) {
   const auth = String(req.headers.authorization || '').trim();
   const headerSecret = String(req.headers['x-music-worker-secret'] || '').trim();
 
-  return (
-    auth === `Bearer ${SECRET}` ||
-    auth === SECRET ||
-    headerSecret === SECRET
-  );
+  return auth === `Bearer ${SECRET}` || auth === SECRET || headerSecret === SECRET;
 }
 
 function cleanOptions(options = {}) {
@@ -97,49 +99,76 @@ function safePayload(payload) {
     };
   }
 
-  // JSON.stringify will call toJSON on discord.js builders, so Components v2 payloads
-  // can still be sent back to the main bot as raw component JSON.
   return payload;
 }
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates
-  ],
-  partials: [Partials.Channel]
-});
+async function startDiscordClient() {
+  if (!TOKEN) {
+    startupError = 'Missing DISCORD_TOKEN, BOT_TOKEN, or TOKEN.';
+    starting = false;
+    log(startupError);
+    return;
+  }
 
-client.once(Events.ClientReady, async () => {
-  logger.info(
-    {
-      user: client.user?.tag,
-      guilds: client.guilds.cache.size
-    },
-    'Rumi music worker logged in'
-  );
+  if (!SECRET) {
+    startupError = 'Missing MUSIC_WORKER_SECRET.';
+    starting = false;
+    log(startupError);
+    return;
+  }
+
+  client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildVoiceStates
+    ],
+    partials: [Partials.Channel]
+  });
+
+  client.once(Events.ClientReady, async () => {
+    log(`Discord ready as ${client.user?.tag}. Guilds: ${client.guilds.cache.size}`);
+
+    try {
+      await nodePlayer.initializeMusicPlayer(client);
+
+      ready = true;
+      starting = false;
+      startupError = null;
+
+      log('Music player ready.');
+      logger.info('Rumi music worker is ready');
+    } catch (error) {
+      ready = false;
+      starting = false;
+      startupError = error.message || 'Music player initialization failed.';
+
+      log('Music player failed:', startupError);
+      logger.error({ error }, 'Rumi music worker failed to initialize music player');
+    }
+  });
+
+  client.on('error', (error) => {
+    log('Discord client error:', error.message);
+    logger.error({ error }, 'Music worker Discord client error');
+  });
+
+  client.on('warn', (warning) => {
+    log('Discord client warning:', warning);
+    logger.warn({ warning }, 'Music worker Discord client warning');
+  });
 
   try {
-    await nodePlayer.initializeMusicPlayer(client);
-    ready = true;
-    starting = false;
-
-    logger.info('Rumi music worker is ready');
+    log('Logging into Discord...');
+    await client.login(TOKEN);
   } catch (error) {
     ready = false;
     starting = false;
+    startupError = error.message || 'Discord login failed.';
 
-    logger.error({ error }, 'Rumi music worker failed to initialize music player');
+    log('Discord login failed:', startupError);
+    logger.error({ error }, 'Music worker failed to login');
   }
-});
-
-client.on('error', (error) => {
-  logger.error({ error }, 'Music worker Discord client error');
-});
-
-client.on('warn', (warning) => {
-  logger.warn({ warning }, 'Music worker Discord client warning');
-});
+}
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -163,8 +192,11 @@ const server = http.createServer(async (req, res) => {
         ok: ready,
         starting,
         service: 'rumi-music-worker',
-        discord: client.user?.tag || null,
-        guilds: client.guilds.cache.size,
+        discord: client?.user?.tag || null,
+        guilds: client?.guilds?.cache?.size || 0,
+        startupError,
+        node: process.version,
+        port: PORT,
         ...health
       });
     }
@@ -184,9 +216,7 @@ const server = http.createServer(async (req, res) => {
           ok: false,
           replyType: 'bad',
           error: 'Music worker is not ready.',
-          description: starting
-            ? 'The music worker is still starting. Try again in a few seconds.'
-            : 'The music worker failed to initialize.'
+          description: startupError || 'The music worker is still starting.'
         });
       }
 
@@ -205,48 +235,26 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      logger.info(
-        {
-          guildId,
-          command,
-          userId: options.userId,
-          voiceChannelId: options.voiceChannelId
-        },
-        'Music worker command received'
-      );
-
-      console.log('[rumi-music-worker] /run received', {
-          guildId,
-          command,
-          userId: options.userId,
-          voiceChannelId: options.voiceChannelId,
-          textChannelId: options.textChannelId
+      log('/run received', {
+        guildId,
+        command,
+        userId: options.userId,
+        voiceChannelId: options.voiceChannelId,
+        textChannelId: options.textChannelId
       });
 
-        const payload = await nodePlayer.runCommand(guildId, command, options);
+      const payload = await nodePlayer.runCommand(guildId, command, options);
 
-        console.log('[rumi-music-worker] /run completed', {
-          guildId,
-          command,
-          ok: payload?.ok,
-          code: payload?.code,
-          error: payload?.error,
-          description: payload?.description
-        });
+      log('/run completed', {
+        guildId,
+        command,
+        ok: payload?.ok,
+        code: payload?.code,
+        error: payload?.error,
+        description: payload?.description
+      });
 
-        logger.info(
-          {
-            guildId,
-            command,
-            ok: payload?.ok,
-            code: payload?.code,
-            error: payload?.error,
-            description: payload?.description
-          },
-          'Music worker command completed'
-        );
-
-        return sendJson(res, 200, safePayload(payload));
+      return sendJson(res, 200, safePayload(payload));
     }
 
     return sendJson(res, 404, {
@@ -254,6 +262,7 @@ const server = http.createServer(async (req, res) => {
       error: 'Not found.'
     });
   } catch (error) {
+    log('Request failed:', error.message);
     logger.error({ error }, 'Music worker request failed');
 
     return sendJson(res, 500, {
@@ -265,43 +274,39 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-async function shutdown(signal) {
-  logger.info({ signal }, 'Music worker shutting down');
+server.listen(PORT, '0.0.0.0', () => {
+  log(`HTTP server listening on 0.0.0.0:${PORT}`);
+  logger.info({ port: PORT }, 'Music worker HTTP server listening');
 
+  startDiscordClient().catch((error) => {
+    startupError = error.message;
+    starting = false;
+    log('Startup failed:', startupError);
+  });
+});
+
+setInterval(() => {
+  log('heartbeat', {
+    ready,
+    starting,
+    discord: client?.user?.tag || null,
+    startupError
+  });
+}, 60_000).unref();
+
+async function shutdown(signal) {
+  log(`Shutting down: ${signal}`);
   ready = false;
 
   try {
-    await client.destroy();
+    await client?.destroy?.();
   } catch {
-    // ignore shutdown errors
+    // ignore
   }
 
-  server.close(() => {
-    process.exit(0);
-  });
-
+  server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 5000).unref();
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-
-if (!TOKEN) {
-  logger.error('Missing DISCORD_TOKEN, BOT_TOKEN, or TOKEN for music worker');
-  process.exit(1);
-}
-
-if (!SECRET) {
-  logger.error('Missing MUSIC_WORKER_SECRET. Set the same secret on the main bot and music worker.');
-  process.exit(1);
-}
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[rumi-music-worker] HTTP server listening on 0.0.0.0:${PORT}`);
-  logger.info({ port: PORT }, 'Music worker HTTP server listening');
-});
-
-client.login(TOKEN).catch((error) => {
-  logger.error({ error }, 'Music worker failed to login');
-  process.exit(1);
-});
