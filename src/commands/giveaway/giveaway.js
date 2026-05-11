@@ -406,22 +406,131 @@ async function handleRecurring(message, args) {
   return respond.reply(message, 'info', 'Use `giveaway recurring <create|list|delete>`.');
 }
 
+const START_FLAGS = [
+  { name: '--prize <text>', description: 'Prize name (required).' },
+  { name: '--duration <time>', description: 'How long the giveaway runs (e.g., 2h, 7d).' },
+  { name: '--for <time>', description: 'Alias for --duration.' },
+  { name: '--winners <count>', description: 'Number of winners (1-25).' },
+  { name: '--button', description: 'Use button entry mode.' },
+  { name: '--reaction [emoji]', description: 'Use reaction entry mode (default reaction emoji).' },
+  { name: '--channel <#channel>', description: 'Post in a specific channel.' },
+  { name: '--host <user|me>', description: 'Override the host user.' },
+  { name: '--title <text>', description: 'Embed title override.' },
+  { name: '--description <text>', description: 'Embed description override.' },
+  { name: '--footer <text>', description: 'Embed footer text.' },
+  { name: '--image <url>', description: 'Embed image URL.' },
+  { name: '--thumbnail <url>', description: 'Embed thumbnail URL.' },
+  { name: '--color <hex>', description: 'Embed color hex.' },
+  { name: '--button-label <text>', description: 'Button label override.' },
+  { name: '--button-emoji <emoji>', description: 'Button emoji override.' },
+  { name: '--button-style <style>', description: 'Button style (primary, secondary, success, danger).' },
+  { name: '--winner-message <text>', description: 'Custom winner message.' },
+  { name: '--end-message <text>', description: 'Custom end message.' },
+  { name: '--dm-winner <true|false>', description: 'DM winners on finish.' },
+  { name: '--preset <name>', description: 'Load a preset before applying flags.' }
+];
+
+const SCHEDULE_FLAGS = [
+  { name: '--starts-in <time>', description: 'Delay before starting (e.g., 2h).' },
+  ...START_FLAGS
+];
+
+const RECURRING_FLAGS = [
+  { name: '--every <time>', description: 'Interval between runs (e.g., 7d).' },
+  ...START_FLAGS
+];
+
+const CONDITION_FLAGS = [
+  { name: '--type <type>', description: 'Condition type (messages, role, account_age, server_age, vc_time, boosting, verified, warnings, bans, mutual_server, inviter, not_role).' },
+  { name: '--scope <entry|winner|both>', description: 'Apply to entries, winners, or both.' },
+  { name: '--min <number>', description: 'Minimum value for the type.' },
+  { name: '--role <role>', description: 'Role to require or exclude.' },
+  { name: '--server <id>', description: 'Target server for mutual_server.' },
+  { name: '--inviter <user>', description: 'Required inviter for invite checks.' }
+];
+
+const BONUS_FLAGS = [
+  { name: '--entries <count>', description: 'Bonus entries to award.' },
+  { name: '--role <role>', description: 'Grant bonus to members with a role.' },
+  { name: '--messages <count>', description: 'Grant bonus after message count.' },
+  { name: '--vc-time <duration>', description: 'Grant bonus after voice time.' },
+  { name: '--booster', description: 'Grant bonus to server boosters.' }
+];
+
 const subcommands = [
-  ['start', 'giveaway start --prize "Discord Nitro" --duration 24h --winners 2 --button'],
-  ['end', 'giveaway end <giveaway_id>'],
-  ['cancel', 'giveaway cancel <giveaway_id> [--delete-message]'],
-  ['reroll', 'giveaway reroll <giveaway_id> [--winners 2]'],
-  ['list', 'giveaway list [active|ended|cancelled|scheduled]'],
-  ['info', 'giveaway info <giveaway_id>'],
-  ['entries', 'giveaway entries <giveaway_id>'],
-  ['preset', 'giveaway preset <create|edit|list|view|delete>'],
-  ['condition', 'giveaway condition <add|list|remove|clear>'],
-  ['bonus', 'giveaway bonus <add|list|remove>'],
-  ['config', 'giveaway config <view|channel|manager-role|default-entry|default-color|dm-winners|remove-entry-on-leave|log-channel>'],
-  ['stats', 'giveaway stats [user @user]'],
-  ['schedule', 'giveaway schedule --starts-in 2h --prize "Nitro" --duration 24h'],
-  ['recurring', 'giveaway recurring <list>']
-].map(([name, usage]) => ({ name, usage, description: `Manage giveaway ${name}.`, examples: [usage] }));
+  {
+    name: 'start',
+    usage: 'giveaway start --prize "Discord Nitro" --duration 24h --winners 2 --button',
+    flags: START_FLAGS
+  },
+  {
+    name: 'end',
+    usage: 'giveaway end <giveaway_id>'
+  },
+  {
+    name: 'cancel',
+    usage: 'giveaway cancel <giveaway_id> [--delete-message]',
+    flags: [
+      { name: '--delete-message', description: 'Delete the giveaway message after cancel.' }
+    ]
+  },
+  {
+    name: 'reroll',
+    usage: 'giveaway reroll <giveaway_id> [--winners 2]',
+    flags: [
+      { name: '--winners <count>', description: 'Number of winners to pick.' }
+    ]
+  },
+  {
+    name: 'list',
+    usage: 'giveaway list [active|ended|cancelled|scheduled]'
+  },
+  {
+    name: 'info',
+    usage: 'giveaway info <giveaway_id>'
+  },
+  {
+    name: 'entries',
+    usage: 'giveaway entries <giveaway_id>'
+  },
+  {
+    name: 'preset',
+    usage: 'giveaway preset <create|edit|list|view|delete>',
+    flags: START_FLAGS
+  },
+  {
+    name: 'condition',
+    usage: 'giveaway condition <add|list|remove|clear>',
+    flags: CONDITION_FLAGS
+  },
+  {
+    name: 'bonus',
+    usage: 'giveaway bonus <add|list|remove>',
+    flags: BONUS_FLAGS
+  },
+  {
+    name: 'config',
+    usage: 'giveaway config <view|channel|manager-role|default-entry|default-color|dm-winners|remove-entry-on-leave|log-channel>'
+  },
+  {
+    name: 'stats',
+    usage: 'giveaway stats [user @user]'
+  },
+  {
+    name: 'schedule',
+    usage: 'giveaway schedule --starts-in 2h --prize "Nitro" --duration 24h',
+    flags: SCHEDULE_FLAGS
+  },
+  {
+    name: 'recurring',
+    usage: 'giveaway recurring <list>',
+    flags: RECURRING_FLAGS
+  }
+].map((entry) => ({
+  ...entry,
+  description: `Manage giveaway ${entry.name}.`,
+  examples: [entry.usage]
+}));
 
 module.exports = {
   name: 'giveaway',

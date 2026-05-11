@@ -1,6 +1,7 @@
 const respond = require('../../utils/respond');
 const musicService = require('../../services/musicService');
 const { isMusicReady, MUSIC_NOT_READY } = require('../runtime/featureGates');
+const musicUi = require('./musicUiV2');
 
 let recordMusicPlay = async () => null;
 try {
@@ -140,22 +141,36 @@ function normalizeFields(fields) {
     }));
 }
 
-function toEmbedOptions(payload = {}, fallbackTitle = 'Music') {
+function toEmbedOptions(payload, fallbackTitle) {
   return {
     mentionUser: false,
-    allowTitle: Boolean(payload.title),
-    title: payload.title || fallbackTitle,
+    title: payload.title || fallbackTitle || 'Music',
     description: payload.description || 'The music service returned an empty response.',
-    fields: normalizeFields(payload.fields),
-    thumbnail: normalizeThumbnail(payload.thumbnail),
-    footer: normalizeFooter(payload.footer),
-    color: normalizeColor(payload.color),
-    components: payload.components || []
+    fields: Array.isArray(payload.fields) ? payload.fields : [],
+    thumbnail: payload.thumbnail || null,
+    footer: payload.footer ? { text: payload.footer } : undefined
   };
 }
 
 async function replyPayload(message, payload, fallbackTitle) {
-  return respond.reply(message, 'info', null, toEmbedOptions(payload, fallbackTitle));
+  if (payload?.v2) {
+    return message.channel.send(payload.v2);
+  }
+
+  const thumbnail =
+    typeof payload.thumbnail === 'string'
+      ? payload.thumbnail
+      : payload.thumbnail?.url || null;
+
+  return message.channel.send(
+    musicUi.musicNotice({
+      label: fallbackTitle || payload.title || 'Music',
+      title: payload.title || fallbackTitle || 'Music',
+      detail: payload.description || 'The music service returned an empty response.',
+      thumbnail,
+      status: payload.footer?.text || payload.footer || null
+    })
+  ).catch(() => respond.reply(message, 'info', null, toEmbedOptions(payload, fallbackTitle)));
 }
 
 function normalizeBooleanLike(value) {

@@ -2,11 +2,12 @@
   "name": "rumi-bot",
   "version": "0.9.1-beta.1",
   "private": true,
-  "description": "Rumi multi-function Discord bot with moderation, logging, media, AI, utility, economy, community, fun, and dashboard features.",
+  "description": "Multi-function Discord bot with moderation, logging, media, staff management, utility, economy, community, fun, and dashboard features.",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
+    "start:music": "node src/music-worker/index.js",
     "dev": "node src/index.js",
     "start:single": "node -e \"process.env.BOT_MODE='single'; require('./src/index.js')\"",
     "dev:single": "node -e \"process.env.BOT_MODE='single'; require('./src/index.js')\"",

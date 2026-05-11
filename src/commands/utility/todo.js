@@ -31,6 +31,9 @@ module.exports = {
   description: 'Manage your todo list with paging and edit controls.',
   usage: 'todo <add|list|view|complete|reopen|edit|remove|clear> ...',
   examples: ['todo add finish logs command', 'todo list', 'todo edit <id> new text'],
+  flags: [
+    { name: '--done', description: 'Include completed items when listing todos.' }
+  ],
   typing: true,
 
   async execute({ message, args }) {

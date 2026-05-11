@@ -263,6 +263,33 @@ function formatDetails(entry) {
   return details.join('\n');
 }
 
+function normalizeFlagDetails(entry = {}) {
+  if (Array.isArray(entry.flagDetails) && entry.flagDetails.length) {
+    return entry.flagDetails
+      .map((item) => ({
+        name: String(item?.name || '').trim(),
+        description: String(item?.description || '').trim()
+      }))
+      .filter((item) => item.name);
+  }
+
+  if (Array.isArray(entry.flags) && entry.flags.length) {
+    return entry.flags
+      .map((name) => ({ name: String(name || '').trim(), description: '' }))
+      .filter((item) => item.name);
+  }
+
+  return [];
+}
+
+function formatFlagLine(flag) {
+  const name = String(flag?.name || '').trim();
+  const description = String(flag?.description || '').trim();
+  if (!name) return null;
+  if (!description) return `\`${name}\``;
+  return `\`${name}\` - ${description}`;
+}
+
 function formatEntryPage(prefix, entry, currentPage, pageCount, moduleName) {
   const usageLines = getUsageLines(entry, prefix).slice(0, 4);
   const exampleLines = getExampleLines(entry, prefix).slice(0, 4);
@@ -296,14 +323,14 @@ function formatEntryPage(prefix, entry, currentPage, pageCount, moduleName) {
     fields.push({ name: 'Details', value: clampText(details.join('\n')), inline: false });
   }
 
-  const more = [
-    entry.flags?.length ? `Flags: ${formatList(entry.flags)}` : null
-  ].filter(Boolean).join('\n\n');
+  const flagLines = normalizeFlagDetails(entry)
+    .map(formatFlagLine)
+    .filter(Boolean);
 
-  if (more) {
+  if (flagLines.length) {
     fields.push({
-      name: 'More',
-      value: clampText(codeBlock(more.split('\n')).slice(0, 1024)),
+      name: 'Flags',
+      value: clampText(flagLines.join('\n')),
       inline: false
     });
   }

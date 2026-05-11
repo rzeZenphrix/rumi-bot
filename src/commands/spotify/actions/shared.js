@@ -2,6 +2,7 @@ const respond = require('../../../utils/respond');
 const spotifyClient = require('../../../services/spotify/client');
 const { createPagedMessage } = require('../../../utils/pagedMessages');
 const { createLinkComponents, providerLabel, resolveMemberByText } = require('../../../systems/musicAccounts/shared');
+const musicUi = require('../../../systems/music/musicUiV2');
 
 function compactNumber(value) {
   return new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(Number(value || 0));
@@ -73,16 +74,21 @@ function entitySummary(type, item) {
 
 async function showLookupResult(message, type, item) {
   const summary = entitySummary(type, item);
+
   if (!summary) {
-    return respond.reply(message, 'bad', 'I could not format that Spotify result.');
+    return respond.reply(message, 'bad', 'I could not format that Spotify result.', {
+      mentionUser: false
+    });
   }
 
-  return respond.reply(message, 'info', null, {
-    mentionUser: false,
-    title: item.name || providerLabel('spotify'),
-    description: summary.description,
-    thumbnail: summary.thumbnail
-  });
+  return message.channel.send(
+    musicUi.spotifyEntity({
+      type,
+      item,
+      description: summary.description,
+      thumbnail: summary.thumbnail
+    })
+  );
 }
 
 async function resolveTargetMemberAndRest(message, args = []) {

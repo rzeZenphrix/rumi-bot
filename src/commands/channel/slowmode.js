@@ -17,10 +17,10 @@ module.exports = {
     const seconds = raw === 'off' ? 0 : Number(raw);
 
     if (!Number.isFinite(seconds) || seconds < 0 || seconds > 21600) {
-      return info(message, 'Usage: `slowmode <seconds|off>`.');
+      return info(message, '> Set slowmode for a channel.\n \n`slowmode <seconds|off>`\n\nExample\n \n`slowmode 5`');
     }
 
     await message.channel.setRateLimitPerUser(seconds, `Slowmode by ${message.author.tag}`);
-    return ok(message, seconds ? `Slowmode set to ${seconds}s.` : 'Slowmode off.');
+    return ok(message, 'good', seconds ? `Slowmode set to ${seconds}s.` : 'Slowmode off.');
   }
 };

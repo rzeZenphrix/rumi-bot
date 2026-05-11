@@ -25,6 +25,10 @@ module.exports = {
   description: 'Send, edit, delete, inspect, or test Discord webhooks.',
   usage: 'webhook <send|edit|delete|info|test> ...',
   examples: ['webhook send <url> hello', 'webhook info <url>', 'webhook test <url>'],
+  flags: [
+    { name: '--name <text>', description: 'Override the sender name for webhook send.' },
+    { name: '--avatar <url>', description: 'Override the sender avatar for webhook send.' }
+  ],
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageWebhooks],
   typing: true,

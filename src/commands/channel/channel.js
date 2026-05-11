@@ -200,7 +200,10 @@ module.exports = {
       name: 'create',
       description: 'Create a text, voice, category, stage, forum, or announcement channel.',
       usage: 'channel create <text|voice|category|stage|forum|announcement> <name> [--category <category>]',
-      examples: ['channel create text announcements --category Info', 'channel create category Events']
+      examples: ['channel create text announcements --category Info', 'channel create category Events'],
+      flags: [
+        { name: '--category <category>', description: 'Place the new channel under a category.' }
+      ]
     },
     {
       name: 'delete',

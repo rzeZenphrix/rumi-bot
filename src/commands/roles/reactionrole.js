@@ -44,20 +44,20 @@ module.exports = {
     if (['delete', 'del', 'remove'].includes(first)) {
       const target = await fetchTargetMessage(message, args.shift());
       const key = args.join(' ');
-      if (!target || !key) return info(message, 'Usage: `rr delete <message> <emoji|role>`.');
+      if (!target || !key) return info(message, '> **Delete a reaction role**\n\n```rr delete <message> <emoji|role>```\n\n-# You can use either the emoji or the role as the key to delete the reaction role.');
 
       await removeReactionRole(message.guild.id, target.id, key);
-      return ok(message, 'Reaction role removed.');
+      return ok(message, 'Reaction role **removed.**');
     }
 
     if (first === 'clear') {
       const target = await fetchTargetMessage(message, args.shift());
-      if (!target) return info(message, 'Usage: `rr clear <message>`.');
+      if (!target) return info(message, '> **Clear reaction roles**\n\n```rr clear <message>```\n\n-# This will **remove** all reaction roles from the specified message.');
 
       await clearReactionRoles(message.guild.id, target.id);
       await target.reactions.removeAll().catch(() => null);
 
-      return ok(message, 'Reaction roles cleared.');
+      return ok(message, 'Reaction roles **cleared.**');
     }
 
     const msgArg = first === 'add' ? args.shift() : first;
@@ -65,7 +65,7 @@ module.exports = {
     const role = await findRole(message.guild, args.join(' '));
     const target = await fetchTargetMessage(message, msgArg);
 
-    if (!target || !emoji || !role) return info(message, 'Usage: `rr <message> <emoji> <role>`.');
+    if (!target || !emoji || !role) return info(message, '> **Add a reaction role**\n\n```rr add <message> <emoji> <role>```\n\n-# This will **add** a reaction role to the specified message. It is **optional** to use [add] as the first argument. You can also specify the message with a link or ID as the first argument.');
 
     const access = await getPremiumAccessForMessage(message).catch(() => null);
     const limit = access?.hasServerPremiumBase ? 500 : 100;
@@ -76,6 +76,6 @@ module.exports = {
     await target.react(emoji).catch(() => null);
     await addReactionRole(message.guild.id, target.channel.id, target.id, emoji, role.id);
 
-    return ok(message, `Reaction role added: ${emoji} -> ${role.name}.`);
+    return ok(message, 'good', `Reaction role **added:** ${emoji} -> ${role.name}.`);
   }
 };

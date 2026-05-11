@@ -80,7 +80,16 @@ module.exports = {
       name: 'set',
       description: 'Create an autoresponder.',
       usage: 'autoresponder set "<trigger>" "<response>" [--exact|--startswith|--endswith|--contains|--match|--within <duration>|--languagedetect]',
-      examples: ['autoresponder set "hello" "hi!" --exact']
+      examples: ['autoresponder set "hello" "hi!" --exact'],
+      flags: [
+        { name: '--exact', description: 'Trigger must match the whole message.' },
+        { name: '--startswith', description: 'Trigger must be at the start of the message.' },
+        { name: '--endswith', description: 'Trigger must be at the end of the message.' },
+        { name: '--contains', description: 'Trigger can appear anywhere in the message.' },
+        { name: '--match', description: 'Treat trigger as a regex pattern.' },
+        { name: '--within <duration>', description: 'Per-user cooldown window (e.g., 30s, 5m).' },
+        { name: '--languagedetect', description: 'Auto-translate to English before matching (premium).' }
+      ]
     }
   ],
 

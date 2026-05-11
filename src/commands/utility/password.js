@@ -20,6 +20,12 @@ module.exports = {
   description: 'Generate a password or passphrase.',
   usage: 'password [length] [--no-symbols] [--no-numbers] [--passphrase] [--words 4]',
   examples: ['password 24', 'password --passphrase --words 5'],
+  flags: [
+    { name: '--no-symbols', description: 'Exclude symbols from the password.' },
+    { name: '--no-numbers', description: 'Exclude numbers from the password.' },
+    { name: '--passphrase', description: 'Generate a word-based passphrase instead.' },
+    { name: '--words <count>', description: 'Passphrase word count (3-8, default 4).' }
+  ],
 
   async execute({ message, args }) {
     const passphrase = args.includes('--passphrase');

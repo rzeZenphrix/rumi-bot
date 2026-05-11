@@ -29,6 +29,6 @@ module.exports = {
     await message.guild.members.ban(user.id, { reason });
     await modlog(message, 'ban', user.id, reason);
 
-    return ok(message, `Banned ${user.tag}. Reason: ${reason}`);
+    return ok(message, 'good', `Banned **${user.tag}**. Reason: ${reason}`);
   }
 };

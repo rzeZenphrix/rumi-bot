@@ -48,12 +48,12 @@ module.exports = {
   async execute({ message, args }) {
     const first = (args.shift() || '').toLowerCase();
 
-    if (!first) return info(message, 'Usage: `role <member> <role>` or `role <add|remove|info|color|delete|restore> ...`.');
+    if (!first) return info(message, '> **Add or remove a role from a user.**\n\n```role <member> <role>```\n\n-# This will add the specified role to the specified member. You can also use "remove" instead of "add" to remove a role, or "toggle" to add or remove based on whether the member already has the role. If the first argument is a valid subcommand, you must specify the member as the second argument for add/remove operations.');
 
     if (first === 'restore') {
       const store = await getStore();
       const snap = store.guilds[message.guild.id]?.shift();
-      if (!snap) return bad(message, 'No role snapshot found.');
+      if (!snap) return bad(message, 'No roles saved for this user.');
 
       await saveStore(store);
 
@@ -72,12 +72,12 @@ module.exports = {
         if (member) await member.roles.add(role).then(() => { assigned += 1; }).catch(() => null);
       }
 
-      return ok(message, `Restored ${role.name} to ${assigned} member(s).`);
+      return ok(message, 'good', `**Restored** ${role.name} to ${assigned} member(s).`);
     }
 
     if (first === 'info') {
       const role = await findRole(message.guild, args.join(' '));
-      if (!role) return info(message, 'Usage: `role info <role>`.');
+      if (!role) return info(message, '> **View information about a role.**\n\n```role info <role>```');
 
       return info(message, `${role.name}\nID: ${role.id}\nMembers: ${role.members.size}\nColor: ${role.hexColor}\nHoisted: ${role.hoist}\nPosition: ${role.rawPosition}`);
     }
@@ -85,23 +85,23 @@ module.exports = {
     if (first === 'color') {
       const role = await findRole(message.guild, args.shift());
       const color = parseHex(args.shift());
-      if (!role || color === null) return info(message, 'Usage: `role color <role> <#hex>`.');
+      if (!role || color === null) return info(message, '> **Change the color of a role.**\n\n```role color <role> <#hex>```\n\n-# Example\n```role color Staff #ff0000```');
 
       await snapshotRole(message.guild, role, 'before color change');
       await role.setColor(color, `Role color changed by ${message.author.tag}`);
 
-      return ok(message, `Changed ${role.name} color.`);
+      return ok(message, 'good', `**Changed** ${role.name} color.`);
     }
 
     if (first === 'delete') {
       const role = await findRole(message.guild, args.join(' '));
-      if (!role) return info(message, 'Usage: `role delete <role>`.');
+      if (!role) return info(message, '> **Delete a role.**\n\n```role delete <role>```');
 
       await snapshotRole(message.guild, role, 'before delete');
       const name = role.name;
       await role.delete(`Role deleted by ${message.author.tag}`);
 
-      return ok(message, `Deleted ${name}. Use \`role restore\` if needed.`);
+      return ok(message, 'good', `**Deleted** ${name}. Use \`role restore\` if needed.`);
     }
 
     const mode = ['add', 'remove'].includes(first) ? first : 'toggle';
@@ -109,14 +109,14 @@ module.exports = {
     const member = await findMember(message.guild, memberArg);
     const role = await findRole(message.guild, args.join(' '));
 
-    if (!member || !role) return info(message, 'Usage: `role <member> <role>`.');
+    if (!member || !role) return info(message, '> **Add or remove a role from a user.**\n\n```role <member> <role>```');
 
     if (mode === 'add' || (mode === 'toggle' && !member.roles.cache.has(role.id))) {
       await member.roles.add(role, `Role added by ${message.author.tag}`);
-      return ok(message, `Added ${role.name} to ${member.user.tag}.`);
+      return ok(message, 'add', `**Added** ${role.name} to ${member.user.tag}.`);
     }
 
     await member.roles.remove(role, `Role removed by ${message.author.tag}`);
-    return ok(message, `Removed ${role.name} from ${member.user.tag}.`);
+    return ok(message, 'remove', `**Removed** ${role.name} from ${member.user.tag}.`);
   }
 };

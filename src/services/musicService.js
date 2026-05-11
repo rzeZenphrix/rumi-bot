@@ -1,119 +1,146 @@
-const DEFAULT_URL = 'http://127.0.0.1:3025';
-const DEFAULT_TIMEOUT_MS = Math.max(2000, Number(process.env.MUSIC_SERVICE_TIMEOUT_MS || 8000));
-const nodeMusic = require('../systems/music/nodePlayer');
+const nodePlayer = require('../systems/music/nodePlayer');
+const logger = require('../systems/logging/logger');
 
 function envFlag(name, fallback = false) {
   const raw = String(process.env[name] ?? '').trim().toLowerCase();
+
   if (!raw) return fallback;
   if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
   if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+
   return fallback;
 }
 
-function useNodeBackend() {
+function workerUrl() {
+  return String(process.env.MUSIC_WORKER_URL || '').replace(/\/+$/, '');
+}
+
+function workerSecret() {
+  return String(process.env.MUSIC_WORKER_SECRET || '');
+}
+
+function useWorker() {
   const backend = String(process.env.MUSIC_BACKEND || '').trim().toLowerCase();
-  if (backend) return backend === 'node';
-  return envFlag('NODE_MUSIC_ENABLED', true);
+
+  if (backend === 'worker' || backend === 'remote') return true;
+  if (workerUrl() && workerSecret() && envFlag('MUSIC_WORKER_ENABLED', false)) return true;
+
+  return false;
 }
 
-function baseUrl() {
-  return (process.env.RUMI_MUSIC_SERVICE_URL || DEFAULT_URL).replace(/\/+$/, '');
-}
+async function callWorker(command, guildId, options = {}) {
+  const url = workerUrl();
+  const secret = workerSecret();
 
-function headers() {
-  const output = { 'Content-Type': 'application/json' };
-  if (process.env.RUMI_SHARED_SECRET) {
-    output['x-rumi-shared-secret'] = process.env.RUMI_SHARED_SECRET;
-  }
-  return output;
-}
-
-async function request(path, options = {}) {
-  const controller = new AbortController();
-  const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  const response = await fetch(`${baseUrl()}${path}`, {
-    ...options,
-    signal: controller.signal,
-    headers: {
-      ...headers(),
-      ...(options.headers || {})
-    }
-  }).catch((error) => ({ __networkError: error }));
-
-  clearTimeout(timeout);
-
-  if (!response || response.__networkError) {
-    const target = baseUrl();
+  if (!url || !secret) {
     return {
       ok: false,
-      code: 'music_service_unreachable',
-      error: 'I could not reach the embedded music service.',
-      detail: response?.__networkError?.name === 'AbortError'
-        ? `The embedded music service at ${target} did not respond within ${timeoutMs}ms. It may still be booting Java, Lavalink, or the music sidecar.`
-        : `The embedded music service at ${target} did not accept the connection.`
+      code: 'music_worker_not_configured',
+      replyType: 'bad',
+      error: 'Music worker is not configured.',
+      description: 'Set MUSIC_WORKER_URL and MUSIC_WORKER_SECRET.'
     };
   }
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    return payload || {
-      ok: false,
-      code: 'music_service_error',
-      error: `Music service returned ${response.status}.`
-    };
-  }
-  return payload;
-}
-
-async function health() {
-  if (useNodeBackend()) return nodeMusic.health();
-  return request('/health', { method: 'GET', timeoutMs: 5000 });
-}
-
-async function getState(guildId) {
-  if (useNodeBackend()) return nodeMusic.getState(guildId);
-  return request(`/api/state?guildId=${encodeURIComponent(guildId)}`);
-}
-
-async function runCommand(guildId, command, options = {}) {
-  if (useNodeBackend()) {
-    return nodeMusic.runCommand(guildId, command, options);
-  }
-
-  return request('/api/command', {
+  const response = await fetch(`${url}/run`, {
     method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${secret}`
+    },
     body: JSON.stringify({
       guildId,
       command,
       options
     })
+  }).catch((error) => {
+    throw new Error(`Music worker unreachable: ${error.message}`);
   });
+
+  const text = await response.text();
+  let data;
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {
+      ok: false,
+      error: text || 'Invalid response from music worker.'
+    };
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      code: data.code || 'music_worker_error',
+      replyType: 'bad',
+      error: data.error || `Music worker returned HTTP ${response.status}.`,
+      description: data.description || data.error || `Music worker returned HTTP ${response.status}.`
+    };
+  }
+
+  return data;
 }
 
-async function linkSpotify(userId, data = {}) {
-  return request('/api/spotify/link', {
-    method: 'POST',
-    body: JSON.stringify({
-      userId,
-      ...data
-    })
-  });
+async function runCommand(guildId, command, options = {}) {
+  if (useWorker()) {
+    try {
+      return await callWorker(command, guildId, options);
+    } catch (error) {
+      logger.warn({ error, guildId, command }, 'Remote music worker command failed');
+
+      return {
+        ok: false,
+        code: 'music_worker_unreachable',
+        replyType: 'bad',
+        error: 'Music worker is unreachable.',
+        description: error.message || 'The remote music worker did not respond.'
+      };
+    }
+  }
+
+  return nodePlayer.runCommand(guildId, command, options);
 }
 
-async function unlinkSpotify(userId) {
-  return request('/api/spotify/unlink', {
-    method: 'POST',
-    body: JSON.stringify({ userId })
-  });
+async function health() {
+  if (useWorker()) {
+    try {
+      const response = await fetch(`${workerUrl()}/health`, {
+        headers: {
+          authorization: `Bearer ${workerSecret()}`
+        }
+      });
+
+      return await response.json();
+    } catch (error) {
+      return {
+        ok: false,
+        backend: 'worker',
+        error: error.message
+      };
+    }
+  }
+
+  return nodePlayer.health();
+}
+
+async function initializeMusicPlayer(client) {
+  if (useWorker()) {
+    logger.info('Music backend is remote worker; local node player will not start.');
+    return null;
+  }
+
+  return nodePlayer.initializeMusicPlayer(client);
+}
+
+function isNodeMusicEnabled() {
+  if (useWorker()) return false;
+  return nodePlayer.isNodeMusicEnabled();
 }
 
 module.exports = {
-  baseUrl,
   health,
-  getState,
-  runCommand,
-  linkSpotify,
-  unlinkSpotify
+  initializeMusicPlayer,
+  isNodeMusicEnabled,
+  runCommand
 };

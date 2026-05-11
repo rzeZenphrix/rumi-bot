@@ -13,6 +13,9 @@ module.exports = {
   description: 'Encode text to Base64 or Base64URL.',
   usage: 'base64encode [url] <text>',
   examples: ['base64encode hello world', 'base64encode url hello world'],
+  flags: [
+    { name: '--url', description: 'Use URL-safe Base64 (base64url).' }
+  ],
 
   async execute({ message, args }) {
     const mode = String(args[0] || '').toLowerCase();

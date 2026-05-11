@@ -1,6 +1,7 @@
 const { ChannelType } = require('discord.js');
 const { Player, QueueRepeatMode, QueryType } = require('discord-player');
 const { DefaultExtractors } = require('@discord-player/extractor');
+const musicUi = require('./musicUiV2');
 
 process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
 
@@ -65,20 +66,25 @@ function icon(name, fallback = '') {
   return emojis[name] || emojis[`music_${name}`] || fallback;
 }
 
+const MUSIC_EMOJIS = musicUi.MUSIC_EMOJIS;
+
 const ICONS = {
-  arrow: icon('arrow', icon('right_arrow', '›')),
-  play: icon('play', '▶'),
-  pause: icon('pause', 'Ⅱ'),
-  x: icon('x', icon('close', '×')),
-  skip: icon('skip', '»'),
-  queue: icon('list', '≡'),
-  search: icon('search', '⌕'),
-  good: icon('good', '✓'),
-  bad: icon('bad', '×'),
-  volume: icon('volume', '▰'),
-  loop: icon('loop', '↻'),
-  filter: icon('stars', '✦'),
-  settings: icon('settings', '⚙')
+  play: MUSIC_EMOJIS.play,
+  pause: MUSIC_EMOJIS.pause,
+  x: MUSIC_EMOJIS.stop,
+  stop: MUSIC_EMOJIS.stop,
+  skip: MUSIC_EMOJIS.forward,
+  forward: MUSIC_EMOJIS.forward,
+  backward: MUSIC_EMOJIS.backward,
+  queue: MUSIC_EMOJIS.play,
+  search: MUSIC_EMOJIS.play,
+  good: MUSIC_EMOJIS.play,
+  bad: MUSIC_EMOJIS.stop,
+  volume: MUSIC_EMOJIS.play,
+  loop: MUSIC_EMOJIS.forward,
+  filter: MUSIC_EMOJIS.play,
+  settings: MUSIC_EMOJIS.play,
+  arrow: MUSIC_EMOJIS.forward
 };
 
 function envFlag(name, fallback = false) {
@@ -184,7 +190,6 @@ function ok(description, extra = {}) {
   return cleanPayload({
     ok: true,
     replyType: 'good',
-    emoji: ICONS.good,
     description: truncate(description, 4096),
     ...extra
   });
@@ -206,7 +211,6 @@ function fail(error, detail, code = 'music_node_error') {
     error,
     detail,
     replyType: 'bad',
-    emoji: ICONS.bad,
     description: `**${escapeMarkdown(error)}**\n${escapeMarkdown(detail)}`
   });
 }
@@ -262,6 +266,19 @@ function formatTrack(track, compact = false) {
   return author
     ? `${label}\n${escapeMarkdown(author)}`
     : label;
+}
+
+function trackData(track) {
+  if (!track) return null;
+
+  return {
+    title: trackTitle(track),
+    author: trackAuthor(track),
+    url: trackUrl(track),
+    thumbnail: track.thumbnail || null,
+    duration: trackDuration(track),
+    source: trackSource(track)
+  };
 }
 
 function msToDuration(ms) {
@@ -756,13 +773,19 @@ async function getState(guildId) {
   const settings = await getMusicSettings(guildId).catch(() => null);
 
   if (!queue) {
-    return panel(`${ICONS.queue} \`idle\`\nNothing is currently playing.`, {
-      footer: toFooter(`Node backend · Search ${searchEngineName(settings?.searchEngine)} · 24/7 ${settings?.stay247 ? 'on' : 'off'}`)
+    return panel('Nothing is currently playing.', {
+      footer: toFooter(`Node backend · Search ${searchEngineName(settings?.searchEngine)} · 24/7 ${settings?.stay247 ? 'on' : 'off'}`),
+      v2: musicUi.musicNotice({
+        label: 'Music status',
+        title: 'Idle',
+        detail: 'Nothing is currently playing.',
+        status: `Node backend · Search ${searchEngineName(settings?.searchEngine)} · 24/7 ${settings?.stay247 ? 'on' : 'off'}`
+      })
     });
   }
 
   return panel([
-    `${ICONS.play} \`${playbackState(queue).toLowerCase()}\``,
+    `${playbackState(queue).toLowerCase()}`,
     formatTrack(queue.currentTrack),
     progressLine(queue)
   ].join('\n'), {
@@ -770,7 +793,19 @@ async function getState(guildId) {
     footer: toFooter(compactFooter(queue, null, [
       `Filters ${activeFilters(queue)}`,
       trackSource(queue.currentTrack)
-    ]))
+    ])),
+    v2: musicUi.trackCard({
+      eyebrow: playbackState(queue),
+      title: trackTitle(queue.currentTrack),
+      artist: trackAuthor(queue.currentTrack),
+      url: trackUrl(queue.currentTrack),
+      thumbnail: queue.currentTrack?.thumbnail,
+      metaLine: progressLine(queue).replace(/`/g, ''),
+      footer: compactFooter(queue, null, [
+        `Filters ${activeFilters(queue)}`,
+        trackSource(queue.currentTrack)
+      ])
+    })
   });
 }
 
@@ -860,7 +895,7 @@ async function play(guildId, options = {}) {
     if (isPlaylist) {
       return ok(
         [
-          `${ICONS.arrow} \`playlist added\``,
+          `playlist added`,
           `**${escapeMarkdown(result.playlist.title || 'Playlist')}**`,
           `${playlistSize} tracks`
         ].join('\n'),
@@ -872,14 +907,24 @@ async function play(guildId, options = {}) {
               trackSource(track)
             ]),
             avatarUrl(context.user)
-          )
+          ),
+          v2: musicUi.playlistCard({
+            title: result.playlist.title || 'Playlist',
+            count: playlistSize,
+            thumbnail: result.playlist?.thumbnail || track?.thumbnail,
+            url: result.playlist?.url || trackUrl(track),
+            footer: compactFooter(queue, context.user, [
+              `${tracks.length} waiting`,
+              trackSource(track)
+            ])
+          })
         }
       );
     }
 
     return ok(
       [
-        `${ICONS.arrow} \`added\``,
+        `added`,
         formatTrack(track)
       ].join('\n'),
       {
@@ -890,7 +935,19 @@ async function play(guildId, options = {}) {
             trackSource(track)
           ]),
           avatarUrl(context.user)
-        )
+        ),
+        v2: musicUi.trackCard({
+          eyebrow: 'Added to queue',
+          emoji: 'play',
+          client: clientRef,
+          user: userLabel(context.user),
+          title: trackTitle(track),
+          artist: trackAuthor(track),
+          url: trackUrl(track),
+          thumbnail: track?.thumbnail,
+          metaLine: [trackDuration(track), trackSource(track)].filter(Boolean).join(' · '),
+          footer: compactFooter(queue, context.user, [`${tracks.length} waiting`])
+        })
       }
     );
   } catch (error) {
@@ -953,10 +1010,28 @@ async function search(guildId, options = {}) {
 
       return `\`${index + 1}\` **${escapeMarkdown(title)}** — ${escapeMarkdown(author)} \`${duration}\``;
     });
-
-    return panel(`${ICONS.search} \`search results\`\n${fitLines(lines)}`, {
+      
+    return panel(['search results', `**${escapeMarkdown(query)}**`].join('\n'), {
       thumbnail: toThumbnail(tracks[0]?.thumbnail),
-      footer: toFooter(`Search ${searchEngineName(settings.searchEngine)} · Use play <song name or URL>`)
+      fields: [
+        {
+          name: INVISIBLE,
+          value: fitLines(lines),
+          inline: false
+        }
+      ],
+      footer: toFooter(`Search ${searchEngineName(settings.searchEngine)} · Use play <song name or URL>`),
+      v2: musicUi.searchCard({
+        query,
+        source: `Search ${searchEngineName(settings.searchEngine)}`,
+        tracks: tracks.slice(0, 10).map((track) => ({
+          title: trackTitle(track),
+          author: trackAuthor(track),
+          duration: trackDuration(track),
+          url: trackUrl(track),
+          source: trackSource(track)
+        }))
+      })
     });
   } catch (error) {
     logger.warn({ guildId, query, error }, 'Node music search failed');
@@ -976,8 +1051,37 @@ async function queuePayload(guildId) {
   const tracks = queueTracks(queue);
   const lines = tracks.slice(0, 10).map(queueLine);
 
+  const rawCurrent = queue.currentTrack
+    ? {
+        title: trackTitle(queue.currentTrack),
+        author: trackAuthor(queue.currentTrack),
+        duration: trackDuration(queue.currentTrack),
+        url: trackUrl(queue.currentTrack),
+        thumbnail: queue.currentTrack.thumbnail || null,
+        source: trackSource(queue.currentTrack)
+      }
+    : null;
+
+  const rawTracks = tracks.slice(0, 25).map((track, index) => ({
+    index: index + 1,
+    title: trackTitle(track),
+    author: trackAuthor(track),
+    duration: trackDuration(track),
+    url: trackUrl(track),
+    source: trackSource(track)
+  }));
+
+  const data = {
+    current: rawCurrent,
+    tracks: rawTracks,
+    total: tracks.length,
+    volume: queue.node?.volume ?? 100,
+    loop: repeatModeName(queue.repeatMode),
+    state: playbackState(queue),
+    filters: activeFilters(queue)
+  };
+
   return panel([
-    `${ICONS.queue}`,
     formatTrack(queue.currentTrack),
     '',
     lines.length ? fitLines(lines) : 'Nothing else queued.'
@@ -985,7 +1089,9 @@ async function queuePayload(guildId) {
     thumbnail: toThumbnail(queue.currentTrack?.thumbnail),
     footer: toFooter(compactFooter(queue, null, [
       tracks.length > 10 ? `Showing 10/${tracks.length}` : null
-    ]))
+    ])),
+    queueData: data,
+    v2: musicUi.queueCard(data)
   });
 }
 
@@ -993,16 +1099,31 @@ async function nowPlaying(guildId) {
   const { queue, error } = requireQueue(guildId);
   if (error) return error;
 
+  const current = queue.currentTrack;
+
   return panel([
-    `${ICONS.play} \`now playing\``,
-    formatTrack(queue.currentTrack),
+    `now playing`,
+    formatTrack(current),
     progressLine(queue)
   ].join('\n'), {
-    thumbnail: toThumbnail(queue.currentTrack?.thumbnail),
+    thumbnail: toThumbnail(current?.thumbnail),
     footer: toFooter(compactFooter(queue, null, [
       `Filters ${activeFilters(queue)}`,
-      trackSource(queue.currentTrack)
-    ]))
+      trackSource(current)
+    ])),
+    v2: musicUi.trackCard({
+      eyebrow: 'Now playing',
+      title: trackTitle(current),
+      artist: trackAuthor(current),
+      url: trackUrl(current),
+      thumbnail: current?.thumbnail,
+      metaLine: [
+        progressLine(queue).replace(/`/g, ''),
+        trackDuration(current),
+        trackSource(current)
+      ].filter(Boolean).join(' · '),
+      footer: compactFooter(queue, null, [`Filters ${activeFilters(queue)}`])
+    })
   });
 }
 
@@ -1040,8 +1161,15 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.pause(),
-      (queue) => panel(`${ICONS.pause} \`paused\`\n${formatTrack(queue.currentTrack, true)}`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => panel(`paused\n${formatTrack(queue.currentTrack, true)}`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.actionCard({
+          action: 'Paused',
+          emoji: 'pause',
+          client: clientRef,
+          track: trackData(queue.currentTrack),
+          footer: compactFooter(queue, null)
+        })
       })
     );
   }
@@ -1050,8 +1178,15 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.resume(),
-      (queue) => ok(`${ICONS.play} \`resumed\`\n${formatTrack(queue.currentTrack, true)}`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => ok(`resumed\n${formatTrack(queue.currentTrack, true)}`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.actionCard({
+          action: 'Resumed',
+          emoji: 'play',
+          client: clientRef,
+          track: trackData(queue.currentTrack),
+          footer: compactFooter(queue, null)
+        })
       })
     );
   }
@@ -1060,15 +1195,26 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.skip(),
-      (queue) => ok(
-        queue.currentTrack
-          ? [`${ICONS.skip} \`skipped\``, formatTrack(queue.currentTrack)].join('\n')
-          : `${ICONS.skip} \`skipped\`\nSkipped the current track.`,
-        {
-          thumbnail: toThumbnail(queue.currentTrack?.thumbnail),
-          footer: toFooter(compactFooter(queue, null))
-        }
-      )
+      (queue) => {
+        const current = queue.currentTrack;
+
+        return ok(
+          current
+            ? [`skipped`, formatTrack(current)].join('\n')
+            : 'Skipped the current track.',
+          {
+            thumbnail: toThumbnail(current?.thumbnail),
+            footer: toFooter(compactFooter(queue, null)),
+            v2: musicUi.actionCard({
+              action: 'Skipped',
+              emoji: 'forward',
+            client: clientRef,
+              track: trackData(current),
+              footer: compactFooter(queue, null)
+            })
+          }
+        );
+      }
     );
   }
 
@@ -1079,11 +1225,20 @@ async function runCommand(guildId, command, options = {}) {
         queue.delete();
         return true;
       },
-      () => panel(
-        normalized === 'leave'
-          ? `${ICONS.x} \`disconnected\`\nLeft voice and cleared the queue.`
-          : `${ICONS.x} \`stopped\`\nPlayback stopped and the queue was cleared.`
-      )
+      () => {
+        const action = normalized === 'leave' ? 'Disconnected' : 'Stopped';
+        const detail = normalized === 'leave'
+          ? 'Left voice and cleared the queue.'
+          : 'Playback stopped and the queue was cleared.';
+
+        return panel(detail, {
+          v2: musicUi.musicNotice({
+            label: 'Music',
+            //title: action,
+            detail
+          })
+        });
+      }
     );
   }
 
@@ -1094,7 +1249,12 @@ async function runCommand(guildId, command, options = {}) {
         queue.clear();
         return true;
       },
-      () => panel(`${ICONS.x} \`queue cleared\`\nRemoved every waiting track.`)
+      () => panel('Queue cleared. Removed every waiting track.', {
+        v2: musicUi.musicNotice({
+          label: 'Queue',
+          detail: 'Removed every waiting track.'
+        })
+      })
     );
   }
 
@@ -1102,8 +1262,13 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.toggleShuffle(false),
-      (queue) => panel(`${ICONS.arrow} \`shuffle\`\nShuffle is now **${queue.isShuffling ? 'on' : 'off'}**.`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => panel(`Shuffle is now ${queue.isShuffling ? 'on' : 'off'}.`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.musicNotice({
+          label: 'Queue',
+          detail: `Shuffle is now **${queue.isShuffling ? 'on' : 'off'}**.`,
+          status: compactFooter(queue, null)
+        })
       })
     );
   }
@@ -1132,8 +1297,13 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.setVolume(value),
-      (queue) => panel(`${ICONS.volume} \`volume\`\nSet to **${value}%**.`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => panel(`Volume set to ${value}%.`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.musicNotice({
+          label: 'Music',
+          detail: `Volume set to **${value}%**.`,
+          status: compactFooter(queue, null)
+        })
       })
     );
   }
@@ -1247,8 +1417,13 @@ async function runCommand(guildId, command, options = {}) {
         queue.setRepeatMode(repeat);
         return true;
       },
-      (queue) => panel(`${ICONS.loop} \`loop\`\nMode set to **${repeatModeName(repeat)}**.`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => panel(`Loop mode set to ${repeatModeName(repeat)}.`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.musicNotice({
+          label: 'Music',
+          detail: `Mode set to **${repeatModeName(repeat)}**.`,
+          status: compactFooter(queue, null)
+        })
       })
     );
   }
@@ -1262,8 +1437,13 @@ async function runCommand(guildId, command, options = {}) {
         queue.setRepeatMode(enabled ? QueueRepeatMode.AUTOPLAY : QueueRepeatMode.OFF);
         return true;
       },
-      (queue) => panel(`${ICONS.loop} \`autoplay\`\nAutoplay is now **${enabled ? 'on' : 'off'}**.`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => panel(`Autoplay is now ${enabled ? 'on' : 'off'}.`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.musicNotice({
+          label: 'Music',
+          detail: `Autoplay is now **${enabled ? 'on' : 'off'}**.`,
+          status: compactFooter(queue, null)
+        })
       })
     );
   }

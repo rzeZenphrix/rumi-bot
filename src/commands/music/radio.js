@@ -1,5 +1,6 @@
 const respond = require('../../utils/respond');
 const musicService = require('../../services/musicService');
+const musicUi = require('../../systems/music/musicUiV2');
 
 let recordMusicPlay = async () => null;
 try {
@@ -74,7 +75,15 @@ const STATIONS = {
 };
 
 function stationList() {
-  return Object.keys(STATIONS).map((name) => `\`${name}\``).join(', ');
+  return Object.keys(STATIONS)
+    .map((name) => `\`${name}\``)
+    .join(', ');
+}
+
+function stationLines() {
+  return Object.entries(STATIONS)
+    .map(([name, seeds]) => `**${name}** — ${seeds.slice(0, 2).join(', ')}`)
+    .join('\n');
 }
 
 function buildOptions(message, extra = {}) {
@@ -87,7 +96,11 @@ function buildOptions(message, extra = {}) {
 }
 
 async function runMusic(message, command, options = {}) {
-  return musicService.runCommand(message.guild.id, command, buildOptions(message, options));
+  return musicService.runCommand(
+    message.guild.id,
+    command,
+    buildOptions(message, options)
+  );
 }
 
 async function tryPlaySeeds(message, seeds) {
@@ -116,6 +129,15 @@ async function tryPlaySeeds(message, seeds) {
   };
 }
 
+function sendRadioCard(message, options) {
+  return message.channel.send(
+    musicUi.musicNotice({
+      client: message.client,
+      ...options
+    })
+  );
+}
+
 module.exports = {
   name: 'radio',
   aliases: ['station', 'stations'],
@@ -137,20 +159,29 @@ module.exports = {
     const first = String(args.shift() || 'list').toLowerCase();
 
     if (first === 'list' || first === 'stations') {
-      return respond.reply(
-        message,
-        'info',
-        `Stations: ${stationList()}\nUse \`radio <station>\` or \`radio custom <query>\`.`,
-        { mentionUser: false }
-      );
+      return sendRadioCard(message, {
+        label: 'Radio stations',
+        title: 'Available stations',
+        detail: [
+          stationLines(),
+          '',
+          `Use \`radio <station>\` or \`radio custom <query>\`.`,
+          '',
+          `Stations: ${stationList()}`
+        ].join('\n'),
+        emoji: 'play'
+      });
     }
 
     if (first === 'stop' || first === 'off') {
       await runMusic(message, 'autoplay', { enabled: 'off' }).catch(() => null);
       await runMusic(message, 'stop').catch(() => null);
 
-      return respond.reply(message, 'good', 'Radio stopped.', {
-        mentionUser: false
+      return sendRadioCard(message, {
+        label: 'Radio',
+        title: 'Radio stopped',
+        detail: 'Autoplay is off and playback has been stopped.',
+        emoji: 'stop'
       });
     }
 
@@ -167,8 +198,11 @@ module.exports = {
       const query = args.join(' ').trim();
 
       if (!query) {
-        return respond.reply(message, 'info', 'Usage: `radio custom <search query>`.', {
-          mentionUser: false
+        return sendRadioCard(message, {
+          label: 'Radio',
+          title: 'Custom radio',
+          detail: 'Usage: `radio custom <search query>`.',
+          emoji: 'play'
         });
       }
 
@@ -209,11 +243,16 @@ module.exports = {
       query: started.query
     }).catch(() => null);
 
-    return respond.reply(
-      message,
-      'good',
-      `Started ${station} radio with \`${started.query}\`. Autoplay is on, so it will keep finding related tracks.`,
-      { mentionUser: false }
-    );
+    return sendRadioCard(message, {
+      label: 'Radio streaming',
+      title: `${station} radio`,
+      detail: [
+        `Started continuous radio using **${started.query}**.`,
+        '',
+        'Autoplay is now on, so Rumi will keep finding related tracks.'
+      ].join('\n'),
+      status: `Requested by ${message.member?.displayName || message.author.username}`,
+      emoji: 'play'
+    });
   }
 };

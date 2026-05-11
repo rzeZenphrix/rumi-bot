@@ -50,7 +50,7 @@ module.exports = {
 
     if (first === 'remove' || first === 'del') {
       const target = args.shift();
-      if (!target) return info(message, 'Usage: `logs remove <event|#channel>`.');
+      if (!target) return info(message, '> Remove a log event or channel.\n \n`logs remove <event|#channel>`\n \n**Example**\n \n`logs remove messageDelete`');
 
       await updateGuildLogConfig(message.guild.id, (cfg) => {
         const targetId = id(target);
@@ -68,7 +68,7 @@ module.exports = {
     if (first === 'color') {
       const color = parseColor(args.shift());
       const event = args.shift() || 'all';
-      if (!color || !DEFAULT_EVENTS.includes(event)) return info(message, 'Usage: `logs color <#hex> [event]`.');
+      if (!color || !DEFAULT_EVENTS.includes(event)) return info(message, '> Set the embed color for a log event.\n \n`logs color <#hex> [event]`\n \n**Example**\n \n`logs color #ff0000 messageDelete`');
 
       await updateGuildLogConfig(message.guild.id, (cfg) => {
         cfg.colors[event] = color;
@@ -82,7 +82,7 @@ module.exports = {
     const event = args.shift() || 'all';
 
     if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
-      return info(message, 'Usage: `logs #channel [event]`.');
+      return info(message, '> Configure server logs.\n \n`logs [#channel|off|events|remove|color]`\n \n**Example**\n \n`logs #message-logs messageDelete`');
     }
 
     if (!DEFAULT_EVENTS.includes(event)) return bad(message, 'Unknown log event. Use `logs events`.');

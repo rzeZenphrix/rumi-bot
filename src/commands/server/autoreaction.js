@@ -72,6 +72,14 @@ module.exports = {
     'autoreaction add "good morning" ☀️ ❤️ --startswith',
     'autoreaction exclusive set 1 #general'
   ],
+  flags: [
+    { name: '--exact', description: 'Trigger must match the whole message.' },
+    { name: '--startswith', description: 'Trigger must be at the start of the message.' },
+    { name: '--endswith', description: 'Trigger must be at the end of the message.' },
+    { name: '--contains', description: 'Trigger can appear anywhere in the message.' },
+    { name: '--match', description: 'Treat trigger as a regex pattern.' },
+    { name: '--within <duration>', description: 'Per-user cooldown window (e.g., 30s, 5m).' }
+  ],
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageGuild],
 

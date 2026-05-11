@@ -402,7 +402,14 @@ module.exports = {
       aliases: ['cap'],
       description: 'Caption an image, GIF, video, or Tenor link.',
       usage: 'media caption [url] <text>',
-      examples: ['media caption meow', 'media caption --position=bottom --font=bold cute']
+      examples: ['media caption meow', 'media caption --position=bottom --font=bold cute'],
+      flags: [
+        { name: '--position=<top|bottom>', description: 'Caption placement.' },
+        { name: '--font=<name>', description: 'Font family (aliases: --family).' },
+        { name: '--color=<hex>', description: 'Text color hex (aliases: --text).' },
+        { name: '--bg=<hex>', description: 'Background color hex (aliases: --background).' },
+        { name: '--size=<px>', description: 'Font size (aliases: --fontsize).' }
+      ]
     },
     {
       name: 'gif',

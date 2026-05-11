@@ -8,6 +8,7 @@ const { handleDisboardBumpInteraction } = require('../../systems/bump/disboardBu
 const { handleGiveawayButton } = require('../../systems/giveaways/manager');
 const respond = require('../../utils/respond');
 const { handleMusicInteraction } = require('../../systems/music/nodePlayer');
+const { handleUnbanRejoinButton } = require('../../systems/moderation/unbanRejoinButtons');
 
 function ephemeralPayload(interaction, type, text) {
   const payload = respond.buildPayload(type, interaction.user, text, {
@@ -68,6 +69,7 @@ module.exports = {
   name: Events.InteractionCreate,
 
   async execute(client, interaction) {
+    if (await handleUnbanRejoinButton(interaction)) return;
     if (interaction.isChatInputCommand?.()) {
       if (musicSlashOwnedBySidecar() && ['music', 'spotify'].includes(interaction.commandName)) {
         return;

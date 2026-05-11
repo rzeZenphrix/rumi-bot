@@ -124,8 +124,42 @@ function normalizeCategory(category) {
 }
 
 function deriveFlags(source = {}) {
-  if (Array.isArray(source.flags)) return unique(source.flags);
-  return [];
+  if (!Array.isArray(source.flags)) return [];
+
+  return unique(
+    source.flags
+      .map((entry) => {
+        if (!entry) return null;
+        if (typeof entry === 'string') return entry;
+        if (typeof entry === 'object') {
+          return entry.name || entry.flag || entry.key || null;
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+  );
+}
+
+function deriveFlagDetails(source = {}) {
+  if (!Array.isArray(source.flags)) return [];
+
+  return source.flags
+    .map((entry) => {
+      if (!entry) return null;
+      if (typeof entry === 'string') {
+        const name = String(entry).trim();
+        return name ? { name, description: '' } : null;
+      }
+      if (typeof entry === 'object') {
+        const name = String(entry.name || entry.flag || entry.key || '').trim();
+        const description = String(entry.description || entry.desc || entry.help || '').trim();
+        return name ? { name, description } : null;
+      }
+      return null;
+    })
+    .filter(Boolean);
 }
 
 function premiumLabel(premium) {
@@ -254,6 +288,7 @@ function serializeEntry(command, prefix, sub = null) {
     permissions,
     botPermissions,
     flags: deriveFlags(source),
+    flagDetails: deriveFlagDetails(source),
     premium: Boolean(premiumRequirement),
     premiumRequirement,
     premiumLabel: premiumLabel(premiumRequirement),
@@ -316,6 +351,7 @@ function serializeVirtualEntry(registryEntry, prefix) {
     permissions,
     botPermissions,
     flags: deriveFlags(source),
+    flagDetails: deriveFlagDetails(source),
     premium: Boolean(premiumRequirement),
     premiumRequirement,
     premiumLabel: premiumLabel(premiumRequirement),

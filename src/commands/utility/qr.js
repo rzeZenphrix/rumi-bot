@@ -7,6 +7,10 @@ module.exports = {
   description: 'Generate a QR code with size controls.',
   usage: 'qr <text|url> [--size 512] [--margin 1]',
   examples: ['qr https://rumi.rocks', 'qr hello world --size 256'],
+  flags: [
+    { name: '--size <px>', description: 'QR size in pixels (128-1024, default 512).' },
+    { name: '--margin <px>', description: 'Margin size (0-10, default 1).' }
+  ],
 
   async execute({ message, args }) {
     const sizeIndex = args.indexOf('--size');
