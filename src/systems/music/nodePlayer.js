@@ -7,7 +7,6 @@ process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
 
 const logger = require('../logging/logger');
 const db = require('../../services/database');
-const emojis = require('../../utils/botEmojis');
 
 let ffmpegPath = process.env.FFMPEG_PATH || null;
 
@@ -31,13 +30,16 @@ const FILTER_ALIASES = new Map([
   ['none', 'off'],
   ['disable', 'off'],
   ['disabled', 'off'],
+
   ['8d', '8D'],
   ['rotation', '8D'],
   ['rotate', '8D'],
+
   ['bass', 'bassboost'],
   ['bassboost', 'bassboost'],
   ['bassboost_low', 'bassboost_low'],
   ['bassboost_high', 'bassboost_high'],
+
   ['nightcore', 'nightcore'],
   ['vaporwave', 'vaporwave'],
   ['lofi', 'lofi'],
@@ -61,47 +63,52 @@ const FILTER_ALIASES = new Map([
 let player = null;
 let clientRef = null;
 let extractorLoadPromise = null;
+let eventsBound = false;
 
-function icon(name, fallback = '') {
-  return emojis[name] || emojis[`music_${name}`] || fallback;
-}
-
-const MUSIC_EMOJIS = musicUi.MUSIC_EMOJIS;
+const MUSIC_EMOJIS = musicUi.MUSIC_EMOJIS || {};
 
 const ICONS = {
-  play: MUSIC_EMOJIS.play,
-  pause: MUSIC_EMOJIS.pause,
-  x: MUSIC_EMOJIS.stop,
-  stop: MUSIC_EMOJIS.stop,
-  skip: MUSIC_EMOJIS.forward,
-  forward: MUSIC_EMOJIS.forward,
-  backward: MUSIC_EMOJIS.backward,
-  queue: MUSIC_EMOJIS.play,
-  search: MUSIC_EMOJIS.play,
-  good: MUSIC_EMOJIS.play,
-  bad: MUSIC_EMOJIS.stop,
-  volume: MUSIC_EMOJIS.play,
-  loop: MUSIC_EMOJIS.forward,
-  filter: MUSIC_EMOJIS.play,
-  settings: MUSIC_EMOJIS.play,
-  arrow: MUSIC_EMOJIS.forward
+  play: MUSIC_EMOJIS.play || '▶',
+  pause: MUSIC_EMOJIS.pause || 'Ⅱ',
+  x: MUSIC_EMOJIS.stop || '■',
+  stop: MUSIC_EMOJIS.stop || '■',
+  skip: MUSIC_EMOJIS.forward || '»',
+  forward: MUSIC_EMOJIS.forward || '»',
+  backward: MUSIC_EMOJIS.backward || '«',
+  queue: MUSIC_EMOJIS.play || '▶',
+  search: MUSIC_EMOJIS.play || '▶',
+  good: MUSIC_EMOJIS.play || '▶',
+  bad: MUSIC_EMOJIS.stop || '■',
+  volume: MUSIC_EMOJIS.play || '▶',
+  loop: MUSIC_EMOJIS.forward || '»',
+  filter: MUSIC_EMOJIS.play || '▶',
+  settings: MUSIC_EMOJIS.play || '▶',
+  arrow: MUSIC_EMOJIS.forward || '»'
 };
-
-function envFlag(name, fallback = false) {
-  const raw = String(process.env[name] ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
-  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
-  return fallback;
-}
 
 function workerLog(label, data = {}) {
   console.log(`[rumi-music-worker:nodePlayer] ${label}`, data);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function envFlag(name, fallback = false) {
+  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+
+  return fallback;
+}
+
 function isNodeMusicEnabled() {
   const backend = String(process.env.MUSIC_BACKEND || '').trim().toLowerCase();
+
   if (backend) return backend === 'node';
+
   return envFlag('NODE_MUSIC_ENABLED', true);
 }
 
@@ -132,7 +139,9 @@ async function saveMusicSettings(guildId, patch = {}) {
 
 function truncate(value, max = 1024) {
   const text = String(value ?? '').trim();
+
   if (text.length <= max) return text;
+
   return `${text.slice(0, Math.max(0, max - 1))}…`;
 }
 
@@ -175,6 +184,7 @@ function toFooter(text, iconUrl = null) {
   };
 
   if (iconUrl) footer.icon_url = iconUrl;
+
   return footer;
 }
 
@@ -182,11 +192,13 @@ function avatarUrl(user) {
   if (!user) return null;
   if (typeof user.displayAvatarURL === 'function') return user.displayAvatarURL({ size: 128 });
   if (typeof user.avatarURL === 'function') return user.avatarURL({ size: 128 });
+
   return null;
 }
 
 function userLabel(user) {
   if (!user) return null;
+
   return user.globalName || user.username || user.tag || user.id || null;
 }
 
@@ -292,11 +304,13 @@ function msToDuration(ms) {
   const seconds = totalSeconds % 60;
 
   if (hours) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 function durationStringToMs(value) {
   const raw = String(value || '').trim();
+
   if (!raw || /live|unknown/i.test(raw)) return null;
   if (!/^\d{1,2}(:\d{1,2}){1,2}$/.test(raw)) return null;
 
@@ -326,8 +340,8 @@ function trackDuration(track) {
 
 function parseDuration(input) {
   const value = String(input || '').trim().toLowerCase();
-  if (!value) return null;
 
+  if (!value) return null;
   if (/^\d+$/.test(value)) return Number(value) * 1000;
 
   if (/^\d{1,2}(:\d{1,2}){1,2}$/.test(value)) {
@@ -336,6 +350,7 @@ function parseDuration(input) {
   }
 
   const matches = [...value.matchAll(/(\d+)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)/g)];
+
   if (!matches.length) return null;
 
   return matches.reduce((total, match) => {
@@ -344,17 +359,20 @@ function parseDuration(input) {
 
     if (unit === 'h') return total + amount * 3600000;
     if (unit === 'm') return total + amount * 60000;
+
     return total + amount * 1000;
   }, 0);
 }
 
 function oneBasedIndex(raw) {
   const index = Number.parseInt(String(raw || ''), 10);
+
   return Number.isFinite(index) && index > 0 ? index - 1 : null;
 }
 
 function queueTracks(queue) {
   const tracks = queue?.tracks;
+
   if (!tracks) return [];
   if (Array.isArray(tracks)) return tracks;
   if (typeof tracks.toArray === 'function') return tracks.toArray();
@@ -370,10 +388,11 @@ function queueTracks(queue) {
 
 function getQueue(guildId) {
   if (!player || !guildId) return null;
+
   return player.nodes?.get?.(guildId) || player.queues?.get?.(guildId) || null;
 }
 
-async function ensurePlayback(queue, track = null) {
+async function ensurePlayback(queue) {
   if (!queue || queue.deleted) {
     return {
       ok: false,
@@ -385,7 +404,7 @@ async function ensurePlayback(queue, track = null) {
     workerLog('ensurePlayback:start', {
       hasQueue: Boolean(queue),
       deleted: Boolean(queue.deleted),
-      currentTrack: trackTitle(queue.currentTrack || track),
+      currentTrack: trackTitle(queue.currentTrack),
       isPlaying: queue.node?.isPlaying?.(),
       isPaused: queue.node?.isPaused?.(),
       isBuffering: queue.node?.isBuffering?.()
@@ -393,6 +412,7 @@ async function ensurePlayback(queue, track = null) {
 
     if (queue.node?.isPaused?.()) {
       queue.node.resume();
+      await sleep(300);
     }
 
     if (queue.node?.isPlaying?.() || queue.node?.isBuffering?.()) {
@@ -402,22 +422,17 @@ async function ensurePlayback(queue, track = null) {
       };
     }
 
-    if (typeof queue.connect === 'function') {
-      await queue.connect(queue.channel).catch(() => null);
-    }
-
     if (typeof queue.node?.play === 'function') {
-      try {
-        await queue.node.play(track || undefined);
-      } catch (_firstError) {
-        await queue.node.play().catch((error) => {
-          throw error;
-        });
-      }
+      await queue.node.play();
+      await sleep(500);
 
       return {
-        ok: true,
-        state: 'forced_play'
+        ok: Boolean(queue.node?.isPlaying?.() || queue.node?.isBuffering?.()),
+        state: queue.node?.isPlaying?.()
+          ? 'forced_playing'
+          : queue.node?.isBuffering?.()
+            ? 'forced_buffering'
+            : 'forced_but_not_playing'
       };
     }
 
@@ -437,6 +452,7 @@ function repeatModeName(mode) {
   if (mode === QueueRepeatMode.TRACK) return 'Track';
   if (mode === QueueRepeatMode.QUEUE) return 'Queue';
   if (mode === QueueRepeatMode.AUTOPLAY) return 'Autoplay';
+
   return 'Off';
 }
 
@@ -445,11 +461,13 @@ function playbackState(queue) {
   if (queue.node?.isPaused?.()) return 'Paused';
   if (queue.node?.isBuffering?.()) return 'Buffering';
   if (queue.node?.isPlaying?.()) return 'Playing';
+
   return 'Ready';
 }
 
 function progressLine(queue) {
   const track = queue?.currentTrack;
+
   if (!queue || !track) return '`──────────────────` 0:00 / 0:00';
 
   const timestamp = queue.node?.getTimestamp?.();
@@ -479,6 +497,7 @@ function queueCount(queue) {
 
 function activeFilters(queue) {
   const current = queue?.filters?.ffmpeg?.filters || [];
+
   return current.length ? current.join(', ') : 'off';
 }
 
@@ -496,6 +515,7 @@ function compactFooter(queue, user = null, extra = []) {
   }
 
   const prefix = user ? `Requested by ${userLabel(user)}` : 'Rumi music';
+
   return `${prefix}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
 }
 
@@ -517,7 +537,9 @@ function fitLines(lines, max = 1800) {
 
   for (const line of lines) {
     const nextLength = length + line.length + 1;
+
     if (nextLength > max) break;
+
     output.push(line);
     length = nextLength;
   }
@@ -550,16 +572,18 @@ function preferredSearchEngine(query, settings = {}) {
     .trim()
     .toLowerCase();
 
-  if (engine === 'spotify') return QueryType.SPOTIFY_SEARCH;
+  if (engine === 'spotify') return QueryType.SPOTIFY_SEARCH || QueryType.AUTO_SEARCH;
   if (engine === 'apple' || engine === 'applemusic') return QueryType.APPLE_MUSIC_SEARCH || QueryType.AUTO_SEARCH;
   if (engine === 'auto') return QueryType.AUTO_SEARCH;
 
-  return QueryType.SOUNDCLOUD_SEARCH;
+  return QueryType.SOUNDCLOUD_SEARCH || QueryType.AUTO_SEARCH;
 }
 
 function normalizeFilterName(mode) {
   const raw = String(mode || '').trim();
+
   if (!raw) return '';
+
   return FILTER_ALIASES.get(raw) || FILTER_ALIASES.get(raw.toLowerCase()) || raw;
 }
 
@@ -590,6 +614,7 @@ async function setAudioFilter(queue, mode) {
 
   if (!filter || filter === 'off') {
     await ffmpeg.setFilters([]);
+
     return { filter: 'off' };
   }
 
@@ -604,6 +629,7 @@ async function setAudioFilter(queue, mode) {
   }
 
   await ffmpeg.setFilters([filter]);
+
   return { filter };
 }
 
@@ -618,7 +644,9 @@ async function resolveContext(guildId, options = {}) {
     };
   }
 
-  const guild = clientRef.guilds.cache.get(guildId) || await clientRef.guilds.fetch(guildId).catch(() => null);
+  const guild =
+    clientRef.guilds.cache.get(guildId) ||
+    await clientRef.guilds.fetch(guildId).catch(() => null);
 
   if (!guild) {
     return {
@@ -631,18 +659,26 @@ async function resolveContext(guildId, options = {}) {
   }
 
   const voiceChannel = options.voiceChannelId
-    ? guild.channels.cache.get(options.voiceChannelId) || await guild.channels.fetch(options.voiceChannelId).catch(() => null)
+    ? guild.channels.cache.get(options.voiceChannelId) ||
+      await guild.channels.fetch(options.voiceChannelId).catch(() => null)
     : null;
 
   const textChannel = options.textChannelId
-    ? guild.channels.cache.get(options.textChannelId) || await guild.channels.fetch(options.textChannelId).catch(() => null)
+    ? guild.channels.cache.get(options.textChannelId) ||
+      await guild.channels.fetch(options.textChannelId).catch(() => null)
     : null;
 
   const user = options.userId
-    ? clientRef.users.cache.get(options.userId) || await clientRef.users.fetch(options.userId).catch(() => null)
+    ? clientRef.users.cache.get(options.userId) ||
+      await clientRef.users.fetch(options.userId).catch(() => null)
     : null;
 
-  return { guild, voiceChannel, textChannel, user };
+  return {
+    guild,
+    voiceChannel,
+    textChannel,
+    user
+  };
 }
 
 function voiceChannelError(voiceChannel) {
@@ -693,12 +729,15 @@ function requireQueue(guildId) {
 }
 
 async function loadExtractors() {
-  if (!player) return;
+  if (!player) return null;
   if (extractorLoadPromise) return extractorLoadPromise;
 
   extractorLoadPromise = (async () => {
     await player.extractors.loadMulti(DefaultExtractors).catch((error) => {
       logger.warn({ error }, 'Default music extractors failed to load');
+      workerLog('Default extractors failed', {
+        message: error?.message
+      });
     });
 
     const loaded = [];
@@ -718,52 +757,162 @@ async function loadExtractors() {
       },
       'Music extractors loaded'
     );
+
+    workerLog('extractors loaded', {
+      extractors: player.extractors?.size || 0,
+      loaded
+    });
   })();
 
   return extractorLoadPromise;
 }
 
-async function initializeMusicPlayer(client) {
-  if (!isNodeMusicEnabled()) {
-    logger.info('Node music backend is disabled.');
-    return null;
+function bindPlayerEvents() {
+  if (!player || eventsBound) return;
+
+  const events = player.events || player;
+
+  if (!events?.on) {
+    throw new Error('discord-player event manager is unavailable.');
   }
 
-  if (player) return player;
+  eventsBound = true;
 
-  clientRef = client;
-
-  player.events.on('playerStart', (queue, track) => {
+  events.on('playerStart', (queue, track) => {
     workerLog('playerStart', {
       guildId: queue?.guild?.id,
       title: trackTitle(track),
       source: trackSource(track),
       voiceChannelId: queue?.channel?.id || queue?.connection?.channel?.id || null
     });
+
+    logger.info(
+      {
+        guildId: queue?.guild?.id,
+        title: trackTitle(track),
+        source: trackSource(track),
+        voiceChannelId: queue?.channel?.id || queue?.connection?.channel?.id || null
+      },
+      'Music playback started'
+    );
+
+    const channel = queue.metadata?.channel;
+
+    if (!channel?.send || !envFlag('MUSIC_ANNOUNCE_TRACKS', false)) return;
+
+    const requestedBy = track?.requestedBy || queue.metadata?.requestedBy || null;
+
+    channel.send({
+      embeds: [
+        {
+          description: [
+            '`now playing`',
+            formatTrack(track),
+            progressLine(queue)
+          ].join('\n'),
+          thumbnail: toThumbnail(track?.thumbnail),
+          footer: toFooter(
+            compactFooter(queue, requestedBy, [trackSource(track)]),
+            avatarUrl(requestedBy)
+          )
+        }
+      ],
+      allowedMentions: { parse: [] }
+    }).catch(() => null);
   });
 
-  player.events.on('connection', (queue) => {
+  events.on('audioTrackAdd', (queue, track) => {
+    workerLog('audioTrackAdd', {
+      guildId: queue?.guild?.id,
+      title: trackTitle(track),
+      source: trackSource(track)
+    });
+
+    logger.info(
+      {
+        guildId: queue?.guild?.id,
+        title: trackTitle(track),
+        source: trackSource(track)
+      },
+      'Music track added'
+    );
+  });
+
+  events.on('connection', (queue) => {
     workerLog('connection', {
       guildId: queue?.guild?.id,
       voiceChannelId: queue?.channel?.id || queue?.connection?.channel?.id || null
     });
   });
 
-  player.events.on('error', (queue, error) => {
+  events.on('emptyQueue', (queue) => {
+    workerLog('emptyQueue', {
+      guildId: queue?.guild?.id
+    });
+
+    logger.info({ guildId: queue?.guild?.id }, 'Music queue ended');
+  });
+
+  events.on('disconnect', (queue) => {
+    workerLog('disconnect', {
+      guildId: queue?.guild?.id
+    });
+
+    logger.info({ guildId: queue?.guild?.id }, 'Music disconnected');
+  });
+
+  events.on('error', (queue, error) => {
     workerLog('queue error', {
       guildId: queue?.guild?.id,
       message: error?.message,
       stack: error?.stack
     });
+
+    logger.warn(
+      {
+        guildId: queue?.guild?.id,
+        error: {
+          message: error?.message,
+          stack: error?.stack
+        }
+      },
+      'Music queue error'
+    );
   });
 
-  player.events.on('playerError', (queue, error) => {
+  events.on('playerError', (queue, error) => {
     workerLog('player error', {
       guildId: queue?.guild?.id,
       message: error?.message,
       stack: error?.stack
     });
+
+    logger.warn(
+      {
+        guildId: queue?.guild?.id,
+        error: {
+          message: error?.message,
+          stack: error?.stack
+        }
+      },
+      'Music player error'
+    );
   });
+}
+
+async function initializeMusicPlayer(client) {
+  if (!isNodeMusicEnabled()) {
+    logger.info('Node music backend is disabled.');
+    workerLog('Node music backend disabled', {
+      MUSIC_BACKEND: process.env.MUSIC_BACKEND,
+      NODE_MUSIC_ENABLED: process.env.NODE_MUSIC_ENABLED
+    });
+    return null;
+  }
+
+  if (player) return player;
+
+  clientRef = client;
 
   player = new Player(client, {
     ytdlOptions: {
@@ -778,65 +927,7 @@ async function initializeMusicPlayer(client) {
 
   client.rumiMusicPlayer = player;
 
-  player.events.on('playerStart', (queue, track) => {
-    logger.info(
-      {
-        guildId: queue?.guild?.id,
-        title: trackTitle(track),
-        source: trackSource(track)
-      },
-      'Music playback started'
-    );
-
-    const channel = queue.metadata?.channel;
-    if (!channel?.send || !envFlag('MUSIC_ANNOUNCE_TRACKS', false)) return;
-
-    const requestedBy = track?.requestedBy || queue.metadata?.requestedBy || null;
-
-    channel.send({
-      embeds: [
-        {
-          description: [
-            `${ICONS.play} \`now playing\``,
-            formatTrack(track),
-            progressLine(queue)
-          ].join('\n'),
-          thumbnail: toThumbnail(track?.thumbnail),
-          footer: toFooter(
-            compactFooter(queue, requestedBy, [trackSource(track)]),
-            avatarUrl(requestedBy)
-          )
-        }
-      ]
-    }).catch(() => null);
-  });
-
-  player.events.on('audioTrackAdd', (queue, track) => {
-    logger.info(
-      {
-        guildId: queue?.guild?.id,
-        title: trackTitle(track),
-        source: trackSource(track)
-      },
-      'Music track added'
-    );
-  });
-
-  player.events.on('emptyQueue', (queue) => {
-    logger.info({ guildId: queue?.guild?.id }, 'Music queue ended');
-  });
-
-  player.events.on('disconnect', (queue) => {
-    logger.info({ guildId: queue?.guild?.id }, 'Music disconnected');
-  });
-
-  player.events.on('error', (queue, error) => {
-    logger.warn({ guildId: queue?.guild?.id, error }, 'Music queue error');
-  });
-
-  player.events.on('playerError', (queue, error) => {
-    logger.warn({ guildId: queue?.guild?.id, error }, 'Music player error');
-  });
+  bindPlayerEvents();
 
   await loadExtractors();
 
@@ -848,6 +939,12 @@ async function initializeMusicPlayer(client) {
     },
     'Node music backend is ready'
   );
+
+  workerLog('Node music backend ready', {
+    extractors: player.extractors?.size || 0,
+    ffmpegPath: ffmpegPath || null,
+    searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'
+  });
 
   return player;
 }
@@ -881,7 +978,7 @@ async function getState(guildId) {
   }
 
   return panel([
-    `${playbackState(queue).toLowerCase()}`,
+    playbackState(queue).toLowerCase(),
     formatTrack(queue.currentTrack),
     progressLine(queue)
   ].join('\n'), {
@@ -892,6 +989,8 @@ async function getState(guildId) {
     ])),
     v2: musicUi.trackCard({
       eyebrow: playbackState(queue),
+      emoji: 'play',
+      client: clientRef,
       title: trackTitle(queue.currentTrack),
       artist: trackAuthor(queue.currentTrack),
       url: trackUrl(queue.currentTrack),
@@ -953,6 +1052,13 @@ async function play(guildId, options = {}) {
       'Music play request starting'
     );
 
+    workerLog('play request starting', {
+      guildId,
+      query,
+      voiceChannelId: context.voiceChannel.id,
+      searchEngine
+    });
+
     const result = await player.play(context.voiceChannel, query, {
       requestedBy: context.user || undefined,
       searchEngine,
@@ -972,7 +1078,18 @@ async function play(guildId, options = {}) {
     });
 
     const queue = result.queue || getQueue(guildId);
-    const playback = await ensurePlayback(queue, result.track || queue?.currentTrack);
+
+    if (!queue) {
+      return fail(
+        'I could not create a music queue.',
+        'The player accepted the request, but no queue was created.',
+        'music_queue_missing'
+      );
+    }
+
+    await sleep(500);
+
+    const playback = await ensurePlayback(queue);
 
     workerLog('playback ensure result', {
       guildId,
@@ -999,19 +1116,6 @@ async function play(guildId, options = {}) {
       'Music playback ensure result'
     );
 
-    logger.info(
-      {
-        guildId,
-        playback,
-        isPlaying: queue?.node?.isPlaying?.(),
-        isPaused: queue?.node?.isPaused?.(),
-        isBuffering: queue?.node?.isBuffering?.(),
-        voiceChannelId: context.voiceChannel?.id,
-        currentTrack: trackTitle(queue?.currentTrack || result.track)
-      },
-      'Music playback ensure result'
-    );
-
     const tracks = queueTracks(queue);
     const track = result.track || queue?.currentTrack;
     const isPlaylist = Boolean(result.playlist);
@@ -1028,10 +1132,26 @@ async function play(guildId, options = {}) {
       'Music play request queued'
     );
 
+    workerLog('play request queued', {
+      guildId,
+      title: trackTitle(track),
+      source: trackSource(track),
+      queueSize: tracks.length,
+      isPlaylist
+    });
+
+    if (!playback.ok) {
+      return fail(
+        'I added the track, but playback did not start.',
+        playback.reason || playback.state || 'The voice player did not enter a playing state.',
+        'music_playback_start_failed'
+      );
+    }
+
     if (isPlaylist) {
       return ok(
         [
-          `playlist added`,
+          'playlist added',
           `**${escapeMarkdown(result.playlist.title || 'Playlist')}**`,
           `${playlistSize} tracks`
         ].join('\n'),
@@ -1052,7 +1172,9 @@ async function play(guildId, options = {}) {
             footer: compactFooter(queue, context.user, [
               `${tracks.length} waiting`,
               trackSource(track)
-            ])
+            ]),
+            emoji: 'play',
+            client: clientRef
           })
         }
       );
@@ -1060,7 +1182,7 @@ async function play(guildId, options = {}) {
 
     return ok(
       [
-        `added`,
+        'added',
         formatTrack(track)
       ].join('\n'),
       {
@@ -1087,7 +1209,24 @@ async function play(guildId, options = {}) {
       }
     );
   } catch (error) {
-    logger.warn({ guildId, query, error }, 'Node music play failed');
+    logger.warn(
+      {
+        guildId,
+        query,
+        error: {
+          message: error?.message,
+          stack: error?.stack
+        }
+      },
+      'Node music play failed'
+    );
+
+    workerLog('play failed', {
+      guildId,
+      query,
+      message: error?.message,
+      stack: error?.stack
+    });
 
     return fail(
       'I could not start playback.',
@@ -1146,7 +1285,7 @@ async function search(guildId, options = {}) {
 
       return `\`${index + 1}\` **${escapeMarkdown(title)}** — ${escapeMarkdown(author)} \`${duration}\``;
     });
-      
+
     return panel(['search results', `**${escapeMarkdown(query)}**`].join('\n'), {
       thumbnail: toThumbnail(tracks[0]?.thumbnail),
       fields: [
@@ -1160,6 +1299,8 @@ async function search(guildId, options = {}) {
       v2: musicUi.searchCard({
         query,
         source: `Search ${searchEngineName(settings.searchEngine)}`,
+        emoji: 'play',
+        client: clientRef,
         tracks: tracks.slice(0, 10).map((track) => ({
           title: trackTitle(track),
           author: trackAuthor(track),
@@ -1170,7 +1311,17 @@ async function search(guildId, options = {}) {
       })
     });
   } catch (error) {
-    logger.warn({ guildId, query, error }, 'Node music search failed');
+    logger.warn(
+      {
+        guildId,
+        query,
+        error: {
+          message: error?.message,
+          stack: error?.stack
+        }
+      },
+      'Node music search failed'
+    );
 
     return fail(
       'I could not search music right now.',
@@ -1214,7 +1365,9 @@ async function queuePayload(guildId) {
     volume: queue.node?.volume ?? 100,
     loop: repeatModeName(queue.repeatMode),
     state: playbackState(queue),
-    filters: activeFilters(queue)
+    filters: activeFilters(queue),
+    emoji: 'play',
+    client: clientRef
   };
 
   return panel([
@@ -1238,7 +1391,7 @@ async function nowPlaying(guildId) {
   const current = queue.currentTrack;
 
   return panel([
-    `now playing`,
+    'now playing',
     formatTrack(current),
     progressLine(queue)
   ].join('\n'), {
@@ -1249,6 +1402,8 @@ async function nowPlaying(guildId) {
     ])),
     v2: musicUi.trackCard({
       eyebrow: 'Now playing',
+      emoji: 'play',
+      client: clientRef,
       title: trackTitle(current),
       artist: trackAuthor(current),
       url: trackUrl(current),
@@ -1268,6 +1423,7 @@ async function runQueueAction(guildId, action, onDone) {
   if (error) return error;
 
   const result = await action(queue);
+
   if (result?.ok === false) return result;
   if (result?.error) return result.error;
 
@@ -1336,7 +1492,7 @@ async function runCommand(guildId, command, options = {}) {
 
         return ok(
           current
-            ? [`skipped`, formatTrack(current)].join('\n')
+            ? ['skipped', formatTrack(current)].join('\n')
             : 'Skipped the current track.',
           {
             thumbnail: toThumbnail(current?.thumbnail),
@@ -1344,7 +1500,7 @@ async function runCommand(guildId, command, options = {}) {
             v2: musicUi.actionCard({
               action: 'Skipped',
               emoji: 'forward',
-            client: clientRef,
+              client: clientRef,
               track: trackData(current),
               footer: compactFooter(queue, null)
             })
@@ -1362,16 +1518,16 @@ async function runCommand(guildId, command, options = {}) {
         return true;
       },
       () => {
-        const action = normalized === 'leave' ? 'Disconnected' : 'Stopped';
         const detail = normalized === 'leave'
           ? 'Left voice and cleared the queue.'
           : 'Playback stopped and the queue was cleared.';
 
         return panel(detail, {
           v2: musicUi.musicNotice({
-            label: 'Music',
-            //title: action,
-            detail
+            label: normalized === 'leave' ? 'Disconnected' : 'Stopped',
+            detail,
+            emoji: 'stop',
+            client: clientRef
           })
         });
       }
@@ -1387,8 +1543,10 @@ async function runCommand(guildId, command, options = {}) {
       },
       () => panel('Queue cleared. Removed every waiting track.', {
         v2: musicUi.musicNotice({
-          label: 'Queue',
-          detail: 'Removed every waiting track.'
+          label: 'Queue cleared',
+          detail: 'Removed every waiting track.',
+          emoji: 'stop',
+          client: clientRef
         })
       })
     );
@@ -1401,9 +1559,11 @@ async function runCommand(guildId, command, options = {}) {
       (queue) => panel(`Shuffle is now ${queue.isShuffling ? 'on' : 'off'}.`, {
         footer: toFooter(compactFooter(queue, null)),
         v2: musicUi.musicNotice({
-          label: 'Queue',
+          label: 'Shuffle',
           detail: `Shuffle is now **${queue.isShuffling ? 'on' : 'off'}**.`,
-          status: compactFooter(queue, null)
+          status: compactFooter(queue, null),
+          emoji: 'forward',
+          client: clientRef
         })
       })
     );
@@ -1427,7 +1587,14 @@ async function runCommand(guildId, command, options = {}) {
     const existing = requireQueue(guildId);
 
     if (!existing.queue) {
-      return panel(`${ICONS.volume} \`volume\`\nDefault volume set to **${value}%**.`);
+      return panel(`Default volume set to **${value}%**.`, {
+        v2: musicUi.musicNotice({
+          label: 'Volume',
+          detail: `Default volume set to **${value}%**.`,
+          emoji: 'play',
+          client: clientRef
+        })
+      });
     }
 
     return runQueueAction(
@@ -1436,9 +1603,11 @@ async function runCommand(guildId, command, options = {}) {
       (queue) => panel(`Volume set to ${value}%.`, {
         footer: toFooter(compactFooter(queue, null)),
         v2: musicUi.musicNotice({
-          label: 'Music',
+          label: 'Volume',
           detail: `Volume set to **${value}%**.`,
-          status: compactFooter(queue, null)
+          status: compactFooter(queue, null),
+          emoji: 'play',
+          client: clientRef
         })
       })
     );
@@ -1458,8 +1627,15 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.seek(ms),
-      (queue) => panel(`${ICONS.arrow} \`seek\`\nJumped to **${msToDuration(ms)}**.`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => panel(`Jumped to **${msToDuration(ms)}**.`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.musicNotice({
+          label: 'Seek',
+          detail: `Jumped to **${msToDuration(ms)}**.`,
+          status: compactFooter(queue, null),
+          emoji: 'forward',
+          client: clientRef
+        })
       })
     );
   }
@@ -1488,8 +1664,15 @@ async function runCommand(guildId, command, options = {}) {
               'music_invalid_index'
             );
       },
-      (queue, result) => panel(`${ICONS.x} \`removed\`\n**${escapeMarkdown(result.removed.title || 'Track')}**`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue, result) => panel(`Removed **${escapeMarkdown(result.removed.title || 'Track')}**.`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.musicNotice({
+          label: 'Removed',
+          detail: `Removed **${escapeMarkdown(result.removed.title || 'Track')}**.`,
+          status: compactFooter(queue, null),
+          emoji: 'stop',
+          client: clientRef
+        })
       })
     );
   }
@@ -1512,8 +1695,15 @@ async function runCommand(guildId, command, options = {}) {
         queue.node.move(from, to);
         return true;
       },
-      (queue) => panel(`${ICONS.arrow} \`moved\`\nTrack **${from + 1}** moved to **${to + 1}**.`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => panel(`Track **${from + 1}** moved to **${to + 1}**.`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.musicNotice({
+          label: 'Moved',
+          detail: `Track **${from + 1}** moved to **${to + 1}**.`,
+          status: compactFooter(queue, null),
+          emoji: 'forward',
+          client: clientRef
+        })
       })
     );
   }
@@ -1532,8 +1722,15 @@ async function runCommand(guildId, command, options = {}) {
     return runQueueAction(
       guildId,
       (queue) => queue.node.skipTo(index),
-      (queue) => ok(`${ICONS.skip} \`skip to\`\nSkipped to track **${index + 1}**.`, {
-        footer: toFooter(compactFooter(queue, null))
+      (queue) => ok(`Skipped to track **${index + 1}**.`, {
+        footer: toFooter(compactFooter(queue, null)),
+        v2: musicUi.musicNotice({
+          label: 'Skip to',
+          detail: `Skipped to track **${index + 1}**.`,
+          status: compactFooter(queue, null),
+          emoji: 'forward',
+          client: clientRef
+        })
       })
     );
   }
@@ -1556,9 +1753,11 @@ async function runCommand(guildId, command, options = {}) {
       (queue) => panel(`Loop mode set to ${repeatModeName(repeat)}.`, {
         footer: toFooter(compactFooter(queue, null)),
         v2: musicUi.musicNotice({
-          label: 'Music',
+          label: 'Loop',
           detail: `Mode set to **${repeatModeName(repeat)}**.`,
-          status: compactFooter(queue, null)
+          status: compactFooter(queue, null),
+          emoji: 'forward',
+          client: clientRef
         })
       })
     );
@@ -1576,9 +1775,11 @@ async function runCommand(guildId, command, options = {}) {
       (queue) => panel(`Autoplay is now ${enabled ? 'on' : 'off'}.`, {
         footer: toFooter(compactFooter(queue, null)),
         v2: musicUi.musicNotice({
-          label: 'Music',
+          label: 'Autoplay',
           detail: `Autoplay is now **${enabled ? 'on' : 'off'}**.`,
-          status: compactFooter(queue, null)
+          status: compactFooter(queue, null),
+          emoji: 'forward',
+          client: clientRef
         })
       })
     );
@@ -1587,13 +1788,25 @@ async function runCommand(guildId, command, options = {}) {
   if (normalized === 'stats') {
     const stats = player.generateStatistics?.();
 
-    return panel(`${ICONS.queue} \`backend\`\nNode music backend is running.`, {
+    return panel('Node music backend is running.', {
       footer: toFooter([
         `${player.extractors?.size || 0} sources`,
         `Search ${process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'}`,
         ffmpegPath ? 'FFmpeg ready' : 'FFmpeg unknown',
         stats?.eventLoopLag ? `${Math.round(stats.eventLoopLag)}ms lag` : null
-      ].filter(Boolean).join(' · '))
+      ].filter(Boolean).join(' · ')),
+      v2: musicUi.musicNotice({
+        label: 'Music backend',
+        detail: 'Node music backend is running.',
+        status: [
+          `${player.extractors?.size || 0} sources`,
+          `Search ${process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'}`,
+          ffmpegPath ? 'FFmpeg ready' : 'FFmpeg unknown',
+          stats?.eventLoopLag ? `${Math.round(stats.eventLoopLag)}ms lag` : null
+        ].filter(Boolean).join(' · '),
+        emoji: 'play',
+        client: clientRef
+      })
     });
   }
 
@@ -1610,15 +1823,29 @@ async function runCommand(guildId, command, options = {}) {
           .reverse()
           .map((track, index) => `\`${index + 1}\` ${escapeMarkdown(trackTitle(track))}`);
 
-        return panel(`${ICONS.queue} \`history\`\n${lines.length ? fitLines(lines) : 'No recent tracks.'}`, {
-          footer: toFooter(compactFooter(queue, null))
+        return panel(lines.length ? fitLines(lines) : 'No recent tracks.', {
+          footer: toFooter(compactFooter(queue, null)),
+          v2: musicUi.musicNotice({
+            label: 'History',
+            detail: lines.length ? fitLines(lines) : 'No recent tracks.',
+            status: compactFooter(queue, null),
+            emoji: 'backward',
+            client: clientRef
+          })
         });
       }
     );
   }
 
   if (normalized === 'lyrics') {
-    return panel(`${ICONS.search} \`lyrics\`\nLyrics lookup is not enabled in this backend.`);
+    return panel('Lyrics lookup is not enabled in this backend.', {
+      v2: musicUi.musicNotice({
+        label: 'Lyrics',
+        detail: 'Lyrics lookup is not enabled in this backend.',
+        emoji: 'play',
+        client: clientRef
+      })
+    });
   }
 
   if (normalized.startsWith('filter.')) {
@@ -1629,13 +1856,27 @@ async function runCommand(guildId, command, options = {}) {
       (queue) => setAudioFilter(queue, mode),
       (queue, result) => {
         if (result?.filter === 'off') {
-          return panel(`${ICONS.filter} \`filter\`\nAudio filters are now **off**.`, {
-            footer: toFooter(compactFooter(queue, null))
+          return panel('Audio filters are now off.', {
+            footer: toFooter(compactFooter(queue, null)),
+            v2: musicUi.musicNotice({
+              label: 'Filter',
+              detail: 'Audio filters are now **off**.',
+              status: compactFooter(queue, null),
+              emoji: 'play',
+              client: clientRef
+            })
           });
         }
 
-        return panel(`${ICONS.filter} \`filter\`\nApplied **${escapeMarkdown(result.filter)}**.`, {
-          footer: toFooter(compactFooter(queue, null, [`Filters ${activeFilters(queue)}`]))
+        return panel(`Applied **${escapeMarkdown(result.filter)}**.`, {
+          footer: toFooter(compactFooter(queue, null, [`Filters ${activeFilters(queue)}`])),
+          v2: musicUi.musicNotice({
+            label: 'Filter',
+            detail: `Applied **${escapeMarkdown(result.filter)}**.`,
+            status: compactFooter(queue, null, [`Filters ${activeFilters(queue)}`]),
+            emoji: 'play',
+            client: clientRef
+          })
         });
       }
     );
@@ -1653,26 +1894,59 @@ async function runCommand(guildId, command, options = {}) {
     }
 
     const saved = await saveMusicSettings(guildId, { searchEngine: engine });
-    return panel(`${ICONS.settings} \`settings\`\nSearch engine set to **${searchEngineName(saved.searchEngine)}**.`);
+
+    return panel(`Search engine set to **${searchEngineName(saved.searchEngine)}**.`, {
+      v2: musicUi.musicNotice({
+        label: 'Settings',
+        detail: `Search engine set to **${searchEngineName(saved.searchEngine)}**.`,
+        emoji: 'play',
+        client: clientRef
+      })
+    });
   }
 
   if (normalized === 'settings.announce') {
-    return panel(`${ICONS.settings} \`settings\`\nTrack announcements are controlled with \`MUSIC_ANNOUNCE_TRACKS=true\` in your env.`);
+    return panel('Track announcements are controlled with `MUSIC_ANNOUNCE_TRACKS=true` in your env.', {
+      v2: musicUi.musicNotice({
+        label: 'Settings',
+        detail: 'Track announcements are controlled with `MUSIC_ANNOUNCE_TRACKS=true` in your env.',
+        emoji: 'play',
+        client: clientRef
+      })
+    });
   }
 
   if (normalized === 'settings' || normalized.startsWith('settings.')) {
     const settings = await getMusicSettings(guildId).catch(() => null);
 
     return panel([
-      `${ICONS.settings} \`settings\``,
+      'settings',
       `24/7: **${settings?.stay247 ? 'on' : 'off'}**`,
       `Default volume: **${settings?.defaultVolume || Number(process.env.MUSIC_DEFAULT_VOLUME || 65)}%**`,
       `Search: **${searchEngineName(settings?.searchEngine)}**`
-    ].join('\n'));
+    ].join('\n'), {
+      v2: musicUi.musicNotice({
+        label: 'Music settings',
+        detail: [
+          `24/7: **${settings?.stay247 ? 'on' : 'off'}**`,
+          `Default volume: **${settings?.defaultVolume || Number(process.env.MUSIC_DEFAULT_VOLUME || 65)}%**`,
+          `Search: **${searchEngineName(settings?.searchEngine)}**`
+        ].join('\n'),
+        emoji: 'play',
+        client: clientRef
+      })
+    });
   }
 
   if (['panel', 'export', 'import', 'node.failover'].includes(normalized)) {
-    return panel(`${ICONS.settings} \`music\`\nThis sidecar-era utility is not needed with the Node backend.`);
+    return panel('This sidecar-era utility is not needed with the Node backend.', {
+      v2: musicUi.musicNotice({
+        label: 'Music',
+        detail: 'This sidecar-era utility is not needed with the Node backend.',
+        emoji: 'play',
+        client: clientRef
+      })
+    });
   }
 
   return fail(
