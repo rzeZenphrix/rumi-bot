@@ -369,6 +369,46 @@ function getQueue(guildId) {
   return player.nodes?.get?.(guildId) || player.queues?.get?.(guildId) || null;
 }
 
+async function ensurePlayback(queue) {
+  if (!queue || queue.deleted) {
+    return {
+      ok: false,
+      reason: 'Queue does not exist or was deleted.'
+    };
+  }
+
+  try {
+    if (queue.node?.isPaused?.()) {
+      queue.node.resume();
+    }
+
+    if (queue.node?.isPlaying?.() || queue.node?.isBuffering?.()) {
+      return {
+        ok: true,
+        state: 'already_playing'
+      };
+    }
+
+    if (typeof queue.node?.play === 'function') {
+      await queue.node.play();
+      return {
+        ok: true,
+        state: 'forced_play'
+      };
+    }
+
+    return {
+      ok: false,
+      reason: 'Queue node has no play function.'
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error.message || 'Playback force-start failed.'
+    };
+  }
+}
+
 function repeatModeName(mode) {
   if (mode === QueueRepeatMode.TRACK) return 'Track';
   if (mode === QueueRepeatMode.QUEUE) return 'Queue';
@@ -876,6 +916,21 @@ async function play(guildId, options = {}) {
     });
 
     const queue = result.queue || getQueue(guildId);
+    const playback = await ensurePlayback(queue);
+
+    logger.info(
+      {
+        guildId,
+        playback,
+        isPlaying: queue?.node?.isPlaying?.(),
+        isPaused: queue?.node?.isPaused?.(),
+        isBuffering: queue?.node?.isBuffering?.(),
+        voiceChannelId: context.voiceChannel?.id,
+        currentTrack: trackTitle(queue?.currentTrack || result.track)
+      },
+      'Music playback ensure result'
+    );
+    
     const tracks = queueTracks(queue);
     const track = result.track || queue?.currentTrack;
     const isPlaylist = Boolean(result.playlist);
