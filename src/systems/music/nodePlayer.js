@@ -1163,7 +1163,7 @@ async function play(guildId, options = {}) {
 
     let playable = null;
     let lastFailure = null;
-      
+
     if (isUrl(query)) {
       playable = await playCandidate(context, query, searchEngine, settings, stay247);
     
@@ -1211,7 +1211,7 @@ async function play(guildId, options = {}) {
         await sleep(500);
       }
     }
-    
+
     if (!playable?.ok) {
       return fail(
         'I found tracks, but none stayed playable.',
@@ -1219,12 +1219,10 @@ async function play(guildId, options = {}) {
         'music_no_stable_stream'
       );
     }
-    
+
     const result = playable.result;
     const queue = playable.queue;
     const playback = playable.playback;
-
-    const queue = result.queue || getQueue(guildId);
 
     if (!queue) {
       return fail(
