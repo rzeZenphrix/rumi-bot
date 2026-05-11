@@ -110,7 +110,7 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-client.once('ready', async () => {
+client.once(Events.ClientReady, async () => {
   logger.info(
     {
       user: client.user?.tag,
@@ -215,9 +215,38 @@ const server = http.createServer(async (req, res) => {
         'Music worker command received'
       );
 
-      const payload = await nodePlayer.runCommand(guildId, command, options);
+      console.log('[rumi-music-worker] /run received', {
+          guildId,
+          command,
+          userId: options.userId,
+          voiceChannelId: options.voiceChannelId,
+          textChannelId: options.textChannelId
+      });
 
-      return sendJson(res, 200, safePayload(payload));
+        const payload = await nodePlayer.runCommand(guildId, command, options);
+
+        console.log('[rumi-music-worker] /run completed', {
+          guildId,
+          command,
+          ok: payload?.ok,
+          code: payload?.code,
+          error: payload?.error,
+          description: payload?.description
+        });
+
+        logger.info(
+          {
+            guildId,
+            command,
+            ok: payload?.ok,
+            code: payload?.code,
+            error: payload?.error,
+            description: payload?.description
+          },
+          'Music worker command completed'
+        );
+
+        return sendJson(res, 200, safePayload(payload));
     }
 
     return sendJson(res, 404, {
@@ -268,6 +297,7 @@ if (!SECRET) {
 }
 
 server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[rumi-music-worker] HTTP server listening on 0.0.0.0:${PORT}`);
   logger.info({ port: PORT }, 'Music worker HTTP server listening');
 });
 
