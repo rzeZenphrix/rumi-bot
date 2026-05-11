@@ -95,6 +95,10 @@ function envFlag(name, fallback = false) {
   return fallback;
 }
 
+function workerLog(label, data = {}) {
+  console.log(`[rumi-music-worker:nodePlayer] ${label}`, data);
+}
+
 function isNodeMusicEnabled() {
   const backend = String(process.env.MUSIC_BACKEND || '').trim().toLowerCase();
   if (backend) return backend === 'node';
@@ -369,7 +373,7 @@ function getQueue(guildId) {
   return player.nodes?.get?.(guildId) || player.queues?.get?.(guildId) || null;
 }
 
-async function ensurePlayback(queue) {
+async function ensurePlayback(queue, track = null) {
   if (!queue || queue.deleted) {
     return {
       ok: false,
@@ -378,6 +382,15 @@ async function ensurePlayback(queue) {
   }
 
   try {
+    workerLog('ensurePlayback:start', {
+      hasQueue: Boolean(queue),
+      deleted: Boolean(queue.deleted),
+      currentTrack: trackTitle(queue.currentTrack || track),
+      isPlaying: queue.node?.isPlaying?.(),
+      isPaused: queue.node?.isPaused?.(),
+      isBuffering: queue.node?.isBuffering?.()
+    });
+
     if (queue.node?.isPaused?.()) {
       queue.node.resume();
     }
@@ -389,8 +402,19 @@ async function ensurePlayback(queue) {
       };
     }
 
+    if (typeof queue.connect === 'function') {
+      await queue.connect(queue.channel).catch(() => null);
+    }
+
     if (typeof queue.node?.play === 'function') {
-      await queue.node.play();
+      try {
+        await queue.node.play(track || undefined);
+      } catch (_firstError) {
+        await queue.node.play().catch((error) => {
+          throw error;
+        });
+      }
+
       return {
         ok: true,
         state: 'forced_play'
@@ -709,6 +733,38 @@ async function initializeMusicPlayer(client) {
 
   clientRef = client;
 
+  player.events.on('playerStart', (queue, track) => {
+    workerLog('playerStart', {
+      guildId: queue?.guild?.id,
+      title: trackTitle(track),
+      source: trackSource(track),
+      voiceChannelId: queue?.channel?.id || queue?.connection?.channel?.id || null
+    });
+  });
+
+  player.events.on('connection', (queue) => {
+    workerLog('connection', {
+      guildId: queue?.guild?.id,
+      voiceChannelId: queue?.channel?.id || queue?.connection?.channel?.id || null
+    });
+  });
+
+  player.events.on('error', (queue, error) => {
+    workerLog('queue error', {
+      guildId: queue?.guild?.id,
+      message: error?.message,
+      stack: error?.stack
+    });
+  });
+
+  player.events.on('playerError', (queue, error) => {
+    workerLog('player error', {
+      guildId: queue?.guild?.id,
+      message: error?.message,
+      stack: error?.stack
+    });
+  });
+
   player = new Player(client, {
     ytdlOptions: {
       quality: 'highestaudio',
@@ -916,7 +972,32 @@ async function play(guildId, options = {}) {
     });
 
     const queue = result.queue || getQueue(guildId);
-    const playback = await ensurePlayback(queue);
+    const playback = await ensurePlayback(queue, result.track || queue?.currentTrack);
+
+    workerLog('playback ensure result', {
+      guildId,
+      playback,
+      isPlaying: queue?.node?.isPlaying?.(),
+      isPaused: queue?.node?.isPaused?.(),
+      isBuffering: queue?.node?.isBuffering?.(),
+      voiceChannelId: context.voiceChannel?.id,
+      queueChannelId: queue?.channel?.id || null,
+      currentTrack: trackTitle(queue?.currentTrack || result.track)
+    });
+
+    logger.info(
+      {
+        guildId,
+        playback,
+        isPlaying: queue?.node?.isPlaying?.(),
+        isPaused: queue?.node?.isPaused?.(),
+        isBuffering: queue?.node?.isBuffering?.(),
+        voiceChannelId: context.voiceChannel?.id,
+        queueChannelId: queue?.channel?.id || null,
+        currentTrack: trackTitle(queue?.currentTrack || result.track)
+      },
+      'Music playback ensure result'
+    );
 
     logger.info(
       {
@@ -930,7 +1011,7 @@ async function play(guildId, options = {}) {
       },
       'Music playback ensure result'
     );
-    
+
     const tracks = queueTracks(queue);
     const track = result.track || queue?.currentTrack;
     const isPlaylist = Boolean(result.playlist);
