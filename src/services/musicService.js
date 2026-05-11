@@ -11,26 +11,38 @@ function envFlag(name, fallback = false) {
   return fallback;
 }
 
-function workerUrl() {
+function getWorkerUrl() {
   return String(process.env.MUSIC_WORKER_URL || '').replace(/\/+$/, '');
 }
 
-function workerSecret() {
-  return String(process.env.MUSIC_WORKER_SECRET || '');
+function getWorkerSecret() {
+  return String(process.env.MUSIC_WORKER_SECRET || '').trim();
 }
 
 function useWorker() {
   const backend = String(process.env.MUSIC_BACKEND || '').trim().toLowerCase();
 
   if (backend === 'worker' || backend === 'remote') return true;
-  if (workerUrl() && workerSecret() && envFlag('MUSIC_WORKER_ENABLED', false)) return true;
+  if (getWorkerUrl() && getWorkerSecret() && envFlag('MUSIC_WORKER_ENABLED', false)) return true;
 
   return false;
 }
 
-async function callWorker(command, guildId, options = {}) {
-  const url = workerUrl();
-  const secret = workerSecret();
+function errorPayload(error, code = 'music_error') {
+  const message = error?.message || String(error || 'Unknown music error.');
+
+  return {
+    ok: false,
+    code,
+    replyType: 'bad',
+    error: message,
+    description: message
+  };
+}
+
+async function callWorker(guildId, command, options = {}) {
+  const url = getWorkerUrl();
+  const secret = getWorkerSecret();
 
   if (!url || !secret) {
     return {
@@ -38,7 +50,7 @@ async function callWorker(command, guildId, options = {}) {
       code: 'music_worker_not_configured',
       replyType: 'bad',
       error: 'Music worker is not configured.',
-      description: 'Set MUSIC_WORKER_URL and MUSIC_WORKER_SECRET.'
+      description: 'Set MUSIC_WORKER_URL and MUSIC_WORKER_SECRET on the main bot.'
     };
   }
 
@@ -53,26 +65,25 @@ async function callWorker(command, guildId, options = {}) {
       command,
       options
     })
-  }).catch((error) => {
-    throw new Error(`Music worker unreachable: ${error.message}`);
   });
 
-  const text = await response.text();
+  const raw = await response.text();
   let data;
 
   try {
-    data = text ? JSON.parse(text) : {};
+    data = raw ? JSON.parse(raw) : {};
   } catch {
     data = {
       ok: false,
-      error: text || 'Invalid response from music worker.'
+      error: raw || 'Invalid response from music worker.',
+      description: raw || 'Invalid response from music worker.'
     };
   }
 
   if (!response.ok) {
     return {
       ok: false,
-      code: data.code || 'music_worker_error',
+      code: data.code || 'music_worker_http_error',
       replyType: 'bad',
       error: data.error || `Music worker returned HTTP ${response.status}.`,
       description: data.description || data.error || `Music worker returned HTTP ${response.status}.`
@@ -85,29 +96,27 @@ async function callWorker(command, guildId, options = {}) {
 async function runCommand(guildId, command, options = {}) {
   if (useWorker()) {
     try {
-      return await callWorker(command, guildId, options);
+      return await callWorker(guildId, command, options);
     } catch (error) {
       logger.warn({ error, guildId, command }, 'Remote music worker command failed');
-
-      return {
-        ok: false,
-        code: 'music_worker_unreachable',
-        replyType: 'bad',
-        error: 'Music worker is unreachable.',
-        description: error.message || 'The remote music worker did not respond.'
-      };
+      return errorPayload(error, 'music_worker_unreachable');
     }
   }
 
-  return nodePlayer.runCommand(guildId, command, options);
+  try {
+    return await nodePlayer.runCommand(guildId, command, options);
+  } catch (error) {
+    logger.warn({ error, guildId, command }, 'Local music command failed');
+    return errorPayload(error, 'music_local_error');
+  }
 }
 
 async function health() {
   if (useWorker()) {
     try {
-      const response = await fetch(`${workerUrl()}/health`, {
+      const response = await fetch(`${getWorkerUrl()}/health`, {
         headers: {
-          authorization: `Bearer ${workerSecret()}`
+          authorization: `Bearer ${getWorkerSecret()}`
         }
       });
 
@@ -126,7 +135,13 @@ async function health() {
 
 async function initializeMusicPlayer(client) {
   if (useWorker()) {
-    logger.info('Music backend is remote worker; local node player will not start.');
+    logger.info(
+      {
+        url: getWorkerUrl()
+      },
+      'Music backend is remote worker; local player will not start.'
+    );
+
     return null;
   }
 
@@ -138,9 +153,14 @@ function isNodeMusicEnabled() {
   return nodePlayer.isNodeMusicEnabled();
 }
 
+function isWorkerEnabled() {
+  return useWorker();
+}
+
 module.exports = {
   health,
   initializeMusicPlayer,
   isNodeMusicEnabled,
+  isWorkerEnabled,
   runCommand
 };

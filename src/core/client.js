@@ -23,7 +23,7 @@ const { startKeepAlive } = require('../systems/runtime/keepAlive');
 const { startMarketAlertRunner } = require('../systems/monetization/marketAlerts');
 const { syncApplicationCommands } = require('../systems/slashCommands');
 const { startGiveawayRunner } = require('../systems/giveaways/manager');
-const { initializeMusicPlayer } = require('../systems/music/nodePlayer');
+const musicService = require('../services/musicService');
 
 function shouldStartApi() {
   if (process.env.ENABLE_API === 'false') return false;
@@ -123,9 +123,7 @@ client.once('clientReady', async () => {
     logger.warn({ error }, 'Giveaway runner failed to start; continuing startup');
   }
 
-  await initializeMusicPlayer(client).catch((error) => {
-    logger.warn({ error }, 'Node music backend failed to start; continuing startup');
-  });
+  await musicService.initializeMusicPlayer(client);
 
   await syncDashboardBackend(client).catch((error) => {
     logger.warn({ error }, 'Dashboard backend sync failed; continuing startup');
