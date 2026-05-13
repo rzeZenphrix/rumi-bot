@@ -52,7 +52,7 @@ async function renderGiveawayEmbed(giveaway, client, { ended = false } = {}) {
     `winners: **${giveaway.winners_count}**`,
     `entries: **${entries}**`,
     `mode: **${mode}**`,
-    conditions.length ? `\n**Conditions**\n${conditions.map((row) => `- ${conditionLabel(row)}`).join('\n')}` : null
+    conditions.length ? `\n**Conditions**\n${conditions.map((row) => `- ${conditionLabel(row, { client })}`).join('\n')}` : null
   ].filter(Boolean).join('\n');
 
   const embed = new EmbedBuilder()
@@ -70,7 +70,7 @@ async function renderGiveawayEmbed(giveaway, client, { ended = false } = {}) {
 
   if (giveaway.thumbnail_url) embed.setThumbnail(giveaway.thumbnail_url);
   if (giveaway.image_url) embed.setImage(giveaway.image_url);
-  embed.setFooter({ text: giveaway.footer || `Giveaway ID: ${giveaway.public_id}` });
+  embed.setFooter({ text: giveaway.footer || `Giveaway ${giveaway.public_id}` });
 
   return embed;
 }

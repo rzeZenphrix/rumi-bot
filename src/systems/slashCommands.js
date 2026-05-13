@@ -7,6 +7,7 @@ const { parseArgs } = require('./prefix/commandHandler');
 const { isSlashSupported, listSupportedSlashCommands } = require('./slashManifest');
 const { normalizeCommandMeta } = require('../utils/normalizeCommandMeta');
 const respond = require('../utils/respond');
+const { classifyDiscordError, logCommandError } = require('../utils/discordErrors');
 
 const registryCache = new WeakMap();
 let fallbackRegistry = null;
@@ -668,9 +669,16 @@ async function handleSlashCommandInteraction(interaction) {
     });
     return true;
   } catch (error) {
-    logger.error({ error, command: interaction.commandName }, 'Slash command failed');
+    const logged = await logCommandError({
+      source: 'slash',
+      commandName: interaction.commandName,
+      interaction
+    }, error);
+    const classified = logged?.classified || classifyDiscordError(error);
 
-    const payload = respond.buildPayload('bad', interaction.user, `Something broke while running /${interaction.commandName}.`, {
+    const payload = respond.buildPayload('bad', interaction.user, classified.expected
+      ? classified.userMessage
+      : `Something broke while running /${interaction.commandName}.`, {
       message: interactionMessageContext(interaction)
     });
     payload.flags = MessageFlags.Ephemeral;

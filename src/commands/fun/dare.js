@@ -5,7 +5,7 @@ module.exports = {
   name: 'dare',
   aliases: [],
   category: 'fun',
-  description: 'I give a safe dare.',
+  description: 'Gives a dare.',
   usage: 'dare',
   examples: ['dare'],
 

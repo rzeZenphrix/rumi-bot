@@ -8,6 +8,7 @@ const {
   attachment,
   hasCanvas
 } = require('../../utils/socialCanvas');
+const { friendlyId, matchesFriendlyId } = require('../../utils/friendlyIds');
 
 function splitQueryAndPage(args) {
   const parts = [...args];
@@ -18,6 +19,11 @@ function splitQueryAndPage(args) {
 
 function timestamp(date) {
   return Math.floor(new Date(date).getTime() / 1000);
+}
+
+async function resolveCalendarId(userId, input) {
+  const rows = await db.listCalendarEvents(userId, { limit: 100, offset: 0, includePast: true }).catch(() => []);
+  return rows.find((row) => matchesFriendlyId(row.id, input, 'cal'))?.id || input;
 }
 
 async function sendCalendarList(message, rows, page) {
@@ -33,7 +39,7 @@ async function sendCalendarList(message, rows, page) {
 
   const lines = rows.map((row, index) => {
     const number = index + 1 + (page - 1) * 5;
-    return `${number}. **${row.title}**\n<t:${timestamp(row.starts_at)}:F>\n\`${row.id}\``;
+    return `${number}. **${row.title}**\n<t:${timestamp(row.starts_at)}:F>\n\`${friendlyId(row.id, 'cal')}\``;
   });
 
   return respond.reply(message, 'info', null, {
@@ -211,7 +217,7 @@ module.exports = {
         });
       }
 
-      const removed = await db.deleteCalendarEvent(message.author.id, id).catch(() => null);
+      const removed = await db.deleteCalendarEvent(message.author.id, await resolveCalendarId(message.author.id, id)).catch(() => null);
 
       if (!removed) {
         return respond.reply(message, 'bad', 'I could not delete that calendar event.', {

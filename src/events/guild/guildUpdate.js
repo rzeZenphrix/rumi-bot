@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
 const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
+const { logEventError } = require('../../utils/discordErrors');
 
 module.exports = {
   name: Events.GuildUpdate || 'guildUpdate',
@@ -60,7 +61,7 @@ module.exports = {
         targetName: newGuild.name
       }
     }).catch((error) => {
-      console.error('[GUILD UPDATE ANTINUKE ERROR]', error);
+      logEventError({ eventName: 'guildUpdateAntinuke', guildId: newGuild.id }, error).catch(() => null);
     });
   }
 };

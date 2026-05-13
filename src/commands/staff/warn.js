@@ -1,6 +1,16 @@
 const { PermissionFlagsBits } = require('discord.js');
 const db = require('../../services/database');
 const { clean, ok, bad, info, findMember } = require('../../utils/moderationSimple');
+const { friendlyId, matchesFriendlyId } = require('../../utils/friendlyIds');
+
+async function resolveWarningId(guildId, input) {
+  const { data } = await db.supabase
+    .from('warnings')
+    .select('id')
+    .eq('guild_id', guildId)
+    .limit(500);
+  return (data || []).find((row) => matchesFriendlyId(row.id, input, 'warn'))?.id || input;
+}
 
 module.exports = {
   name: 'warn',
@@ -19,7 +29,7 @@ module.exports = {
     if (['delete', 'del', 'remove'].includes(first)) {
       const warningId = args.shift();
       if (!warningId) return info(message, 'Usage: `warn delete <warningId>`.');
-      await db.deleteWarning(message.guild.id, warningId);
+      await db.deleteWarning(message.guild.id, await resolveWarningId(message.guild.id, warningId));
       return ok(message, 'Deleted that warning.');
     }
 
@@ -35,7 +45,7 @@ module.exports = {
 
     if (!args.length) {
       const rows = await db.getWarnings(message.guild.id, member.id, 10);
-      const lines = rows.map((row, i) => `${i + 1}. ${row.reason} — ${row.id}`);
+      const lines = rows.map((row, i) => `${i + 1}. ${row.reason} - ${friendlyId(row.id, 'warn')}`);
       return info(message, lines.length ? lines.join('\n') : `${member.user.tag} has no warnings.`);
     }
 
@@ -47,6 +57,6 @@ module.exports = {
       reason
     });
 
-    return ok(message, `Warned ${member.user.tag}. ID: ${row.id}`);
+    return ok(message, `Warned ${member.user.tag}. ID: ${friendlyId(row.id, 'warn')}`);
   }
 };

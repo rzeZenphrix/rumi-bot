@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { ok } = require('../../utils/moderationSimple');
+const respond = require('../../utils/respond');
 
 module.exports = {
   name: 'hide',
@@ -19,6 +20,6 @@ module.exports = {
       { reason: `Hidden by ${message.author.tag}` }
     );
 
-    return ok(message, 'Hidden from everyone.');
+    return respond.reply(message, 'up', 'Hidden **this channel** from everyone.');
   }
 };

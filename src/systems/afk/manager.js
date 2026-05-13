@@ -232,13 +232,13 @@ async function sendAfkReturnSummary(message, logs = [], oldestState = null) {
     : 'a while';
 
   const extra = logs.length
-    ? ` I logged ${logs.length} ping${logs.length === 1 ? '' : 's'} while you were gone.`
+    ? ` I logged **${logs.length}** ping${logs.length === 1 ? '' : 's'} while you were gone.`
     : '';
 
   await respond.reply(
     message,
     'info',
-    `Welcome back, ${message.author}. I removed your AFK status. You were away ${duration}.${extra}`,
+    `Welcome back, ${message.author}. I removed your AFK status. You were away for ${duration}.${extra}`,
     {
       mentionUser: false,
       useWebhook: false

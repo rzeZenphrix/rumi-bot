@@ -49,7 +49,7 @@ module.exports = {
       const lines = rows.map((row) => `\`${row.name}\` - ${row.enabled ? 'enabled' : 'disabled'}`);
       return respond.reply(
         message,
-        'info',
+        '',
         lines.length
           ? `I found these custom commands:\n${lines.join('\n')}`
           : 'I have no custom commands saved for this server.'
@@ -58,7 +58,7 @@ module.exports = {
 
     if (sub === 'remove' || sub === 'delete') {
       const name = normalizeName(args.shift());
-      if (!name) return respond.reply(message, 'info', 'Use `cc remove name`.');
+      if (!name) return respond.reply(message, '', '-# Use\n```cc remove name```');
 
       const removed = await db.deleteCustomCommand(message.guild.id, name).catch(() => null);
       if (!removed) {
@@ -69,19 +69,19 @@ module.exports = {
         );
       }
 
-      return respond.reply(message, 'good', `I removed the custom command **\`${name}\`**.`);
+      return respond.reply(message, 'good', `I removed the custom command **${name}**.`);
     }
 
     if (sub === 'add' || sub === 'set') {
       const name = normalizeName(args.shift());
       const script = args.join(' ').trim();
-      if (!name || !script) return respond.reply(message, 'info', 'Use `cc add name [embed script or message]`.');
+      if (!name || !script) return respond.reply(message, '', '-# Use\n```cc add name [embed script or message]```');
 
       if (message.client?.commands?.has(name)) {
         return respond.reply(
           message,
           'bad',
-          `I cannot save **\`${name}\`** because it conflicts with a built-in command or alias.`
+          `I cannot save **${name}** because it conflicts with a built-in command or alias.`
         );
       }
 
@@ -116,9 +116,9 @@ module.exports = {
         );
       }
 
-      return respond.reply(message, 'good', `I saved custom command **\`${name}\`**.`);
+      return respond.reply(message, 'good', `I saved custom command **${name}**.`);
     }
 
-    return respond.reply(message, 'info', 'Use `cc add`, `cc remove`, or `cc list`.');
+    return respond.reply(message, '', '-# Use\n```cc add, cc remove, or cc list```');
   }
 };

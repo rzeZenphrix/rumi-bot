@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { ok, bad, info, msgId, modlog } = require('../../utils/moderationSimple');
+const respond = require('../../utils/respond');
 
 module.exports = {
   name: 'pin',
@@ -27,6 +28,6 @@ module.exports = {
       messageId: target.id
     });
 
-    return ok(message, `Pinned message: ${target.url}`);
+    return respond.reply(message, 'pin', `Pinned message: ${target.url}`);
   }
 };

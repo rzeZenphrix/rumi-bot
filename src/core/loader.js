@@ -3,6 +3,7 @@ const path = require('node:path');
 const logger = require('../systems/logging/logger');
 const { normalizeCommandMeta } = require('../utils/normalizeCommandMeta');
 const { createCommandRegistry } = require('./commandRegistry');
+const { logEventError } = require('../utils/discordErrors');
 
 function walkJsFiles(directory) {
   if (!fs.existsSync(directory)) return [];
@@ -116,14 +117,11 @@ function loadEvents(client) {
 
       const handler = (...args) => {
         event.execute(client, ...args).catch((error) => {
-          logger.error(
-            {
-              error,
-              event: event.name,
-              file
-            },
-            'Event failed'
-          );
+          logEventError({
+            eventName: event.name,
+            file,
+            metadata: { args: args.map((item) => item?.id || item?.guild?.id || item?.constructor?.name || typeof item) }
+          }, error).catch(() => null);
         });
       };
 

@@ -10,6 +10,6 @@ module.exports = {
 
   async execute({ message, args }) {
     const target = message.mentions.users.first() || message.author;
-    return respond.reply(message, 'alert', `think ${target} is **${Math.floor(Math.random() * 101)}%** sus.`);
+    return respond.reply(message, '', `i think ${target} is **${Math.floor(Math.random() * 101)}%** sus.`);
   }
 };

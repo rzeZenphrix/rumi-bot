@@ -11,7 +11,7 @@ module.exports = {
   name: 'mock',
   aliases: ['spongebob'],
   category: 'fun',
-  description: 'I alternate text casing.',
+  description: 'Alternate text casing.',
   usage: 'mock [text]',
   examples: ['mock hello there', 'mock'],
 

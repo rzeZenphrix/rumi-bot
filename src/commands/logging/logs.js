@@ -1,6 +1,7 @@
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const { updateGuildLogConfig, getGuildLogConfig, DEFAULT_EVENTS } = require('../../systems/logging/logConfigStore');
-const { info, ok, bad, id } = require('../../utils/moderationSimple');
+const { info, ok, bad, extractId } = require('../../utils/moderationSimple');
+const db = require('../../services/database');
 
 function parseColor(input) {
   const raw = String(input || '').replace('#', '');
@@ -48,12 +49,38 @@ module.exports = {
       return info(message, DEFAULT_EVENTS.map((event) => `\`${event}\``).join(', '));
     }
 
+    if (first === 'errors' || first === 'bugs') {
+      const rows = await db.listErrorLogs({
+        guildId: message.guild.id,
+        resolved: args[0]?.toLowerCase() === 'resolved' ? true : false,
+        limit: 8
+      }).catch(() => []);
+
+      if (!rows.length) {
+        return info(message, 'No unresolved bot error logs are stored for this server.');
+      }
+
+      return info(message, rows.map((row) => [
+        `\`${row.id}\``,
+        `${row.command_name || row.event_name || row.source || 'unknown'} - ${row.error_type || 'Error'}`,
+        String(row.error_message || 'No message').slice(0, 140)
+      ].join('\n')).join('\n\n'));
+    }
+
+    if (first === 'resolve-error') {
+      const logId = args.shift();
+      if (!logId) return info(message, 'Usage: `logs resolve-error <error-log-id> [notes]`.');
+
+      await db.markErrorLogResolved(logId, message.author.id, args.join(' ') || null);
+      return ok(message, 'Marked that error log as resolved.');
+    }
+
     if (first === 'remove' || first === 'del') {
       const target = args.shift();
       if (!target) return info(message, '> Remove a log event or channel.\n \n`logs remove <event|#channel>`\n \n**Example**\n \n`logs remove messageDelete`');
 
       await updateGuildLogConfig(message.guild.id, (cfg) => {
-        const targetId = id(target);
+        const targetId = extractId(target);
         for (const [event, channelId] of Object.entries(cfg.channels || {})) {
           if (event === target || channelId === targetId) {
             delete cfg.channels[event];
@@ -77,7 +104,7 @@ module.exports = {
       return ok(message, `Set ${event} color to ${color}.`);
     }
 
-    const channelId = id(first);
+    const channelId = extractId(first);
     const channel = channelId ? await message.guild.channels.fetch(channelId).catch(() => null) : null;
     const event = args.shift() || 'all';
 

@@ -6,6 +6,6 @@ module.exports = {
   description: "Show badge info.",
   usage: 'badge',
   async execute({ message }) {
-    return respond.reply(message, 'info', "Badge: early tester.", { mentionUser: false });
+    return respond.reply(message, 'info', "This feature is not ready.", { mentionUser: false });
   }
 };

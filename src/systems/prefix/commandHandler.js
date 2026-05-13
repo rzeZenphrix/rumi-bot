@@ -10,6 +10,7 @@ const { isDirectMusicCommand } = require('../music/musicAliases');
 const { getDisabledCommands, isProtectedCommand, isCommandDisabled } = require('../commands/disabledCommands');
 const { getCommandNotFoundSettings } = require('./commandNotFoundSetting');
 const simpleStore = require('../../utils/simpleStore');
+const { classifyDiscordError, logCommandError } = require('../../utils/discordErrors');
 
 function permissionLabel(permission) {
   const match = Object.entries(PermissionFlagsBits).find(([, value]) => value === permission);
@@ -211,11 +212,9 @@ async function handlePrefixCommand(client, message) {
     });
 
     if (!cooldown.ok) {
-      await safeReply(
-        message,
-        'alert',
-        `That command is on cooldown. Try again in **${formatRemaining(cooldown.remainingMs)}**.`
-      );
+      await respond.reply(message, 'time', null, {
+        description: `That command is on cooldown. Try again in **${formatRemaining(cooldown.remainingMs)}**.`
+      });
       return true;
     }
 
@@ -238,21 +237,21 @@ async function handlePrefixCommand(client, message) {
       });
     });
   } catch (error) {
-    logger.error(
-      {
-        error,
-        command: command.name,
-        guildId: message.guild?.id,
-        userId: message.author.id
-      },
-      'Prefix command failed'
-    );
-
-    await safeReply(
+    const logged = await logCommandError({
+      source: 'prefix',
+      commandName: command.name,
       message,
-      'bad',
-      `Something broke while running \`${command.name}\`. I logged the error.`
-    ).catch(() => null);
+      guildId: message.guild?.id,
+      userId: message.author.id
+    }, error);
+
+    const classified = logged?.classified || classifyDiscordError(error);
+
+    await respond.reply(message, 'bad', null, {
+      description: classified.expected
+        ? classified.userMessage
+        : `Something broke while running \`${command.name}\`. I logged the error.`
+    }).catch(() => null);
   }
 
   return true;

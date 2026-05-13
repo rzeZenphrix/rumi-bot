@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
 const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
 const { applyVerificationToNewChannel } = require('../../systems/verification/verificationManager');
+const { logEventError } = require('../../utils/discordErrors');
 
 module.exports = {
   name: Events.ChannelCreate || 'channelCreate',
@@ -20,7 +21,7 @@ module.exports = {
     });
 
     await applyVerificationToNewChannel(channel).catch((error) => {
-      console.error('[VERIFICATION NEW CHANNEL PERMS ERROR]', error);
+      logEventError({ eventName: 'verificationChannelCreate', guildId: channel.guild.id, channelId: channel.id }, error).catch(() => null);
     });
 
     await handleAntiNukeEvent({

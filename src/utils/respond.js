@@ -7,26 +7,43 @@ const {
 } = require('../systems/customization/customizationStore');
 const { sendWithGuildWebhook } = require('../systems/customization/webhookReplyManager');
 const logger = require('../systems/logging/logger');
+const emojiAliases = require('./botEmojis');
 
 const DEFAULT_COLORS = {
-  list: 0x2b2d31,
-  info: 0xffffff,
-  good: 0xffffff,
+  list: 0xc8d8f2,
+  info: 0xc8d8f2,
+  good: 0xc8d8f2,
   bad: 0xed4245,
   error: 0xed4245,
-  alert: 0xfee75c,
-  warn: 0xfee75c,
-  warning: 0xfee75c,
-  add: 0xffffff,
-  remove: 0xffffff
+  alert: 0xc8d8f2,
+  warn: 0xc8d8f2,
+  warning: 0xc8d8f2,
+  add: 0xc8d8f2,
+  remove: 0xc8d8f2
 };
 
 const FALLBACK_AUTO_EMOJIS = {
-  bad: '❌',
-  error: '❌',
-  alert: '⚠️',
-  warn: '⚠️',
-  warning: '⚠️'
+  info: emojiAliases.info,
+  good: emojiAliases.good,
+  success: emojiAliases.good,
+  bad: emojiAliases.bad,
+  error: emojiAliases.bad,
+  alert: emojiAliases.alert,
+  warn: emojiAliases.warn,
+  warning: emojiAliases.warning,
+  bin: emojiAliases.bin,
+  add: emojiAliases.add,
+  remove: emojiAliases.remove,
+  edit: emojiAliases.edit,
+  msg: emojiAliases.msg,
+  next: emojiAliases.next,
+  prev: emojiAliases.prev,
+  up: emojiAliases.up,
+  time: emojiAliases.time,
+  lock: emojiAliases.lock,
+  unlock: emojiAliases.unlock,
+  pin: emojiAliases.pin,
+  info2: emojiAliases.info2,
 };
 
 function normalizeType(type) {
@@ -102,7 +119,7 @@ function resolveEmoji(type, options = {}, config = null) {
 
   const autoEmoji = hasOwn(options, 'autoEmoji')
     ? Boolean(options.autoEmoji)
-    : ['bad', 'alert'].includes(normalizedType);
+    : true;
 
   // Manual emoji always wins. Passing emoji: '' intentionally disables it.
   if (hasOwn(options, 'emoji')) {
@@ -602,9 +619,120 @@ async function send(channel, type, user, action, options = {}) {
   });
 }
 
+function safeEmbedColor(value, fallback = null) {
+  if (value === null || value === undefined || value === '') return fallback;
+
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return Math.max(0, Math.min(0xffffff, value));
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return fallback;
+
+  if (/^#?[0-9a-f]{6}$/i.test(raw)) {
+    return Number.parseInt(raw.replace('#', ''), 16);
+  }
+
+  if (/^0x[0-9a-f]{6}$/i.test(raw)) {
+    return Number.parseInt(raw.slice(2), 16);
+  }
+
+  return fallback;
+}
+
+function colorForType(type = 'info') {
+  const normalized = String(type || 'info').toLowerCase();
+
+  const map = {
+    good: process.env.RESPOND_GOOD_COLOR || process.env.GOOD_COLOR,
+    success: process.env.RESPOND_GOOD_COLOR || process.env.GOOD_COLOR,
+
+    bad: process.env.RESPOND_BAD_COLOR || process.env.BAD_COLOR || process.env.ERROR_COLOR,
+    error: process.env.RESPOND_ERROR_COLOR || process.env.ERROR_COLOR || process.env.BAD_COLOR,
+
+    warn: process.env.RESPOND_WARN_COLOR || process.env.WARN_COLOR || process.env.WARNING_COLOR,
+    warning: process.env.RESPOND_WARN_COLOR || process.env.WARN_COLOR || process.env.WARNING_COLOR,
+    alert: process.env.RESPOND_ALERT_COLOR || process.env.ALERT_COLOR,
+
+    info: process.env.RESPOND_INFO_COLOR || process.env.INFO_COLOR,
+    list: process.env.RESPOND_LIST_COLOR || process.env.LIST_COLOR
+  };
+
+  return safeEmbedColor(map[normalized], null);
+}
+
+function avatarOf(source) {
+  const user = source?.user || source?.author || source;
+
+  if (!user) return null;
+
+  if (typeof user.displayAvatarURL === 'function') {
+    return user.displayAvatarURL({ size: 128 });
+  }
+
+  if (typeof user.avatarURL === 'function') {
+    return user.avatarURL({ size: 128 });
+  }
+
+  return null;
+}
+
+function displayNameOf(source) {
+  if (!source) return null;
+
+  if (source.displayName) return source.displayName;
+  if (source.member?.displayName) return source.member.displayName;
+
+  const user = source.user || source.author || source;
+
+  return user.globalName || user.username || user.tag || null;
+}
+
+/**
+ * Backwards-compatible embed styler for old commands.
+ * Safe: does not force mentions, does not crash on invalid colors,
+ * and only applies author/color when valid.
+ */
+function styleEmbed(embed, type = 'info', source = null, options = {}) {
+  if (!embed || typeof embed !== 'object') return embed;
+
+  const color = safeEmbedColor(
+    options.color ?? options.embedColor ?? colorForType(type),
+    null
+  );
+
+  if (color !== null && typeof embed.setColor === 'function') {
+    embed.setColor(color);
+  }
+
+  if (options.author !== false && typeof embed.setAuthor === 'function') {
+    const name = options.authorName || displayNameOf(source);
+    const iconURL = options.authorIcon || avatarOf(source);
+
+    if (name) {
+      embed.setAuthor({
+        name: String(name).slice(0, 256),
+        iconURL: iconURL || undefined
+      });
+    }
+  }
+
+  if (options.timestamp && typeof embed.setTimestamp === 'function') {
+    embed.setTimestamp();
+  }
+
+  return embed;
+}
+
 module.exports = {
+  DEFAULT_COLORS,
+  DEFAULT_EMBED_COLOR: DEFAULT_COLORS.info,
+  ERROR_EMBED_COLOR: DEFAULT_COLORS.bad,
   makeEmbed,
   buildPayload,
   reply,
+  styleEmbed,
+  safeEmbedColor,
+  colorForType,
   send
 };

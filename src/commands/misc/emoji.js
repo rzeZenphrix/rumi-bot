@@ -2,10 +2,12 @@ const { AttachmentBuilder, PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const { fetchBuffer, firstAttachment, customEmojiInfo, cleanName } = require('../../utils/media');
 const { extractId } = require('../../utils/resolveUser');
+const { fetchEmojiCollection, hasExpressionCapacity, discordCreationErrorMessage } = require('../../utils/expressionCapacity');
 
 const MAX_EMOJI_BYTES = Number(process.env.EMOJI_MAX_BYTES || 256 * 1024);
 
 async function resolveGuildEmoji(guild, input) {
+  await fetchEmojiCollection(guild).catch(() => null);
   const custom = customEmojiInfo(input);
   const id = custom?.id || extractId(input);
   if (id) return guild.emojis.fetch(id).catch(() => null);
@@ -15,15 +17,26 @@ async function resolveGuildEmoji(guild, input) {
 
 async function addEmojiFromUrl(guild, name, url, reason) {
   const safeName = cleanName(name, 'emoji');
-  if (guild.emojis.cache.some((emoji) => emoji.name.toLowerCase() === safeName.toLowerCase())) {
+  const collection = await fetchEmojiCollection(guild);
+  if (collection?.some((emoji) => emoji.name.toLowerCase() === safeName.toLowerCase())) {
     throw new Error('duplicate_emoji_name');
   }
 
-  const maxSlots = Number(guild.maximumEmojis || 50);
-  if (guild.emojis.cache.size >= maxSlots) throw new Error('emoji_slots_full');
+  const animated = /\.gif(?:$|\?)/i.test(String(url || ''));
+  const capacity = await hasExpressionCapacity(guild, 'emoji', { animated });
+  if (!capacity.ok) {
+    const error = new Error('emoji_slots_full');
+    error.capacity = capacity;
+    throw error;
+  }
 
   const buffer = await fetchBuffer(url, { maxBytes: MAX_EMOJI_BYTES });
-  return guild.emojis.create({ attachment: buffer, name: safeName, reason });
+  try {
+    return await guild.emojis.create({ attachment: buffer, name: safeName, reason });
+  } catch (error) {
+    error.userMessage = discordCreationErrorMessage(error, 'I could not add that emoji.');
+    throw error;
+  }
 }
 
 module.exports = {
@@ -49,7 +62,7 @@ module.exports = {
       const failed = [];
       for (const emoji of emojis.slice(0, 20)) {
         const created = await addEmojiFromUrl(message.guild, emoji.name, emoji.url, `Emoji stolen by ${message.author.tag}`).catch((error) => {
-          failed.push(error.message);
+          failed.push(`${emoji.name} (${error.userMessage || discordCreationErrorMessage(error)})`);
           return null;
         });
         if (created) added.push(`${created}`);
@@ -65,11 +78,12 @@ module.exports = {
       const created = await addEmojiFromUrl(message.guild, name, url, `Emoji added by ${message.author.tag}`).catch((error) => {
         if (error.message === 'duplicate_emoji_name') return 'duplicate';
         if (error.message === 'emoji_slots_full') return 'full';
-        return null;
+        return { error };
       });
       if (created === 'duplicate') return respond.reply(message, 'bad', `I couldn’t add that emoji because **${cleanName(name, 'emoji')}** already exists.`);
-      if (created === 'full') return respond.reply(message, 'bad', 'I couldn’t add an emoji because this server has no emoji slots left.');
-      if (!created) return respond.reply(message, 'bad', 'I couldn’t add that emoji. The image may be invalid, too large, or rejected by Discord.');
+      if (created === 'full') return respond.reply(message, 'bad', 'This server has no matching emoji slots left.');
+      if (created?.error) return respond.reply(message, 'bad', created.error.userMessage || discordCreationErrorMessage(created.error, 'I could not add that emoji.'));
+      if (!created) return respond.reply(message, 'bad', 'I could not add that emoji. The image may be invalid, too large, or rejected by Discord.');
       return respond.reply(message, 'good', `Added emoji ${created} as **${created.name}**.`);
     }
 
@@ -113,8 +127,9 @@ module.exports = {
     }
 
     if (sub === 'list') {
-      const list = message.guild.emojis.cache.map((e) => `${e} \`:${e.name}:\``).join(' ');
-      return respond.reply(message, 'info', null, { title: `Emojis (${message.guild.emojis.cache.size})`, description: list.slice(0, 4096) || 'No emojis found.' });
+      const collection = await fetchEmojiCollection(message.guild).catch(() => message.guild.emojis.cache);
+      const list = collection.map((e) => `${e} \`:${e.name}:\``).join(' ');
+      return respond.reply(message, 'info', null, { title: `Emojis (${collection.size})`, description: list.slice(0, 4096) || 'No emojis found.' });
     }
 
     if (sub === 'rename') {

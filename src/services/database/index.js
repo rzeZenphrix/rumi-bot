@@ -1905,8 +1905,144 @@ async function deleteExpiredVerificationCaptchas() {
   );
 }
 
+async function createErrorLog(payload = {}) {
+  const row = {
+    level: payload.level || 'error',
+    service: payload.service || 'rumi',
+    source: payload.source || null,
+    command_name: payload.command_name || payload.commandName || null,
+    event_name: payload.event_name || payload.eventName || null,
+    guild_id: payload.guild_id || payload.guildId || null,
+    channel_id: payload.channel_id || payload.channelId || null,
+    user_id: payload.user_id || payload.userId || null,
+    message_id: payload.message_id || payload.messageId || null,
+    interaction_id: payload.interaction_id || payload.interactionId || null,
+    error_type: payload.error_type || payload.errorType || null,
+    error_message: payload.error_message || payload.errorMessage || null,
+    error_stack: payload.error_stack || payload.errorStack || null,
+    error_code: payload.error_code || payload.errorCode || null,
+    discord_status: payload.discord_status || payload.discordStatus || null,
+    aggregate_errors: payload.aggregate_errors || payload.aggregateErrors || null,
+    metadata: payload.metadata || {}
+  };
+
+  return requireData(
+    supabase
+      .from('bot_error_logs')
+      .insert(row)
+      .select()
+      .single(),
+    'createErrorLog'
+  );
+}
+
+async function listErrorLogs(filters = {}) {
+  let query = supabase
+    .from('bot_error_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(Math.min(100, Math.max(1, Number(filters.limit || 25))));
+
+  if (filters.guildId || filters.guild_id) query = query.eq('guild_id', filters.guildId || filters.guild_id);
+  if (filters.commandName || filters.command_name) query = query.eq('command_name', filters.commandName || filters.command_name);
+  if (filters.source) query = query.eq('source', filters.source);
+  if (filters.level) query = query.eq('level', filters.level);
+  if (filters.resolved !== undefined) query = query.eq('resolved', Boolean(filters.resolved));
+
+  return requireData(query, 'listErrorLogs');
+}
+
+async function markErrorLogResolved(id, resolverId = null, notes = null) {
+  return requireData(
+    supabase
+      .from('bot_error_logs')
+      .update({
+        resolved: true,
+        resolved_at: new Date().toISOString(),
+        resolver_id: resolverId,
+        notes
+      })
+      .eq('id', id)
+      .select()
+      .single(),
+    'markErrorLogResolved'
+  );
+}
+
+async function maybePruneOldErrorLogs(days = 30) {
+  const safeDays = Math.max(1, Number(days || 30));
+  const cutoff = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000).toISOString();
+
+  return requireData(
+    supabase
+      .from('bot_error_logs')
+      .delete()
+      .lt('created_at', cutoff)
+      .select('id'),
+    'maybePruneOldErrorLogs'
+  );
+}
+
+async function upsertRagDocument(payload = {}) {
+  return requireData(
+    supabase
+      .from('rag_documents')
+      .upsert({
+        id: payload.id,
+        guild_id: payload.guild_id || payload.guildId || null,
+        user_id: payload.user_id || payload.userId || null,
+        source: payload.source,
+        title: payload.title || payload.source || 'Untitled',
+        category: payload.category || 'general',
+        metadata: payload.metadata || {},
+        content_hash: payload.content_hash || payload.contentHash || null,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' })
+      .select()
+      .single(),
+    'upsertRagDocument'
+  );
+}
+
+async function replaceRagChunks(documentId, chunks = []) {
+  await executeQuery(supabase.from('rag_chunks').delete().eq('document_id', documentId), 'replaceRagChunks:delete');
+  if (!chunks.length) return [];
+
+  return requireData(
+    supabase
+      .from('rag_chunks')
+      .insert(chunks.map((chunk, index) => ({
+        document_id: documentId,
+        chunk_index: index,
+        text: chunk.text,
+        token_count: chunk.token_count || chunk.tokenCount || null,
+        metadata: chunk.metadata || {}
+      })))
+      .select(),
+    'replaceRagChunks:insert'
+  );
+}
+
+async function listRagChunks(filters = {}) {
+  const query = supabase
+    .from('rag_chunks')
+    .select('*, rag_documents(*)')
+    .order('created_at', { ascending: false })
+    .limit(Math.min(500, Math.max(1, Number(filters.limit || 200))));
+
+  return requireData(query, 'listRagChunks');
+}
+
 module.exports = {
   DatabaseUnavailableError,
+  createErrorLog,
+  listErrorLogs,
+  markErrorLogResolved,
+  maybePruneOldErrorLogs,
+  pruneOldErrorLogs: maybePruneOldErrorLogs,
+  upsertRagDocument,
+  replaceRagChunks,
+  listRagChunks,
   createVerificationCaptcha,
   getVerificationCaptcha,
   incrementVerificationCaptchaAttempts,

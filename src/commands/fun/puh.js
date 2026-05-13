@@ -12,6 +12,7 @@ module.exports = {
   usage: 'puh [user]',
   examples: ['puh', 'puh @user'],
   cooldown: 3,
+  nsfw: true,
 
   async execute({ message, args }) {
     const target = args.join(' ').trim() || message.author.toString();

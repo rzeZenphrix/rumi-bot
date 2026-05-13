@@ -10,8 +10,8 @@ module.exports = {
 
   async execute({ message, args }) {
     const thing = args.join(' ').trim();
-    if (!thing) return respond.reply(message, 'info', 'need something to rate.');
+    if (!thing) return respond.reply(message, 'info2', 'need something to rate.');
     const score = Math.floor(Math.random() * 101);
-    return respond.reply(message, 'info', `rate **${thing}** a **${score}/100**.`);
+    return respond.reply(message, '', `I give **${thing}** a **${score}/100**.`);
   }
 };

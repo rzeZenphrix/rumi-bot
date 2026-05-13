@@ -2,6 +2,12 @@ const respond = require('../../utils/respond');
 const emojis = require('../../utils/botEmojis');
 const db = require('../../services/database');
 const { createPagedMessage } = require('../../utils/pagedMessages');
+const { friendlyId, matchesFriendlyId } = require('../../utils/friendlyIds');
+
+async function resolveTodoId(userId, input) {
+  const rows = await db.listTodos(userId, true).catch(() => []);
+  return rows.find((row) => matchesFriendlyId(row.id, input, 'todo'))?.id || input;
+}
 
 async function fetchTodo(userId, id) {
   const { data } = await db.supabase
@@ -43,7 +49,7 @@ module.exports = {
       const task = args.join(' ').trim();
       if (!task) return respond.reply(message, 'info', 'Use `todo add <task>`.');
       const row = await db.addTodo({ user_id: message.author.id, guild_id: message.guild?.id || null, task });
-      return respond.reply(message, 'good', `I added that todo: \`${row.id}\`.`);
+      return respond.reply(message, 'good', `I added that todo: \`${friendlyId(row.id, 'todo')}\`.`);
     }
 
     if (sub === 'list') {
@@ -57,7 +63,7 @@ module.exports = {
           title: 'Todo list',
           allowTitle: true,
           description: chunk
-            .map((row, rowIndex) => `**${index + rowIndex + 1}.** ${row.completed ? emojis.good : emojis.info} ${row.task}\n\`${row.id}\``)
+            .map((row, rowIndex) => `**${index + rowIndex + 1}.** ${row.completed ? emojis.good : emojis.info} ${row.task}\n\`${friendlyId(row.id, 'todo')}\``)
             .join('\n\n')
         });
       }
@@ -76,7 +82,7 @@ module.exports = {
     if (sub === 'view') {
       const id = args.shift();
       if (!id) return respond.reply(message, 'info', 'Use `todo view <id>`.');
-      const row = await fetchTodo(message.author.id, id);
+      const row = await fetchTodo(message.author.id, await resolveTodoId(message.author.id, id));
       if (!row) return respond.reply(message, 'bad', 'I could not find that todo.');
       return respond.reply(message, 'info', null, {
         mentionUser: false,
@@ -84,7 +90,7 @@ module.exports = {
         allowTitle: true,
         description: row.task,
         fields: [
-          { name: 'ID', value: row.id, inline: true },
+          { name: 'ID', value: friendlyId(row.id, 'todo'), inline: true },
           { name: 'Completed', value: row.completed ? 'yes' : 'no', inline: true },
           { name: 'Created', value: row.created_at || 'unknown', inline: false }
         ]
@@ -94,14 +100,14 @@ module.exports = {
     if (sub === 'complete' || sub === 'done') {
       const id = args.shift();
       if (!id) return respond.reply(message, 'info', 'Use `todo complete <id>`.');
-      await db.completeTodo(message.author.id, id);
+      await db.completeTodo(message.author.id, await resolveTodoId(message.author.id, id));
       return respond.reply(message, 'good', 'I marked that todo complete.');
     }
 
     if (sub === 'reopen') {
       const id = args.shift();
       if (!id) return respond.reply(message, 'info', 'Use `todo reopen <id>`.');
-      const row = await updateTodo(message.author.id, id, { completed: false });
+      const row = await updateTodo(message.author.id, await resolveTodoId(message.author.id, id), { completed: false });
       if (!row) return respond.reply(message, 'bad', 'I could not reopen that todo.');
       return respond.reply(message, 'good', 'I reopened that todo.');
     }
@@ -110,7 +116,7 @@ module.exports = {
       const id = args.shift();
       const task = args.join(' ').trim();
       if (!id || !task) return respond.reply(message, 'info', 'Use `todo edit <id> <new text>`.');
-      const row = await updateTodo(message.author.id, id, { task });
+      const row = await updateTodo(message.author.id, await resolveTodoId(message.author.id, id), { task });
       if (!row) return respond.reply(message, 'bad', 'I could not edit that todo.');
       return respond.reply(message, 'good', 'I updated that todo.');
     }
@@ -127,7 +133,7 @@ module.exports = {
     if (sub === 'remove' || sub === 'delete') {
       const id = args.shift();
       if (!id) return respond.reply(message, 'info', 'Use `todo remove <id>`.');
-      await db.deleteTodo(message.author.id, id);
+      await db.deleteTodo(message.author.id, await resolveTodoId(message.author.id, id));
       return respond.reply(message, 'good', 'I removed that todo.');
     }
 

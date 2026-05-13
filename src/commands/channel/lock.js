@@ -6,6 +6,7 @@ const {
   missingChannelManagePermission
 } = require('../../systems/moderation/channelLockManager');
 const { clean, ok, bad } = require('../../utils/moderationSimple');
+const respond = require('../../utils/respond');
 
 module.exports = {
   name: 'lock',
@@ -36,6 +37,6 @@ module.exports = {
       fields: [{ name: 'Reason', value: reason }]
     }).catch(() => null);
 
-    return ok(message, `Locked ${channel.name}.`);
+    return respond.reply(message, 'lock', `Locked **${channel.name}**.`);
   }
 };

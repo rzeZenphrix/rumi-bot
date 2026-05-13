@@ -70,6 +70,17 @@ function normalizeKey(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizePanelColor(value) {
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffff) {
+    return `#${value.toString(16).padStart(6, '0')}`;
+  }
+
+  const raw = String(value || '').trim().toLowerCase().replace(/^#/, '').replace(/^0x/, '');
+  if (!/^[0-9a-f]{6}$/i.test(raw)) return null;
+  return `#${raw}`;
+}
+
 function bestServerTier(activePlans = []) {
   let best = 'free';
 
@@ -172,6 +183,9 @@ async function updatePanel(guildId, updates = {}, panelId = null) {
   if (!panel) return null;
 
   const patch = { ...updates };
+  if (Object.prototype.hasOwnProperty.call(patch, 'panel_color')) {
+    patch.panel_color = normalizePanelColor(patch.panel_color) || '#c8d8f2';
+  }
   if (!Object.keys(patch).length) return panel;
 
   return single(

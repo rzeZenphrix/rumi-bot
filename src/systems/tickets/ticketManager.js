@@ -17,9 +17,14 @@ const emojis = require('../../config/botEmojis');
 const { parseComponentEmoji } = require('../../utils/componentEmoji');
 const respond = require('../../utils/respond');
 const ticketDb = require('./ticketDb');
+const { logEventError } = require('../../utils/discordErrors');
 
 function trim(value, length) {
   return String(value || '').slice(0, length);
+}
+
+function safeEmbedColor(value, fallback = respond.DEFAULT_EMBED_COLOR || 0xc8d8f2) {
+  return respond.safeEmbedColor(value, fallback);
 }
 
 function idFromMention(value) {
@@ -275,7 +280,7 @@ async function validatePanel(guild, panelId = null) {
 }
 
 function panelValidationEmbed(result) {
-  const embed = new EmbedBuilder().setColor(result.errors.length ? respond.ERROR_EMBED_COLOR : respond.DEFAULT_EMBED_COLOR);
+  const embed = new EmbedBuilder().setColor(safeEmbedColor(result.errors.length ? respond.ERROR_EMBED_COLOR : respond.DEFAULT_EMBED_COLOR));
 
   const description = [
     result.errors.length
@@ -325,7 +330,7 @@ async function publishPanel({ guild, channel, mode = null, userId, panelId = nul
   const chosenMode = mode || panel.mode || 'dropdown';
 
   const embed = new EmbedBuilder()
-    .setColor(respond.DEFAULT_EMBED_COLOR)
+    .setColor(safeEmbedColor(panel.panel_color))
     .setDescription(`${emojis.chat} Need help? Choose a ticket type below.`);
 
   if (types.length) {
@@ -673,6 +678,8 @@ async function openTicket({ guild, member, typeKey, panelId = null, formAnswers 
 }
 
 async function createTicketModal(interaction, typeKey, panelId = null) {
+  if (!typeKey) return failEphemeral(interaction, 'That ticket type is no longer available.');
+
   const type = await ticketDb.getTicketType(interaction.guild.id, typeKey);
   if (!type) return failEphemeral(interaction, 'That ticket type no longer exists.');
   if (panelId && type.panel_id && type.panel_id !== panelId) {
@@ -682,6 +689,8 @@ async function createTicketModal(interaction, typeKey, panelId = null) {
   const questions = await ticketDb.listQuestions(interaction.guild.id, type.id);
 
   if (!questions.length) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
     const result = await openTicket({
       guild: interaction.guild,
       member: interaction.member,
@@ -689,9 +698,15 @@ async function createTicketModal(interaction, typeKey, panelId = null) {
       panelId
     });
 
-    if (!result.ok) return failEphemeral(interaction, result.reason, result.admin);
+    if (!result.ok) {
+      return interaction.editReply(ephemeralEditPayload(
+        interaction,
+        'bad',
+        `${result.reason}${result.admin ? `\n\n${result.admin}` : ''}`
+      ));
+    }
 
-    return interaction.reply(ephemeralPayload(interaction, 'good', `Your ticket was created: <#${result.channel.id}>`));
+    return interaction.editReply(ephemeralEditPayload(interaction, 'good', `Your ticket was created: <#${result.channel.id}>`));
   }
 
   const modal = new ModalBuilder()
@@ -752,6 +767,22 @@ async function handleModalSubmit(interaction) {
   return interaction.editReply(ephemeralEditPayload(interaction, 'good', `Your ticket was created: <#${result.channel.id}>`));
 }
 
+async function sendTicketInteractionError(interaction) {
+  const payload = ephemeralPayload(interaction, 'bad', 'I could not process that ticket action. Please try again in a moment.');
+
+  if (interaction.deferred) {
+    const editPayload = { ...payload };
+    delete editPayload.flags;
+    return interaction.editReply(editPayload).catch(() => null);
+  }
+
+  if (interaction.replied) {
+    return interaction.followUp(payload).catch(() => null);
+  }
+
+  return interaction.reply(payload).catch(() => null);
+}
+
 async function fetchTicketTypeForTicket(ticket) {
   if (!ticket) return null;
   return ticketDb.getTicketType(ticket.guild_id, ticket.ticket_type_key);
@@ -767,10 +798,10 @@ async function sendTicketLog(guild, type, data) {
   const ticket = data.ticket;
 
   const embed = new EmbedBuilder()
-    .setColor(respond.DEFAULT_EMBED_COLOR)
+    .setColor(safeEmbedColor(data.color))
     .setDescription(`${emojis.documents} **${data.eventType}**`)
     .addFields(
-      { name: 'Ticket', value: ticket ? `#${ticket.ticket_number} \`${ticket.id}\`` : 'Unknown', inline: true },
+      { name: 'Ticket', value: ticket ? `#${ticket.ticket_number || 'new'}` : 'Unknown', inline: true },
       { name: 'Type', value: data.type?.name || ticket?.ticket_type_name || 'Unknown', inline: true },
       { name: 'Channel', value: data.channel ? `<#${data.channel.id}>` : ticket?.channel_id ? `<#${ticket.channel_id}>` : 'Unknown', inline: true },
       { name: 'Opened by', value: ticket?.opener_id ? `<@${ticket.opener_id}>` : 'Unknown', inline: true },
@@ -902,7 +933,7 @@ async function fetchAllMessages(channel) {
 function renderTranscript(ticket, messages, closeReason = null) {
   const lines = [
     `Ticket Type: ${ticket.ticket_type_name}`,
-    `Ticket ID: ${ticket.id}`,
+    `Ticket: #${ticket.ticket_number || 'new'}`,
     `Ticket Number: ${ticket.ticket_number}`,
     `Opened By: ${ticket.opener_id}`,
     `Claimed By: ${ticket.claimed_by || 'Unclaimed'}`,
@@ -1130,7 +1161,7 @@ async function removeUserFromTicket({ guild, member, targetUserId, ticketId }) {
   return { ok: true, ticket, channel, type };
 }
 
-async function handleTicketInteraction(interaction) {
+async function dispatchTicketInteraction(interaction) {
   if (!interaction.guild || !interaction.customId?.startsWith('ticket:')) return false;
 
   const parts = interaction.customId.split(':');
@@ -1138,17 +1169,20 @@ async function handleTicketInteraction(interaction) {
 
   if (action === 'create_key') {
     const panelId = parts[2] && parts[2] !== 'default' ? parts[2] : null;
-    return createTicketModal(interaction, parts.slice(3).join(':'), panelId);
+    await createTicketModal(interaction, parts.slice(3).join(':'), panelId);
+    return true;
   }
 
   if (action === 'select_key') {
     const panelId = parts[2] && parts[2] !== 'default' ? parts[2] : null;
     const typeKey = interaction.values?.[0];
-    return createTicketModal(interaction, typeKey, panelId);
+    await createTicketModal(interaction, typeKey, panelId);
+    return true;
   }
 
   if (action === 'modal') {
-    return handleModalSubmit(interaction);
+    await handleModalSubmit(interaction);
+    return true;
   }
 
   if (action === 'claim') {
@@ -1159,11 +1193,12 @@ async function handleTicketInteraction(interaction) {
       ticketId: parts[2]
     });
 
-    return interaction.editReply(ephemeralEditPayload(
+    await interaction.editReply(ephemeralEditPayload(
       interaction,
       result.ok ? 'good' : 'bad',
       result.ok ? 'Ticket claimed.' : result.reason
     ));
+    return true;
   }
 
   if (action === 'close') {
@@ -1175,26 +1210,34 @@ async function handleTicketInteraction(interaction) {
       reason: 'Closed from ticket button.'
     });
 
-    return interaction.editReply(ephemeralEditPayload(
+    await interaction.editReply(ephemeralEditPayload(
       interaction,
       result.ok ? 'good' : 'bad',
       result.ok ? 'Ticket closed.' : result.reason
     ));
+    return true;
   }
 
   if (action === 'transcript') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const ticket = await ticketDb.getTicket(parts[2]);
-    if (!ticket) return interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'Ticket not found.'));
+    if (!ticket) {
+      await interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'Ticket not found.'));
+      return true;
+    }
 
     const type = await fetchTicketTypeForTicket(ticket);
     if (!canUseStaffAction(interaction.member, type, 'transcript_role_ids') && ticket.opener_id !== interaction.user.id) {
-      return interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'You do not have permission to generate this transcript.'));
+      await interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'You do not have permission to generate this transcript.'));
+      return true;
     }
 
     const channel = ticket.channel_id ? await interaction.guild.channels.fetch(ticket.channel_id).catch(() => null) : interaction.channel;
-    if (!channel) return interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'Ticket channel not found.'));
+    if (!channel) {
+      await interaction.editReply(ephemeralEditPayload(interaction, 'bad', 'Ticket channel not found.'));
+      return true;
+    }
 
     const transcript = await generateTranscript({
       guild: interaction.guild,
@@ -1203,12 +1246,36 @@ async function handleTicketInteraction(interaction) {
       actorId: interaction.user.id
     });
 
-    return interaction.followUp(ephemeralPayload(interaction, 'good', 'Transcript generated.', {
+    await interaction.followUp(ephemeralPayload(interaction, 'good', 'Transcript generated.', {
       files: [transcript.file]
     }));
+    return true;
   }
 
   return false;
+}
+
+async function handleTicketInteraction(interaction) {
+  if (!interaction.guild || !interaction.customId?.startsWith('ticket:')) return false;
+
+  try {
+    return await dispatchTicketInteraction(interaction);
+  } catch (error) {
+    await logEventError({
+      eventName: 'ticketInteraction',
+      interaction,
+      metadata: {
+        customId: interaction.customId,
+        componentType: interaction.componentType || null,
+        isButton: Boolean(interaction.isButton?.()),
+        isStringSelectMenu: Boolean(interaction.isStringSelectMenu?.()),
+        isModalSubmit: Boolean(interaction.isModalSubmit?.())
+      }
+    }, error).catch(() => null);
+
+    await sendTicketInteractionError(interaction);
+    return true;
+  }
 }
 
 module.exports = {

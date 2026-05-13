@@ -71,7 +71,7 @@ module.exports = {
     const reason = cleanReason(args.join(' '));
     await setAfk(message.member, 'guild', reason, wantsRename);
 
-    return respond.reply(message, 'good', `You're now afk with the status: \`${reason}\``, {
+    return respond.reply(message, 'up', `You're now afk with the status: \`${reason}\``, {
       mentionUser: false
     });
   }

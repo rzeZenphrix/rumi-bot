@@ -6,6 +6,7 @@ const {
   missingChannelManagePermission
 } = require('../../systems/moderation/channelLockManager');
 const { clean, ok, bad } = require('../../utils/moderationSimple');
+const respond = require('../../utils/respond');
 
 module.exports = {
   name: 'unlock',
@@ -23,7 +24,7 @@ module.exports = {
     const { channel, role, remaining } = await resolveChannelRoleTarget(message, args);
     const me = message.guild.members.me || await message.guild.members.fetchMe().catch(() => null);
     if (!channel?.permissionOverwrites?.edit) return bad(message, 'That channel cannot be unlocked.');
-    if (missingChannelManagePermission(me, channel)) return bad(message, `I cannot manage ${channel.name}.`);
+    if (missingChannelManagePermission(me, channel)) return bad(message, `I cannot manage **${channel.name}**.`);
 
     const reason = clean(remaining, `Unlocked by ${message.author.tag}`);
     await channel.permissionOverwrites.edit(role, TEXT_UNLOCK_PERMISSIONS, { reason });
@@ -36,6 +37,6 @@ module.exports = {
       fields: [{ name: 'Reason', value: reason }]
     }).catch(() => null);
 
-    return ok(message, `Unlocked ${channel.name}.`);
+    return respond.reply(message, 'unlock', `Unlocked **${channel.name}**.`);
   }
 };

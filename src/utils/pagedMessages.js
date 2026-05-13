@@ -15,13 +15,11 @@ function buildNavRow(session, pageIndex) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`${SESSION_PREFIX}:${session.id}:prev`)
-      .setLabel('')
       .setEmoji('<:prev:1503313064282296431>')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(pageIndex <= 0),
     new ButtonBuilder()
       .setCustomId(`${SESSION_PREFIX}:${session.id}:next`)
-      .setLabel('nxt')
       .setEmoji('<:next:1503313066144829440>')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(pageIndex >= session.pages.length - 1)

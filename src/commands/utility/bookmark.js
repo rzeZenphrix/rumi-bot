@@ -2,12 +2,18 @@ const respond = require('../../utils/respond');
 const db = require('../../services/database');
 const { extractUrl } = require('../../services/google/tenor');
 const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
+const { friendlyId, matchesFriendlyId } = require('../../utils/friendlyIds');
 
 function splitQueryAndPage(args) {
   const parts = [...args];
   const last = parts.at(-1);
   const page = /^\d+$/.test(String(last || '')) ? Math.max(1, Number(parts.pop())) : 1;
   return { page, query: parts.join(' ').trim() };
+}
+
+async function resolveBookmarkId(userId, input) {
+  const rows = await db.listBookmarks(userId, { limit: 100, offset: 0 }).catch(() => []);
+  return rows.find((row) => matchesFriendlyId(row.id, input, 'bm'))?.id || input;
 }
 
 module.exports = {
@@ -37,7 +43,7 @@ module.exports = {
 
       const lines = rows.map((row, index) => {
         const label = row.title || row.note || row.url || row.message_url;
-        return `**${index + 1 + (page - 1) * perPage}.** ${label}\n${row.url || row.message_url || ''}\n\`${row.id}\``;
+        return `**${index + 1 + (page - 1) * perPage}.** ${label}\n${row.url || row.message_url || ''}\n\`${friendlyId(row.id, 'bm')}\``;
       });
 
       return respond.reply(message, 'info', lines.length ? `Bookmarks page ${page}${query ? ` for \`${query}\`` : ''}:\n\n${lines.join('\n\n')}` : 'I could not find any bookmarks for you.');
@@ -46,7 +52,7 @@ module.exports = {
     if (sub === 'remove' || sub === 'delete') {
       const id = args.shift();
       if (!id) return respond.reply(message, 'info', 'Use `bookmark remove <id>`.');
-      const removed = await db.deleteBookmark(message.author.id, id).catch(() => null);
+      const removed = await db.deleteBookmark(message.author.id, await resolveBookmarkId(message.author.id, id)).catch(() => null);
       if (!removed) return respond.reply(message, 'bad', 'I could not remove that bookmark.');
       return respond.reply(message, 'good', 'I removed that bookmark.');
     }
@@ -55,9 +61,9 @@ module.exports = {
       const id = args.shift();
       const note = args.join(' ').trim();
       if (!id || !note) return respond.reply(message, 'info', 'Use `bookmark edit <id> <new note>`.');
-      const row = await db.updateBookmark(message.author.id, id, { note }).catch(() => null);
+      const row = await db.updateBookmark(message.author.id, await resolveBookmarkId(message.author.id, id), { note }).catch(() => null);
       if (!row) return respond.reply(message, 'bad', 'I could not update that bookmark.');
-      return respond.reply(message, 'good', `Updated bookmark \`${row.id}\`.`);
+      return respond.reply(message, 'good', `Updated bookmark \`${friendlyId(row.id, 'bm')}\`.`);
     }
 
     if (sub === 'add') {
@@ -108,7 +114,7 @@ module.exports = {
         return respond.reply(message, 'bad', 'I could not save that bookmark because the database is currently unreachable.');
       }
 
-      return respond.reply(message, 'good', `I saved that bookmark: \`${row.id}\`.`);
+      return respond.reply(message, 'good', `I saved that bookmark: \`${friendlyId(row.id, 'bm')}\`.`);
     }
 
     return respond.reply(message, 'info', 'Use `bookmark add`, `bookmark list`, `bookmark edit`, or `bookmark remove`.');

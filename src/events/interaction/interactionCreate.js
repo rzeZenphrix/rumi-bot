@@ -9,6 +9,7 @@ const { handleGiveawayButton } = require('../../systems/giveaways/manager');
 const respond = require('../../utils/respond');
 const { handleMusicInteraction } = require('../../systems/music/nodePlayer');
 const { handleUnbanRejoinButton } = require('../../systems/moderation/unbanRejoinButtons');
+const { logEventError } = require('../../utils/discordErrors');
 
 function ephemeralPayload(interaction, type, text) {
   const payload = respond.buildPayload(type, interaction.user, text, {
@@ -112,7 +113,7 @@ module.exports = {
     }
 
     if (await handleVerificationInteraction(interaction).catch((error) => {
-      console.error('[VERIFICATION INTERACTION ERROR]', error);
+      logEventError({ eventName: 'verificationInteraction', interaction }, error).catch(() => null);
       return false;
     })) {
       return;
@@ -126,7 +127,10 @@ module.exports = {
       return;
     }
 
-    if (await handleTicketInteraction(interaction).catch(() => false)) {
+    if (await handleTicketInteraction(interaction).catch((error) => {
+      logEventError({ eventName: 'ticketInteraction', interaction }, error).catch(() => null);
+      return false;
+    })) {
       return;
     }
 

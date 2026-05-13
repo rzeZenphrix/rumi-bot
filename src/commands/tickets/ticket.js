@@ -84,19 +84,17 @@ async function getConfiguredPanel(guildId) {
 }
 
 function isHexColor(value) {
-  return /^#?[0-9a-f]{6}$/i.test(String(value || '').trim());
+  return respond.safeEmbedColor(value, null) !== null;
 }
 
-function normalizeHexColor(value, fallback = '#2b1a1d') {
-  const clean = String(value || '').replace('#', '').trim();
-  if (!/^[0-9a-f]{6}$/i.test(clean)) return fallback;
-  return `#${clean.toLowerCase()}`;
+function normalizeHexColor(value, fallback = '#c8d8f2') {
+  const color = respond.safeEmbedColor(value, null);
+  if (color === null) return fallback;
+  return `#${color.toString(16).padStart(6, '0')}`;
 }
 
-function hexToNumber(value, fallback = 0x2b1a1d) {
-  const clean = String(value || '').replace('#', '').trim();
-  if (!/^[0-9a-f]{6}$/i.test(clean)) return fallback;
-  return Number.parseInt(clean, 16);
+function hexToNumber(value, fallback = respond.DEFAULT_EMBED_COLOR || 0xc8d8f2) {
+  return respond.safeEmbedColor(value, fallback);
 }
 
 async function getCurrentTicket(guildId, channelId) {

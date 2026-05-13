@@ -22,6 +22,6 @@ module.exports = {
       return respond.reply(message, 'bad', 'I could not find a compliment right now.');
     }
 
-    return respond.reply(message, 'good', prompt.text, { mentionUser: false });
+    return respond.reply(message, '', prompt.text, { mentionUser: false });
   }
 };

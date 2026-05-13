@@ -27,12 +27,12 @@ module.exports = {
 
     const clone = await message.channel.clone({ reason });
     await clone.setPosition(position).catch(() => null);
+
     await message.channel.delete(reason).catch(() => null);
 
-    return respond.send(clone, 'alert', message.author, 'first', {
-      plain: true,
-      useWebhook: false,
+    return clone.send({
+      content: 'first',
       allowedMentions: { parse: [] }
-    });
+    }).catch(() => null);
   }
 };

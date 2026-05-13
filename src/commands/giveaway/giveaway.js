@@ -20,6 +20,7 @@ const {
   normalizeColor,
   unix
 } = require('../../systems/giveaways/flags');
+const { friendlyId, matchesFriendlyId } = require('../../utils/friendlyIds');
 
 function cleanId(value) {
   return extractId(value) || String(value || '').replace(/[<#@!&>]/g, '');
@@ -43,6 +44,32 @@ async function resolveUserId(guild, input, fallbackId) {
   return member?.id || cleanId(input) || fallbackId;
 }
 
+async function resolveGuild(client, input, fallback = null) {
+  const id = cleanId(input);
+  if (!id) return fallback;
+  return client.guilds.cache.get(id) || await client.guilds.fetch(id).catch(() => null);
+}
+
+function parseStartPositionals(message, rawArgs) {
+  const { flags, positionals } = parseFlags(rawArgs);
+
+  if (flags.prize || flags.duration || flags.for) {
+    throw new Error('Use `giveaway start "Prize" 24h 1 #channel`. Prize and duration are no longer flags for start.');
+  }
+
+  const [prize, duration, winners, channel] = positionals;
+  if (!prize || !duration || !winners) {
+    throw new Error('Use `giveaway start "Prize" <duration> <winners> [#channel]`.');
+  }
+
+  return {
+    prize,
+    duration,
+    winners,
+    channel: channel || message.channel.id
+  };
+}
+
 async function buildGiveawayPayload(message, rawArgs, base = {}) {
   const { flags } = parseFlags(rawArgs);
   const config = await store.getConfig(message.guild.id);
@@ -61,7 +88,7 @@ async function buildGiveawayPayload(message, rawArgs, base = {}) {
   };
 
   const prize = String(merged.prize || '').trim();
-  if (!prize) throw new Error('Use `giveaway start --prize "Prize" --duration 24h --winners 1`.');
+  if (!prize) throw new Error('Giveaway prize is required.');
 
   const durationMs = parseDurationMs(merged.duration || merged.for);
   if (!durationMs) throw new Error('Giveaway duration must be at least 10 seconds, like `30m`, `24h`, or `7d`.');
@@ -125,7 +152,8 @@ function shortGiveawayLine(giveaway) {
 }
 
 async function handleStart(message, rawArgs) {
-  const payload = await buildGiveawayPayload(message, rawArgs);
+  const base = parseStartPositionals(message, rawArgs);
+  const payload = await buildGiveawayPayload(message, rawArgs, base);
   const giveaway = await store.createGiveaway(payload);
   if (giveaway.status === 'SCHEDULED') {
     await store.logEvent(giveaway.guild_id, giveaway.id, 'scheduled', message.author.id, { startsAt: giveaway.starts_at });
@@ -187,8 +215,8 @@ async function handleInfo(message, args) {
       { name: 'Host', value: `<@${giveaway.host_id}>`, inline: true },
       { name: 'Winners', value: String(giveaway.winners_count), inline: true },
       { name: 'Message', value: messageUrl(giveaway) || 'Not published yet', inline: false },
-      { name: 'Conditions', value: conditions.map(conditionLabel).join('\n').slice(0, 1024) || 'None', inline: false },
-      { name: 'Bonus rules', value: bonus.map((rule) => `\`${rule.id}\` ${rule.type} +${rule.entries}`).join('\n').slice(0, 1024) || 'None', inline: false }
+      { name: 'Conditions', value: conditions.map((row) => `\`${friendlyId(row.id, 'cond')}\` ${conditionLabel(row, { client: message.client, guild: message.guild })}`).join('\n').slice(0, 1024) || 'None', inline: false },
+      { name: 'Bonus rules', value: bonus.map((rule) => `\`${friendlyId(rule.id, 'bonus')}\` ${rule.type} +${rule.entries}`).join('\n').slice(0, 1024) || 'None', inline: false }
     ]
   });
 }
@@ -238,14 +266,17 @@ async function handleCondition(message, args) {
   const giveaway = await requireGiveaway(message, args.shift());
   if (action === 'list') {
     const rows = await store.listConditions(giveaway.id);
-    return respond.reply(message, 'list', rows.map((row) => `\`${row.id}\` ${conditionLabel(row)}`).join('\n') || 'No conditions configured.', { mentionUser: false });
+    return respond.reply(message, 'list', rows.map((row) => `\`${friendlyId(row.id, 'cond')}\` ${conditionLabel(row, { client: message.client, guild: message.guild })}`).join('\n') || 'No conditions configured.', { mentionUser: false });
   }
   if (action === 'clear') {
     await store.clearConditions(giveaway.id);
     return respond.reply(message, 'good', 'Cleared giveaway conditions.');
   }
   if (action === 'remove') {
-    await store.removeCondition(giveaway.id, args[0]);
+    const rows = await store.listConditions(giveaway.id);
+    const target = rows.find((row) => matchesFriendlyId(row.id, args[0], 'cond'));
+    if (!target) return respond.reply(message, 'bad', 'I could not find that condition.');
+    await store.removeCondition(giveaway.id, target.id);
     return respond.reply(message, 'good', 'Removed that condition.');
   }
   if (action === 'add') {
@@ -256,16 +287,25 @@ async function handleCondition(message, args) {
       return respond.reply(message, 'info', 'Use `giveaway condition add <id> --type messages --scope entry --min 100`.');
     }
     const role = flags.role ? await findRole(message.guild, flags.role).catch(() => null) : null;
-    const inviterId = flags.inviter ? await resolveUserId(message.guild, flags.inviter, message.author.id) : null;
+    const inviteCondition = ['inviter', 'joined_via_invite', 'invited_to_server', 'invited'].includes(type);
+    const server = inviteCondition || type === 'mutual_server'
+      ? await resolveGuild(message.client, flags.server, type === 'mutual_server' ? message.guild : null)
+      : null;
+    if ((inviteCondition || type === 'mutual_server') && !server) {
+      return respond.reply(message, 'info', 'Use `--server <serverId>` with that condition.');
+    }
+    const inviterInput = flags.inviter || flags.user || (inviteCondition ? 'me' : null);
+    const inviterId = inviterInput ? await resolveUserId(message.guild, inviterInput, message.author.id) : null;
     const row = await store.addCondition(giveaway, {
-      type,
+      type: type === 'invited' ? 'invited_to_server' : type,
       scope,
       min: flags.min || null,
       roleId: role?.id || cleanId(flags.role),
-      serverId: cleanId(flags.server),
+      serverId: server?.id || cleanId(flags.server),
+      serverName: server?.name || null,
       inviterId
     }, message.author.id);
-    return respond.reply(message, 'good', `Added condition \`${row.id}\`.`);
+    return respond.reply(message, 'good', `Added condition \`${friendlyId(row.id, 'cond')}\`.`);
   }
   return respond.reply(message, 'info', 'Use `giveaway condition <add|list|remove|clear>`.');
 }
@@ -275,10 +315,13 @@ async function handleBonus(message, args) {
   const giveaway = await requireGiveaway(message, args.shift());
   if (action === 'list') {
     const rows = await store.listBonusRules(giveaway.id);
-    return respond.reply(message, 'list', rows.map((row) => `\`${row.id}\` ${row.type} +${row.entries}`).join('\n') || 'No bonus rules configured.', { mentionUser: false });
+    return respond.reply(message, 'list', rows.map((row) => `\`${friendlyId(row.id, 'bonus')}\` ${row.type} +${row.entries}`).join('\n') || 'No bonus rules configured.', { mentionUser: false });
   }
   if (action === 'remove') {
-    await store.removeBonusRule(giveaway.id, args[0]);
+    const rows = await store.listBonusRules(giveaway.id);
+    const target = rows.find((row) => matchesFriendlyId(row.id, args[0], 'bonus'));
+    if (!target) return respond.reply(message, 'bad', 'I could not find that bonus rule.');
+    await store.removeBonusRule(giveaway.id, target.id);
     return respond.reply(message, 'good', 'Removed that bonus rule.');
   }
   if (action === 'add') {
@@ -302,7 +345,7 @@ async function handleBonus(message, args) {
       return respond.reply(message, 'info', 'Use `giveaway bonus add <id> --role @VIP --entries 2`.');
     }
     const row = await store.addBonusRule(giveaway, { type, ...config }, message.author.id);
-    return respond.reply(message, 'good', `Added bonus rule \`${row.id}\`.`);
+    return respond.reply(message, 'good', `Added bonus rule \`${friendlyId(row.id, 'bonus')}\`.`);
   }
   return respond.reply(message, 'info', 'Use `giveaway bonus <add|list|remove>`.');
 }
@@ -407,13 +450,13 @@ async function handleRecurring(message, args) {
 }
 
 const START_FLAGS = [
-  { name: '--prize <text>', description: 'Prize name (required).' },
-  { name: '--duration <time>', description: 'How long the giveaway runs (e.g., 2h, 7d).' },
-  { name: '--for <time>', description: 'Alias for --duration.' },
-  { name: '--winners <count>', description: 'Number of winners (1-25).' },
+  { name: 'prize', description: 'First positional argument. Quote it if it has spaces.' },
+  { name: 'duration', description: 'Second positional argument, e.g. 2h or 7d.' },
+  { name: 'winners', description: 'Third positional argument, 1-25.' },
+  { name: 'channel', description: 'Optional fourth positional argument. Defaults to the current channel.' },
+  { name: '--winners <count>', description: 'Optional override for number of winners.' },
   { name: '--button', description: 'Use button entry mode.' },
   { name: '--reaction [emoji]', description: 'Use reaction entry mode (default reaction emoji).' },
-  { name: '--channel <#channel>', description: 'Post in a specific channel.' },
   { name: '--host <user|me>', description: 'Override the host user.' },
   { name: '--title <text>', description: 'Embed title override.' },
   { name: '--description <text>', description: 'Embed description override.' },
@@ -430,23 +473,32 @@ const START_FLAGS = [
   { name: '--preset <name>', description: 'Load a preset before applying flags.' }
 ];
 
+const PAYLOAD_FLAGS = [
+  { name: '--prize <text>', description: 'Prize name (required).' },
+  { name: '--duration <time>', description: 'How long the giveaway runs (e.g., 2h, 7d).' },
+  { name: '--for <time>', description: 'Alias for --duration.' },
+  { name: '--channel <#channel>', description: 'Post in a specific channel.' },
+  ...START_FLAGS.filter((flag) => flag.name.startsWith('--'))
+];
+
 const SCHEDULE_FLAGS = [
   { name: '--starts-in <time>', description: 'Delay before starting (e.g., 2h).' },
-  ...START_FLAGS
+  ...PAYLOAD_FLAGS
 ];
 
 const RECURRING_FLAGS = [
   { name: '--every <time>', description: 'Interval between runs (e.g., 7d).' },
-  ...START_FLAGS
+  ...PAYLOAD_FLAGS
 ];
 
 const CONDITION_FLAGS = [
-  { name: '--type <type>', description: 'Condition type (messages, role, account_age, server_age, vc_time, boosting, verified, warnings, bans, mutual_server, inviter, not_role).' },
+  { name: '--type <type>', description: 'Condition type (messages, role, account_age, server_age, vc_time, boosting, verified, warnings, bans, mutual_server, invited_to_server, inviter, not_role).' },
   { name: '--scope <entry|winner|both>', description: 'Apply to entries, winners, or both.' },
   { name: '--min <number>', description: 'Minimum value for the type.' },
   { name: '--role <role>', description: 'Role to require or exclude.' },
-  { name: '--server <id>', description: 'Target server for mutual_server.' },
-  { name: '--inviter <user>', description: 'Required inviter for invite checks.' }
+  { name: '--server <id>', description: 'Target server for mutual/invite conditions.' },
+  { name: '--inviter <user|me>', description: 'Required inviter for invite checks.' },
+  { name: '--user <user|me>', description: 'Alias for --inviter.' }
 ];
 
 const BONUS_FLAGS = [
@@ -460,7 +512,7 @@ const BONUS_FLAGS = [
 const subcommands = [
   {
     name: 'start',
-    usage: 'giveaway start --prize "Discord Nitro" --duration 24h --winners 2 --button',
+    usage: 'giveaway start "Discord Nitro" 24h 2 [#channel]',
     flags: START_FLAGS
   },
   {
@@ -496,7 +548,7 @@ const subcommands = [
   {
     name: 'preset',
     usage: 'giveaway preset <create|edit|list|view|delete>',
-    flags: START_FLAGS
+    flags: PAYLOAD_FLAGS
   },
   {
     name: 'condition',
@@ -536,13 +588,14 @@ module.exports = {
   name: 'giveaway',
   aliases: ['giveaways', 'gway', 'gw'],
   category: 'community',
-  description: 'Run database-backed button or reaction giveaways with presets, conditions, bonus entries, and recovery.',
+  description: 'Run button or reaction giveaways with presets, conditions, bonus entries, and recovery.',
   usage: 'giveaway <start|end|cancel|reroll|list|info|entries|preset|condition|bonus|config|stats|schedule|recurring>',
   examples: [
-    'giveaway start --prize "Discord Nitro" --duration 24h --winners 2 --button',
-    'giveaway start --prize "Nitro" --duration 24h --reaction 🎉',
+    'giveaway start "Discord Nitro" 24h 2 #giveaways',
+    'giveaway start \"Nitro\" 24h 1 --reaction party',
     'giveaway preset create nitro --prize "Discord Nitro" --duration 24h --winners 1 --button',
     'giveaway condition add ab12cd34 --type messages --scope entry --min 100',
+    'giveaway condition add ab12cd34 --type invited_to_server --server 123456789012345678 --inviter me',
     'giveaway bonus add ab12cd34 --role @Booster --entries 2'
   ],
   permissions: [PermissionFlagsBits.ManageGuild],

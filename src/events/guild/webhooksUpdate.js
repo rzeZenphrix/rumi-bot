@@ -3,6 +3,7 @@ const { sendLog } = require('../../systems/logging/logDispatcher');
 const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
 const { resolveAnyExecutor } = require('../../systems/antinuke/auditWatcher');
 const { ACTIONS } = require('../../systems/antinuke/actionTypes');
+const { logEventError } = require('../../utils/discordErrors');
 
 module.exports = {
   name: Events.WebhooksUpdate || 'webhooksUpdate',
@@ -55,7 +56,7 @@ module.exports = {
         audit
       }
     }).catch((error) => {
-      console.error('[WEBHOOKS UPDATE ANTINUKE ERROR]', error);
+      logEventError({ eventName: 'webhooksUpdateAntinuke', guildId: channel.guild.id, channelId: channel.id }, error).catch(() => null);
     });
   }
 };

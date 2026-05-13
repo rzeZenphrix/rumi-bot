@@ -5,7 +5,7 @@ module.exports = {
   name: 'fact',
   aliases: ['randomfact'],
   category: 'fun',
-  description: 'I share a random fact.',
+  description: 'Get a random fact.',
   usage: 'fact',
   examples: ['fact'],
 
@@ -16,7 +16,6 @@ module.exports = {
     }
 
     return respond.reply(message, 'info', null, {
-      title: 'Fact',
       allowTitle: true,
       description: prompt.text,
       mentionUser: false

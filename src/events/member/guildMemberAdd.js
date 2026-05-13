@@ -8,6 +8,7 @@ const { sendJoinMessages } = require('../../systems/messages/guildMessages');
 const { recordJoin } = require('../../systems/analytics/serverAnalytics');
 const { handleAntiRaidJoin, resolveAndRecordInviteJoin } = require('../../systems/antiraid/guard');
 const { assignUnverifiedRole } = require('../../systems/verification/verificationManager');
+const { logEventError } = require('../../utils/discordErrors');
 
 module.exports = {
   name: Events.GuildMemberAdd || 'guildMemberAdd',
@@ -44,11 +45,11 @@ module.exports = {
     const invite = await resolveAndRecordInviteJoin(member).catch(() => undefined);
 
     await handleAntiRaidJoin(member, invite).catch((error) => {
-      console.error('[ANTI-RAID JOIN ERROR]', error);
+      logEventError({ eventName: 'antiRaidJoin', guildId: member.guild.id, userId: member.id }, error).catch(() => null);
     });
 
     await assignUnverifiedRole(member).catch((error) => {
-      console.error('[VERIFICATION ASSIGN UNVERIFIED ERROR]', error);
+      logEventError({ eventName: 'verificationAssignUnverified', guildId: member.guild.id, userId: member.id }, error).catch(() => null);
     });
 
     await maybeAutoJailMember(member, 'join').catch((error) => {

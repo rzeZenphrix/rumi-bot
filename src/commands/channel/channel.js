@@ -238,7 +238,7 @@ module.exports = {
       const type = TYPES[typeName];
 
       if (!type || !name) {
-        return respond.reply(message, 'info', '> **Create a channel.**\n \n```channel create <text|voice|category> <name> [--category <category>]```', {
+        return respond.reply(message, '', '> Create a channel.\n \n```Syntax: channel create <text|voice|category> <name> [--category <category>]\nExample: channel create text general-chat```\n-# Tip:\n> Use **--category** to place the new channel under an existing category.', {
           mentionUser: false
         });
       }
@@ -265,7 +265,7 @@ module.exports = {
       return respond.reply(
         message,
         'good',
-        `Created ${channelLabel(channel)}${parent ? ` in **${parent.name}**` : ''}.`,
+        `Created **${channelLabel(channel)}**${parent ? ` in **${parent.name}**` : ''}.`,
         { mentionUser: false }
       );
     }
@@ -274,7 +274,7 @@ module.exports = {
       const { channel } = await resolveChannelAndRest(message.guild, args, message.channel);
 
       if (!channel) {
-        return respond.reply(message, 'info', '> **Delete a channel.**\n \n```channel delete [channel]```', {
+        return respond.reply(message, '', '> Delete a channel.\n \n```Syntax: channel delete [channel]\nExample: channel delete #general-chat```', {
           mentionUser: false
         });
       }
@@ -288,7 +288,7 @@ module.exports = {
       await channel.delete(`Channel deleted by ${message.author.tag}`);
 
       if (!deletingCurrentChannel) {
-        return respond.reply(message, 'good', `Deleted ${name}.`, {
+        return respond.reply(message, 'bin', `Deleted **${name}**.`, {
           mentionUser: false
         });
       }
@@ -301,14 +301,14 @@ module.exports = {
       const name = clean(rest, '');
 
       if (!channel || !name) {
-        return respond.reply(message, 'info', '> **Rename a channel.**\n \n```channel rename [channel] <new name>```', {
+        return respond.reply(message, '', '> **Rename a channel.**\n \n```Syntax: channel rename [channel] <new name>\nExample: channel rename #general-chat main-chat```', {
           mentionUser: false
         });
       }
 
       await channel.setName(name.slice(0, 100), `Channel renamed by ${message.author.tag}`);
 
-      return respond.reply(message, 'good', `Renamed channel to ${channel.name}.`, {
+      return respond.reply(message, 'edit', `Renamed channel to **${channel.name}**.`, {
         mentionUser: false
       });
     }
@@ -318,7 +318,7 @@ module.exports = {
       const target = clean(rest, '');
 
       if (!channel || !target) {
-        return respond.reply(message, 'info', '> **Move a channel.**\n \n```channel move [channel] <position|category>```', {
+        return respond.reply(message, '', '> Move a channel to a position or category.\n \n```Syntax: channel move [channel] <position|category>\nExample: channel move #general-chat 5```', {
           mentionUser: false
         });
       }
@@ -330,7 +330,7 @@ module.exports = {
           reason: `Channel moved by ${message.author.tag}`
         });
 
-        return respond.reply(message, 'good', `Moved ${channel.name} to position ${position}.`, {
+        return respond.reply(message, 'good', `Moved **${channel.name}** to position **${position}**.`, {
           mentionUser: false
         });
       }
@@ -347,15 +347,13 @@ module.exports = {
         reason: `Channel moved by ${message.author.tag}`
       });
 
-      return respond.reply(message, 'good', `Moved ${channel.name} to ${category.name}.`, {
+      return respond.reply(message, 'good', `Moved **${channel.name}** to **${category.name}**.`, {
         mentionUser: false
       });
     }
 
     return respond.reply(
-      message,
-      'info',
-      '> **Create, delete, rename, or move channels.**\n \n```channel <create|delete|rename|move> ...```\nSubcommands:\n- create: ```channel create <text|voice|category> <name> [--category <category>]```\n- delete: ```channel delete [channel]```\n- rename: ```channel rename [channel] <new name>```\n- move: ```channel move [channel] <position|category>```',
+      message, '', '> Create, delete, rename, or move channels.\n \n```Syntax: channel <create|delete|rename|move>\nExamples:\nchannel create text announcements --category Info\nchannel delete #old-channel\nchannel rename #general main-chat\nchannel move #general 3```',
       { mentionUser: false }
     );
   }

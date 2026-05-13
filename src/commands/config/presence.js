@@ -66,7 +66,7 @@ module.exports = {
       const enabled = ['on', 'enable', 'enabled', 'true'].includes(mode);
 
       if (!['on', 'off', 'enable', 'disable', 'enabled', 'disabled', 'true', 'false'].includes(mode)) {
-        return respond.reply(message, 'info', 'Use `presence stats <on|off> [format]`.');
+        return respond.reply(message, '', '> presence stats <on|off> [format]');
       }
 
       await saveStatsPresence({ enabled, format });
@@ -87,15 +87,15 @@ module.exports = {
       const activityText = args.join(' ').trim();
 
       if (!status || !activityType || !activityText) {
-        return respond.reply(message, 'info', 'Use `presence set <online|idle|dnd|invisible> <watching|playing|listening|streaming|competing> <text>`.');
+        return respond.reply(message, '', '> Use `presence set <online|idle|dnd|invisible> <watching|playing|listening|streaming|competing> <text>`.');
       }
 
        if (normalizeStatus(status) !== status) {
-        return respond.reply(message, 'bad', 'Use a valid status: online, idle, dnd, or invisible.');
+        return respond.reply(message, '', '-# Use a valid status: online, idle, dnd, or invisible.');
       }
 
       if (!['playing', 'streaming', 'listening', 'watching', 'competing'].includes(activityType) || normalizeActivityType(activityType) === undefined) {
-        return respond.reply(message, 'bad', 'Use a valid activity type: watching, playing, listening, streaming, or competing.');
+        return respond.reply(message, '', '-# Use a valid activity type: watching, playing, listening, streaming, or competing.');
       }
 
       await saveStatsPresence({ enabled: false });
@@ -111,6 +111,6 @@ module.exports = {
       );
     }
 
-    return respond.reply(message, 'info', 'Use `presence view`, `presence set`, `presence stats`, or `presence off`.');
+    return respond.reply(message, '', '-# Use\n```presence view`, `presence set`, `presence stats`, or `presence off````');
   }
 };

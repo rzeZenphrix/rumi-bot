@@ -10,6 +10,7 @@ const { recordMessage } = require('../../systems/analytics/serverAnalytics');
 const { handleStickyMessages } = require('../../systems/messages/guildMessages');
 const { handleAntiRaidMessage } = require('../../systems/antiraid/guard');
 const { handleDisboardBumpMessage } = require('../../systems/bump/disboardBumpReminder');
+const { logEventError } = require('../../utils/discordErrors');
 
 module.exports = {
   name: Events.MessageCreate,
@@ -39,7 +40,7 @@ module.exports = {
     }
 
     await handleAntiRaidMessage(message).catch((error) => {
-      console.error('[ANTI-RAID MESSAGE ERROR]', error);
+      logEventError({ eventName: 'antiRaidMessage', message }, error).catch(() => null);
     });
 
     await handleLevelXp(client, message).catch(() => null);

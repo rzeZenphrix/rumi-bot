@@ -1,6 +1,7 @@
 const { PermissionFlagsBits, StickerFormatType } = require('discord.js');
 const respond = require('../../utils/respond');
 const { fetchBuffer, customEmojiInfos, customEmojiInfo, cleanName, firstAttachment } = require('../../utils/media');
+const { fetchEmojiCollection, fetchStickerCollection, hasExpressionCapacity, discordCreationErrorMessage } = require('../../utils/expressionCapacity');
 
 const MAX_EMOJI_BYTES = Number(process.env.EMOJI_MAX_BYTES || 256 * 1024);
 const MAX_STICKER_BYTES = Number(process.env.STICKER_MAX_BYTES || 512 * 1024);
@@ -44,12 +45,13 @@ async function stealEmojis(message, raw) {
 
   const added = [];
   const failed = [];
-  const existingNames = new Set(message.guild.emojis.cache.map((emoji) => emoji.name.toLowerCase()));
-  const maxSlots = Number(message.guild.maximumEmojis || 50);
-  const openSlots = Math.max(0, maxSlots - message.guild.emojis.cache.size);
+  const collection = await fetchEmojiCollection(message.guild).catch(() => message.guild.emojis.cache);
+  const existingNames = new Set(collection.map((emoji) => emoji.name.toLowerCase()));
+  const capacity = await hasExpressionCapacity(message.guild, 'emoji', { animated: Boolean(emojis[0]?.animated) });
+  const openSlots = capacity.remaining;
 
   if (!openSlots) {
-    return respond.reply(message, 'bad', 'I couldn’t add an emoji because this server has no emoji slots left.');
+    return respond.reply(message, 'bad', 'This server has no matching emoji slots left.');
   }
 
   for (const emoji of emojis.slice(0, Math.min(20, openSlots))) {
@@ -72,9 +74,11 @@ async function stealEmojis(message, raw) {
         name,
         reason: `Emoji stolen by ${message.author.tag}`
       })
-      .catch(() => null);
+      .catch((error) => ({ error }));
 
-    if (created) {
+    if (created?.error) {
+      failed.push(`${emoji.name} (${discordCreationErrorMessage(created.error)})`);
+    } else if (created) {
       added.push(`${created}`);
       existingNames.add(name.toLowerCase());
     } else {
@@ -114,12 +118,13 @@ async function stealSticker(message, args, replied) {
     );
   }
 
-  const maxSlots = Number(message.guild.maximumStickers || 5);
-  if (message.guild.stickers.cache.size >= maxSlots) {
-    return respond.reply(message, 'bad', 'I couldn’t add a sticker because this server has no sticker slots left.');
+  const capacity = await hasExpressionCapacity(message.guild, 'sticker');
+  if (!capacity.ok) {
+    return respond.reply(message, 'bad', 'This server has no sticker slots left.');
   }
 
-  if (message.guild.stickers.cache.some((sticker) => sticker.name.toLowerCase() === name.toLowerCase())) {
+  const stickers = await fetchStickerCollection(message.guild).catch(() => message.guild.stickers.cache);
+  if (stickers.some((sticker) => sticker.name.toLowerCase() === name.toLowerCase())) {
     return respond.reply(message, 'bad', `I couldn’t add that sticker because **${name}** already exists.`);
   }
 
@@ -134,10 +139,14 @@ async function stealSticker(message, args, replied) {
     tags: '🙂',
     description: `Stolen by ${message.author.tag}`,
     reason: `Sticker stolen by ${message.author.tag}`
-  }).catch(() => null);
+  }).catch((error) => ({ error }));
+
+  if (sticker?.error) {
+    return respond.reply(message, 'bad', discordCreationErrorMessage(sticker.error, 'I could not add that sticker.'));
+  }
 
   if (!sticker) {
-    return respond.reply(message, 'bad', 'I couldn’t add that sticker. Discord may have rejected the image format or size.');
+    return respond.reply(message, 'bad', 'I could not add that sticker. Discord may have rejected the image format or size.');
   }
 
   return respond.reply(message, 'good', `I stole sticker **${sticker.name}**.`);

@@ -2,6 +2,7 @@ const { askGemini } = require('../../services/google/gemini');
 const { buildRagPrompt } = require('../../systems/ai/rag');
 const { getPremiumAccessForMessage } = require('../../systems/monetization/access');
 const { consumeDailyUsage } = require('../../systems/monetization/usage');
+const { logCommandError } = require('../../utils/discordErrors');
 
 const userCooldowns = new Map();
 const lastPrompts = new Map();
@@ -203,7 +204,10 @@ module.exports = {
     await message.channel.sendTyping().catch(() => null);
 
     try {
-      const rag = await buildRagPrompt(client, prompt);
+      const rag = await buildRagPrompt(client, prompt, {
+        guildId: message.guild?.id || null,
+        userId: message.author.id
+      });
       const answer = await askGemini(rag.prompt, {
         maxOutputTokens: Number(process.env.ASK_MAX_OUTPUT_TOKENS || 280),
         temperature: 0.65
@@ -211,7 +215,7 @@ module.exports = {
 
       await sendPlain(message.channel, squeezeResponse(answer?.text || ''));
     } catch (error) {
-      console.error('[ask command]', error);
+      await logCommandError({ source: 'prefix', commandName: 'ask', message }, error);
 
       return sendPlain(
         message.channel,

@@ -4,7 +4,8 @@ const {
   Client,
   GatewayIntentBits,
   Partials,
-  Collection
+  Collection,
+  DefaultWebSocketManagerOptions,
 } = require('discord.js');
 
 const logger = require('../systems/logging/logger');
@@ -15,6 +16,7 @@ const { applySavedPresence } = require('../systems/customization/presenceManager
 const { isCustomizationEnabled, hydrateCustomizationStore } = require('../systems/customization/customizationStore');
 const { applyGuildProfilesOnStartup } = require('../systems/customization/profileManager');
 const { classifyNetworkError } = require('../systems/network/errorClassifier');
+const { logEventError } = require('../utils/discordErrors');
 const { syncDashboardBackend } = require('../services/dashboardSync');
 const { startAutoJailScheduler } = require('../systems/autojail/engine');
 const database = require('../services/database');
@@ -41,6 +43,8 @@ function requiredToken() {
   return process.env.DISCORD_TOKEN || process.env.BOT_TOKEN || '';
 }
 
+DefaultWebSocketManagerOptions.identifyProperties.browser = 'Discord iOS';
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -54,6 +58,11 @@ const client = new Client({
     GatewayIntentBits.GuildExpressions,
     GatewayIntentBits.MessageContent
   ],
+  ws: { 
+    properties: { 
+      $browser: 'Discord iOS' 
+    }
+  },
   partials: [
     Partials.Channel,
     Partials.GuildMember,
@@ -61,7 +70,6 @@ const client = new Client({
     Partials.Reaction,
     Partials.User
   ],
-  ws: { properties: { $browser: 'Discord iOS' } }
 });
 
 client.commands = new Collection();
@@ -169,11 +177,12 @@ client.once('clientReady', async () => {
 });
 
 process.on('unhandledRejection', (error) => {
-  logger.error({ error }, 'Unhandled rejection');
+  logEventError({ eventName: 'unhandledRejection', source: 'process' }, error).catch(() => null);
 });
 
 process.on('uncaughtException', (error) => {
-  logger.fatal({ error }, 'Uncaught exception');
+  logEventError({ eventName: 'uncaughtException', source: 'process' }, error).catch(() => null);
+  if (process.env.DEBUG_ERRORS === 'true') logger.fatal({ error }, 'Uncaught exception');
   if (process.env.EXIT_ON_UNCAUGHT_EXCEPTION !== 'false') process.exit(1);
 });
 

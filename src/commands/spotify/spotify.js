@@ -50,7 +50,7 @@ const LEGACY_HINTS = {
 
 module.exports = {
   name: 'spotify',
-  aliases: ['spoti'],
+  aliases: [],
   category: 'music',
   description: 'Link Spotify to Rumi and use rich profile, playback history, library, and search commands.',
   usage: 'spotify <link|unlink|status|profile|nowplaying|recent|toptracks|topartists|playlists|track|artist|album|compare> ...',
@@ -75,7 +75,7 @@ module.exports = {
     const subcommand = String(args.shift() || '').trim().toLowerCase();
 
     if (!subcommand) {
-      return respond.reply(context.message, 'info', 'Use `spotify link`, `spotify profile`, `spotify nowplaying`, `spotify toptracks`, or `spotify track <query>`.', {
+      return respond.reply(context.message, '> Spotif actions available:\n \n```spotify link, spotify profile, spotify nowplaying, spotify toptracks, or spotify track <query>\nExample: spotify track grr saraunh0ly```', {
         mentionUser: false
       });
     }

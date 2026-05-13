@@ -106,9 +106,11 @@ const subcommands = [
   ['system preview', 'messages system preview <ban|kick|warn|timeout|roleadd|roleremove|staffstrip|rolereceive|rolelost>', 'Preview a system message payload.']
 ].map(([name, usage, description]) => ({
   name,
-  usage,
+  usage: usage.replace(/^messages\s+/, ''),
   description,
-  examples: [usage]
+  examples: [usage.replace(/^messages\s+/, '')],
+  category: 'messages',
+  parent: 'messages'
 }));
 
 const SYSTEM_TEMPLATE_MAP = {
@@ -128,22 +130,50 @@ const SYSTEM_TEMPLATE_MAP = {
   'role-lost': 'roleLost'
 };
 
-module.exports = {
+const command = {
   name: 'messages',
   aliases: ['msgcfg', 'guildmessages'],
-  category: 'config',
+  category: 'messages',
   guildOnly: true,
   permissions: [PermissionFlagsBits.ManageGuild],
   description: 'Configure welcome, leave, join DM, ping, sticky, and invoke messages.',
-  usage: 'messages <welcome|leave|dm|ping|sticky|system> ...',
-  examples: ['messages welcome enable', 'messages sticky create Read the rules before chatting.', 'messages system ban message {user.mention} was banned for {punishment.reason}'],
+  usage: 'welcome message <text>',
+  examples: ['welcome enable', 'sticky create Read the rules before chatting.', 'systemmessage ban message {user.mention} was banned for {punishment.reason}'],
   subcommands,
+  hidden: true,
+  catalog: {
+    hidden: true,
+    visible: false
+  },
   typing: true,
 
+  async executeArea({ message, args, area }) {
+    return this.runArea({ message, args: [area, ...args] });
+  },
+
   async execute({ message, args }) {
+    const area = String(args[0] || '').toLowerCase();
+    const moved = {
+      welcome: 'welcome',
+      leave: 'goodbye',
+      goodbye: 'goodbye',
+      dm: 'dmmessage',
+      ping: 'pingmessage',
+      sticky: 'sticky',
+      system: 'systemmessage'
+    };
+
+    if (moved[area]) {
+      return respond.reply(message, 'info', `This command has moved. Use \`${moved[area]} ${args.slice(1).join(' ') || 'help'}\` instead.`);
+    }
+
+    return respond.reply(message, 'info', 'This command has moved. Use `welcome`, `goodbye`, `dmmessage`, `pingmessage`, `sticky`, or `systemmessage` instead.');
+  },
+
+  async runArea({ message, args }) {
     const area = String(args.shift() || '').toLowerCase();
     if (!area) {
-      return respond.reply(message, 'info', 'Use `messages <welcome|leave|dm|ping|sticky|system> ...`.');
+      return respond.reply(message, 'info', 'Use `welcome`, `goodbye`, `dmmessage`, `pingmessage`, `sticky`, or `systemmessage`.');
     }
 
     const config = await getGuildMessagesConfig(message.guild.id);
@@ -425,6 +455,8 @@ module.exports = {
       return respond.reply(message, 'info', 'Use `messages system <enable|disable|channel|dm toggle|ban message|kick message|warn message|timeout message|role add message|role remove message|staff strip message|role receive message|role lost message|preview>`.');
     }
 
-    return respond.reply(message, 'info', 'Use `messages <welcome|leave|dm|ping|sticky|system> ...`.');
+    return respond.reply(message, 'info', 'Use `welcome`, `goodbye`, `dmmessage`, `pingmessage`, `sticky`, or `systemmessage`.');
   }
 };
+
+module.exports = command;

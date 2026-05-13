@@ -2,10 +2,12 @@ const { PermissionFlagsBits } = require('discord.js');
 const respond = require('../../utils/respond');
 const { fetchBuffer, firstAttachment, cleanName } = require('../../utils/media');
 const { extractId } = require('../../utils/resolveUser');
+const { fetchStickerCollection, hasExpressionCapacity, discordCreationErrorMessage } = require('../../utils/expressionCapacity');
 
 const MAX_STICKER_BYTES = Number(process.env.STICKER_MAX_BYTES || 512 * 1024);
 
 async function resolveSticker(guild, input) {
+  await fetchStickerCollection(guild).catch(() => null);
   const id = extractId(input);
   if (id) return guild.stickers.fetch(id).catch(() => null);
   const q = String(input || '').toLowerCase();
@@ -33,12 +35,13 @@ module.exports = {
       const url = args.shift() || attachment?.url;
       if (!name || !url) return respond.reply(message, 'info', 'Usage: `sticker add <name> <attachment|url>`.');
 
-      const maxSlots = Number(message.guild.maximumStickers || 5);
-      if (message.guild.stickers.cache.size >= maxSlots) {
-        return respond.reply(message, 'bad', 'I couldn’t add a sticker because this server has no sticker slots left.');
+      const capacity = await hasExpressionCapacity(message.guild, 'sticker');
+      if (!capacity.ok) {
+        return respond.reply(message, 'bad', 'This server has no sticker slots left.');
       }
 
-      if (message.guild.stickers.cache.some((sticker) => sticker.name.toLowerCase() === name.toLowerCase())) {
+      const stickers = await fetchStickerCollection(message.guild).catch(() => message.guild.stickers.cache);
+      if (stickers.some((sticker) => sticker.name.toLowerCase() === name.toLowerCase())) {
         return respond.reply(message, 'bad', `I couldn’t add that sticker because **${name}** already exists.`);
       }
 
@@ -51,8 +54,9 @@ module.exports = {
         tags: name,
         description: `Added by ${message.author.tag}`,
         reason: `Sticker added by ${message.author.tag}`
-      }).catch(() => null);
-      if (!sticker) return respond.reply(message, 'bad', 'I couldn’t add that sticker. Discord may have rejected the image format or size.');
+      }).catch((error) => ({ error }));
+      if (sticker?.error) return respond.reply(message, 'bad', discordCreationErrorMessage(sticker.error, 'I could not add that sticker.'));
+      if (!sticker) return respond.reply(message, 'bad', 'I could not add that sticker. Discord may have rejected the image format or size.');
       return respond.reply(message, 'good', `Added sticker **${sticker.name}**.`);
     }
 
@@ -73,9 +77,9 @@ module.exports = {
     }
 
     if (sub === 'list') {
-      await message.guild.stickers.fetch().catch(() => null);
-      const lines = message.guild.stickers.cache.map((s) => `**${s.name}** — \`${s.id}\``).join('\n');
-      return respond.reply(message, 'info', null, { title: `Stickers (${message.guild.stickers.cache.size})`, description: lines.slice(0, 4096) || 'No stickers found.' });
+      const collection = await fetchStickerCollection(message.guild).catch(() => message.guild.stickers.cache);
+      const lines = collection.map((s) => `**${s.name}** - \`${s.id}\``).join('\n');
+      return respond.reply(message, 'info', null, { title: `Stickers (${collection.size})`, description: lines.slice(0, 4096) || 'No stickers found.' });
     }
 
     return respond.reply(message, 'info', 'Usage: `sticker <rename|add|list|remove> ...`.');

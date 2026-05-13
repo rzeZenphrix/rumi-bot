@@ -1,4 +1,4 @@
-const ce = require('../misc/ce');
+const ce = require('./createembed');
 const respond = require('../../utils/respond');
 
 module.exports = {

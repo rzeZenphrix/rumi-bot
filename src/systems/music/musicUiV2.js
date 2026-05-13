@@ -423,7 +423,6 @@ function lastfmNowPlaying({ username, track, client = null }) {
     thumbnail: track.image,
     metaLine: track.nowPlaying ? 'currently scrobbling' : 'recent scrobble',
     footer: meta([
-      track.album,
       track.userplaycount ? `${track.userplaycount} track scrobbles` : null,
       track.playedAt
     ])

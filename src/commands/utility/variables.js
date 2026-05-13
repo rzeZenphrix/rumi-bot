@@ -46,13 +46,13 @@ function navRow(ownerId, query, page, pageCount) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`vars:${ownerId}:${Math.max(1, page - 1)}:${encoded}`)
-      .setLabel('Back')
-      .setStyle(ButtonStyle.Primary)
+      .setEmoji(emojis.prev)
+      .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId(`vars:${ownerId}:${Math.min(pageCount, page + 1)}:${encoded}`)
-      .setLabel('Next')
-      .setStyle(ButtonStyle.Primary)
+      .setEmoji(emojis.next)
+      .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= pageCount)
   );
 }

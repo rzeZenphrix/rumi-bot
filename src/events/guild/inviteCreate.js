@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
 const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
 const { handleInviteCreate } = require('../../systems/antiraid/inviteTracker');
+const { logEventError } = require('../../utils/discordErrors');
 
 module.exports = {
   name: Events.InviteCreate || 'inviteCreate',
@@ -21,7 +22,7 @@ module.exports = {
     }).catch(() => null);
 
     await handleInviteCreate(invite).catch((error) => {
-      console.error('[ANTI-RAID INVITE CREATE CACHE ERROR]', error);
+      logEventError({ eventName: 'inviteCreateCache', guildId: invite.guild.id, channelId: invite.channel?.id }, error).catch(() => null);
     });
 
     await handleAntiNukeEvent({

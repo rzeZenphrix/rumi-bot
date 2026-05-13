@@ -11,14 +11,36 @@ function asSeconds(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function conditionLabel(row) {
+function friendlyServerLabel(config = {}, context = {}) {
+  const serverId = String(config.serverId || config.server_id || '').trim();
+  if (!serverId) return 'this server';
+  const guild = context.client?.guilds?.cache?.get(serverId) || context.guild?.client?.guilds?.cache?.get(serverId) || null;
+  const name = config.serverName || config.server_name || guild?.name || 'server';
+  return `${name} (${serverId})`;
+}
+
+function conditionLabel(row, context = {}) {
   const config = row.config_json || {};
-  const pieces = [`${row.type}:${row.scope}`];
-  if (config.min) pieces.push(`min ${config.min}`);
-  if (config.roleId) pieces.push(`<@&${config.roleId}>`);
-  if (config.serverId) pieces.push(`server ${config.serverId}`);
-  if (config.inviterId) pieces.push(`inviter <@${config.inviterId}>`);
-  return pieces.join(' ');
+  const type = String(row.type || config.type || '').toLowerCase();
+  const scope = row.scope && row.scope !== 'entry' ? ` (${row.scope})` : '';
+
+  if (type === 'messages') return `Must have at least ${config.min || 0} messages${scope}.`;
+  if (type === 'vc_time' || type === 'vc-time') return `Must have at least ${config.min || 0} voice time${scope}.`;
+  if (type === 'server_age') return `Must have been in this server for ${config.min || 0}${scope}.`;
+  if (type === 'account_age') return `Discord account must be at least ${config.min || 0} old${scope}.`;
+  if (type === 'role') return `Must have role: <@&${config.roleId}>${scope}.`;
+  if (type === 'not_role') return `Must not have role: <@&${config.roleId}>${scope}.`;
+  if (type === 'boosting') return `Must be boosting this server${scope}.`;
+  if (type === 'verified') return `Must have completed membership screening${scope}.`;
+  if (type === 'warnings') return `Must have no more than ${config.min || 0} warning(s)${scope}.`;
+  if (type === 'bans') return `Must have no more than ${config.min || 0} ban record(s)${scope}.`;
+  if (type === 'mutual_server') return `Must be in server: ${friendlyServerLabel(config, context)}${scope}.`;
+  if (type === 'inviter' || type === 'joined_via_invite' || type === 'invited_to_server') {
+    const inviter = config.inviterId ? `<@${config.inviterId}>` : 'the required inviter';
+    return `Must have joined server: ${friendlyServerLabel(config, context)} through an invite from ${inviter}${scope}.`;
+  }
+
+  return `Must pass ${type || 'this'} condition${scope}.`;
 }
 
 async function countWarnings(guildId, userId) {
@@ -56,7 +78,7 @@ async function hasInviteJoin(client, member, config) {
 
   const row = await store.getInviteJoin(serverId, member.id).catch(() => null);
   if (!row) return { ok: false, reason: 'Invite history is not available for your join yet.' };
-  if (!inviterId || row.inviter_user_id !== inviterId) {
+  if (inviterId && row.inviter_user_id !== inviterId) {
     return { ok: false, reason: 'You did not join through the required inviter.' };
   }
   return { ok: true };
@@ -134,7 +156,7 @@ async function checkCondition(row, { client, guild, member, scope }) {
     return targetMember ? { ok: true } : { ok: false, reason: 'Requires membership in the configured mutual server.' };
   }
 
-  if (type === 'inviter' || type === 'joined_via_invite') {
+  if (type === 'inviter' || type === 'joined_via_invite' || type === 'invited_to_server') {
     return hasInviteJoin(client, member, config);
   }
 

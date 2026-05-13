@@ -9,16 +9,16 @@ function takeName(args) {
 }
 
 module.exports = {
-  name: 'ce',
-  aliases: ['customembed'],
+  name: 'createembed',
+  aliases: ['customembed', 'ce'],
   category: 'utility',
   description: 'I send, preview, validate, save, and load Bleed/Greed-style embed scripts.',
-  usage: 'ce [save|load|list|delete|preview|validate] ...',
+  usage: 'createembed [save|load|list|delete|preview|validate] ...',
   examples: [
-    'ce {embed}$v{description: hello}$v{color: #000000}',
-    'ce preview {embed}$v{description: hello}',
-    'ce save boost {embed}$v{description: thanks {user.mention}}',
-    'ce load boost'
+    'createembed {embed}$v{description: hello}$v{color: #000000}',
+    'createembed preview {embed}$v{description: hello}',
+    'createembed save boost {embed}$v{description: thanks {user.mention}}',
+    'createembed load boost'
   ],
   subcommands: [
     { name: 'send', description: 'Send an embed script directly.', usage: '<script>' },
@@ -47,14 +47,14 @@ module.exports = {
 
     if (sub === 'delete' || sub === 'remove') {
       const name = takeName(args);
-      if (!name) return respond.reply(message, 'info', 'Use `ce delete <name>`.');
+      if (!name) return respond.reply(message, 'info', 'Use `createembed delete <name>`.');
       await db.deleteEmbedTemplate(message.guild.id, name);
       return respond.reply(message, 'good', `I deleted the \`${name}\` embed template.`);
     }
 
     if (sub === 'load') {
       const name = takeName(args);
-      if (!name) return respond.reply(message, 'info', 'Use `ce load <name>`.');
+      if (!name) return respond.reply(message, 'info', 'Use `createembed load <name>`.');
       const row = await db.getEmbedTemplate(message.guild.id, name);
       if (!row) return respond.reply(message, 'bad', `I could not find an embed template named \`${name}\`.`);
       const payload = parseEmbedScript(row.script, { message });
@@ -64,7 +64,7 @@ module.exports = {
     if (sub === 'save') {
       const name = takeName(args);
       const script = args.join(' ').trim();
-      if (!name || !script) return respond.reply(message, 'info', 'Use `ce save <name> <script>`.');
+      if (!name || !script) return respond.reply(message, 'info', 'Use `createembed save <name> <script>`.');
       const validation = validateEmbedScript(script, { message });
       if (!validation.ok) return respond.reply(message, 'bad', `I could not save it: ${validation.errors.join(', ')}`);
       await db.saveEmbedTemplate(message.guild.id, name, script, message.author.id);
@@ -72,7 +72,7 @@ module.exports = {
     }
 
     const script = args.join(' ').trim();
-    if (!script) return respond.reply(message, 'info', 'Send an embed script after `ce`.');
+    if (!script) return respond.reply(message, 'info', 'Send an embed script after `createembed`.');
 
     if (sub === 'validate') {
       const validation = validateEmbedScript(script, { message });

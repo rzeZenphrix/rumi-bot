@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const { sendLog } = require('../../systems/logging/logDispatcher');
 const { handleAntiNukeEvent } = require('../../systems/antinuke/guard');
 const { handleInviteDelete } = require('../../systems/antiraid/inviteTracker');
+const { logEventError } = require('../../utils/discordErrors');
 
 module.exports = {
   name: Events.InviteDelete || 'inviteDelete',
@@ -20,7 +21,7 @@ module.exports = {
     }).catch(() => null);
 
     await handleInviteDelete(invite).catch((error) => {
-      console.error('[ANTI-RAID INVITE DELETE CACHE ERROR]', error);
+      logEventError({ eventName: 'inviteDeleteCache', guildId: invite.guild.id, channelId: invite.channel?.id }, error).catch(() => null);
     });
 
     await handleAntiNukeEvent({

@@ -8,6 +8,8 @@ const FEATURE_TABLES = Object.freeze({
   economy: ['economy_accounts', 'economy_transactions', 'economy_guild_settings'],
   social: ['social_profiles'],
   fun: ['fun_prompt_entries'],
+  observability: ['bot_error_logs'],
+  ai: ['rag_documents', 'rag_chunks'],
   automation: [
     'booster_role_settings',
     'booster_owned_roles',

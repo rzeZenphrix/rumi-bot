@@ -45,26 +45,26 @@ module.exports = {
         return respond.reply(message, 'bad', 'I could not load that setting right now.');
       }
 
-      return respond.reply(message, 'info', `Command-not-found replies are currently **${config.enabled ? 'on' : 'off'}**.`, {
+      return respond.reply(message, '', `Command-not-found replies are currently **${config.enabled ? 'on' : 'off'}**.`, {
         mentionUser: false
       });
     }
 
     if (action === 'on' || action === 'enable') {
       await setCommandNotFoundEnabled(message.guild.id, true);
-      return respond.reply(message, 'good', 'I will answer unknown prefix commands again.', {
+      return respond.reply(message, 'good', '**I will answer unknown prefix commands again.**', {
         mentionUser: false
       });
     }
 
     if (action === 'off' || action === 'disable') {
       await setCommandNotFoundEnabled(message.guild.id, false);
-      return respond.reply(message, 'good', 'I will stay quiet on unknown prefix commands in this server.', {
+      return respond.reply(message, 'good', '**I will stay quiet on unknown prefix commands in this server.**', {
         mentionUser: false
       });
     }
 
-    return respond.reply(message, 'info', 'Use `commandnotfound <status|on|off>`.', {
+    return respond.reply(message, '', '> Stop the bot from responding to unknown commands\n```commandnotfound <status|on|off>```', {
       mentionUser: false
     });
   }

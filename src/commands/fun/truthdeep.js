@@ -9,6 +9,7 @@ module.exports = {
   usage: 'truthdeep',
   examples: ['truthdeep'],
   guildOnly: true,
+  nsfw: true,
 
   async execute({ message }) {
     const prompt = await getPrompt('truthdeep', {

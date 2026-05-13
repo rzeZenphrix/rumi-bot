@@ -1,9 +1,10 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { ok } = require('../../utils/moderationSimple');
+const respond = require('../../utils/respond');
 
 module.exports = {
   name: 'unhide',
-  aliases: ['showchannel'],
+  aliases: ['showchannel', 'show'],
   category: 'moderation',
   description: 'Restore everyone channel visibility.',
   usage: 'unhide',
@@ -19,6 +20,6 @@ module.exports = {
       { reason: `Unhidden by ${message.author.tag}` }
     );
 
-    return ok(message, 'Visibility restored.');
+    return respond.reply(message, 'up', 'Visibility restored.');
   }
 };

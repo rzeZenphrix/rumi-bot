@@ -6,6 +6,6 @@ module.exports = {
   description: "Show a simple achievement.",
   usage: 'achievement',
   async execute({ message }) {
-    return respond.reply(message, 'info', "Achievement unlocked: Still here.", { mentionUser: false });
+    return respond.reply(message, 'info', "This feature is not ready.", { mentionUser: false });
   }
 };
