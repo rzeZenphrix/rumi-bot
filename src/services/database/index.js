@@ -3,6 +3,7 @@ const { DEFAULT_THRESHOLDS } = require('../../utils/constants');
 const logger = require('../../systems/logging/logger');
 const breaker = require('../../systems/database/circuitBreaker');
 const { classifyNetworkError, redactSecretText } = require('../../systems/network/errorClassifier');
+const redisCache = require('../cache/redisCache');
 
 const url = process.env.SUPABASE_URL || '';
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
@@ -793,18 +794,25 @@ async function dbHealthCheck() {
 }
 
 async function getKv(namespace, key, fallback = null) {
-  try {
-    const { data } = await executeQuery(
-      supabase
-        .from('bot_kv')
-        .select('value')
-        .eq('namespace', namespace)
-        .eq('key', key)
-        .maybeSingle(),
-      'getKv'
-    );
+  const cacheKey = `kv:${namespace}:${key}`;
+  const ttl = Number(process.env.REDIS_KV_TTL_SECONDS || 60);
 
-    return data ? data.value : fallback;
+  try {
+    const value = await redisCache.remember(cacheKey, ttl, async () => {
+      const { data } = await executeQuery(
+        supabase
+          .from('bot_kv')
+          .select('value')
+          .eq('namespace', namespace)
+          .eq('key', key)
+          .maybeSingle(),
+        'getKv'
+      );
+
+      return data ? data.value : fallback;
+    });
+
+    return value;
   } catch (error) {
     logger.warn(
       { namespace, key, message: redactSecretText(error?.message || error) },
@@ -815,7 +823,7 @@ async function getKv(namespace, key, fallback = null) {
 }
 
 async function setKv(namespace, key, value) {
-  return requireData(
+  const row = await requireData(
     supabase
       .from('bot_kv')
       .upsert(
@@ -831,10 +839,13 @@ async function setKv(namespace, key, value) {
       .single(),
     'setKv'
   );
+  await redisCache.set(`kv:${namespace}:${key}`, value, Number(process.env.REDIS_KV_TTL_SECONDS || 60)).catch(() => null);
+  await redisCache.delPattern(`kv-list:${namespace}:*`).catch(() => null);
+  return row;
 }
 
 async function deleteKv(namespace, key) {
-  return requireData(
+  const rows = await requireData(
     supabase
       .from('bot_kv')
       .delete()
@@ -843,17 +854,25 @@ async function deleteKv(namespace, key) {
       .select(),
     'deleteKv'
   );
+  await redisCache.del(`kv:${namespace}:${key}`).catch(() => null);
+  await redisCache.delPattern(`kv-list:${namespace}:*`).catch(() => null);
+  return rows;
 }
 
 async function listKv(namespace, limit = 100) {
-  return requireData(
-    supabase
-      .from('bot_kv')
-      .select('*')
-      .eq('namespace', namespace)
-      .order('updated_at', { ascending: false })
-      .limit(limit),
-    'listKv'
+  const safeLimit = Math.max(1, Math.min(500, Number(limit || 100)));
+  return redisCache.remember(
+    `kv-list:${namespace}:${safeLimit}`,
+    Number(process.env.REDIS_LIST_TTL_SECONDS || 30),
+    () => requireData(
+      supabase
+        .from('bot_kv')
+        .select('*')
+        .eq('namespace', namespace)
+        .order('updated_at', { ascending: false })
+        .limit(safeLimit),
+      'listKv'
+    )
   );
 }
 

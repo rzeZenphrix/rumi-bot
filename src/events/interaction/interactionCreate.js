@@ -22,6 +22,29 @@ function ephemeralPayload(interaction, type, text) {
   return payload;
 }
 
+async function safeInteractionError(interaction, eventName, error) {
+  await logEventError({ eventName, interaction }, error).catch(() => null);
+
+  if (!interaction.isRepliable?.()) return false;
+
+  const payload = ephemeralPayload(interaction, 'bad', 'That interaction could not be processed. Please try the command again.');
+
+  if (interaction.deferred) {
+    const editPayload = { ...payload };
+    delete editPayload.flags;
+    await interaction.editReply(editPayload).catch(() => null);
+    return true;
+  }
+
+  if (interaction.replied) {
+    await interaction.followUp(payload).catch(() => null);
+    return true;
+  }
+
+  await interaction.reply(payload).catch(() => null);
+  return true;
+}
+
 function getCommand(client, ...names) {
   for (const name of names) {
     const command = client.commands?.get?.(name);
@@ -46,7 +69,11 @@ async function runCommandInteractionHandler(client, interaction, commandNames, h
 
     if (typeof handler !== 'function') continue;
 
-    const handled = await handler.call(command, interaction).catch(() => false);
+    const handled = await handler.call(command, interaction).catch((error) => safeInteractionError(
+      interaction,
+      `${command.name}:${handlerName}`,
+      error
+    ));
     if (handled) return true;
   }
 
@@ -107,7 +134,7 @@ module.exports = {
     }
 
     if (interaction.isButton?.() && interaction.customId?.startsWith('giveaway:')) {
-      if (await handleGiveawayButton(interaction).catch(() => false)) {
+      if (await handleGiveawayButton(interaction).catch((error) => safeInteractionError(interaction, 'giveawayInteraction', error))) {
         return;
       }
     }
@@ -119,11 +146,11 @@ module.exports = {
       return;
     }
 
-    if (await handleDisboardBumpInteraction(client, interaction).catch(() => false)) {
+    if (await handleDisboardBumpInteraction(client, interaction).catch((error) => safeInteractionError(interaction, 'disboardBumpInteraction', error))) {
       return;
     }
 
-    if (await handleMusicInteraction(interaction).catch(() => false)) {
+    if (await handleMusicInteraction(interaction).catch((error) => safeInteractionError(interaction, 'musicInteraction', error))) {
       return;
     }
 
@@ -134,7 +161,7 @@ module.exports = {
       return;
     }
 
-    if (await handlePagedMessageInteraction(interaction).catch(() => false)) {
+    if (await handlePagedMessageInteraction(interaction).catch((error) => safeInteractionError(interaction, 'pagedMessageInteraction', error))) {
       return;
     }
 
@@ -190,6 +217,16 @@ module.exports = {
         ['handleServerPremiumInteraction']
       )
     ) {
+      return;
+    }
+
+    if (
+      interaction.isMessageComponent?.() ||
+      interaction.isModalSubmit?.()
+    ) {
+      await interaction.reply(
+        ephemeralPayload(interaction, 'info', 'This control is no longer active. Run the command again to get fresh buttons.')
+      ).catch(() => null);
       return;
     }
 

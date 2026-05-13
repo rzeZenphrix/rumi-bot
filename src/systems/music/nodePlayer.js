@@ -116,7 +116,7 @@ async function getMusicSettings(guildId) {
   return db.getKv(`music:settings:${guildId}`, 'config', {
     stay247: false,
     defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 65),
-    searchEngine: String(process.env.MUSIC_SEARCH_ENGINE || 'soundcloud').toLowerCase()
+    searchEngine: String(process.env.MUSIC_SEARCH_ENGINE || 'auto').toLowerCase()
   });
 }
 
@@ -124,7 +124,7 @@ async function saveMusicSettings(guildId, patch = {}) {
   const current = await getMusicSettings(guildId).catch(() => ({
     stay247: false,
     defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 65),
-    searchEngine: 'soundcloud'
+    searchEngine: 'auto'
   }));
 
   const next = {
@@ -670,7 +670,7 @@ function searchEngineName(engine) {
 function preferredSearchEngine(query, settings = {}) {
   if (isUrl(query)) return QueryType.AUTO;
 
-  const engine = String(settings.searchEngine || process.env.MUSIC_SEARCH_ENGINE || 'soundcloud')
+  const engine = String(settings.searchEngine || process.env.MUSIC_SEARCH_ENGINE || 'auto')
     .trim()
     .toLowerCase();
 
@@ -679,6 +679,38 @@ function preferredSearchEngine(query, settings = {}) {
   if (engine === 'auto') return QueryType.AUTO_SEARCH;
 
   return QueryType.SOUNDCLOUD_SEARCH || QueryType.AUTO_SEARCH;
+}
+
+function searchEngineFromName(name) {
+  const engine = String(name || '').trim().toLowerCase();
+  if (engine === 'spotify') return QueryType.SPOTIFY_SEARCH || QueryType.AUTO_SEARCH;
+  if (engine === 'apple' || engine === 'applemusic') return QueryType.APPLE_MUSIC_SEARCH || QueryType.AUTO_SEARCH;
+  if (engine === 'youtube' || engine === 'yt') return QueryType.YOUTUBE_SEARCH || QueryType.AUTO_SEARCH;
+  if (engine === 'soundcloud' || engine === 'sc') return QueryType.SOUNDCLOUD_SEARCH || QueryType.AUTO_SEARCH;
+  return QueryType.AUTO_SEARCH;
+}
+
+function searchEnginesForQuery(query, settings = {}) {
+  if (isUrl(query)) return [QueryType.AUTO];
+
+  const configured = String(process.env.MUSIC_SEARCH_ENGINES || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const names = configured.length
+    ? configured
+    : [settings.searchEngine || process.env.MUSIC_SEARCH_ENGINE || 'auto', 'youtube', 'soundcloud', 'spotify'];
+  const engines = [];
+
+  for (const name of names) {
+    const lower = String(name || '').toLowerCase();
+    if ((lower === 'youtube' || lower === 'yt') && envFlag('MUSIC_BLOCK_YOUTUBE', false)) continue;
+    const engine = searchEngineFromName(name);
+    if (!engines.includes(engine)) engines.push(engine);
+  }
+
+  if (!engines.length) engines.push(preferredSearchEngine(query, settings));
+  return engines;
 }
 
 function normalizeFilterName(mode) {
@@ -1019,9 +1051,15 @@ async function initializeMusicPlayer(client) {
   player = new Player(client, {
     ytdlOptions: {
       quality: 'highestaudio',
-      highWaterMark: 1 << 27,
+      filter: 'audioonly',
+      highWaterMark: 1 << 28,
       dlChunkSize: 0,
-      liveBuffer: 4900
+      liveBuffer: Number(process.env.MUSIC_YTDL_LIVE_BUFFER_MS || 20000),
+      requestOptions: {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 RumiBot/1.0'
+        }
+      }
     },
     skipFFmpeg: false,
     connectionTimeout: Number(process.env.MUSIC_VOICE_CONNECTION_TIMEOUT_MS || 45000)
@@ -1037,7 +1075,7 @@ async function initializeMusicPlayer(client) {
     {
       extractors: player.extractors?.size || 0,
       ffmpegPath: ffmpegPath || null,
-      searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'
+      searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'auto'
     },
     'Node music backend is ready'
   );
@@ -1045,7 +1083,7 @@ async function initializeMusicPlayer(client) {
   workerLog('Node music backend ready', {
     extractors: player.extractors?.size || 0,
     ffmpegPath: ffmpegPath || null,
-    searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'
+    searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'auto'
   });
 
   return player;
@@ -1058,7 +1096,7 @@ async function health() {
     ready: Boolean(player),
     extractors: player?.extractors?.size || 0,
     ffmpegPath: ffmpegPath || null,
-    searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'soundcloud',
+    searchEngine: process.env.MUSIC_SEARCH_ENGINE || 'auto',
     filtersDisabled: envFlag('MUSIC_DISABLE_FILTERS', true)
   };
 }
@@ -1119,7 +1157,7 @@ async function play(guildId, options = {}) {
     );
   }
 
-  if (isYoutubeUrl(query) && envFlag('MUSIC_BLOCK_YOUTUBE', true)) {
+  if (isYoutubeUrl(query) && envFlag('MUSIC_BLOCK_YOUTUBE', false)) {
     return fail(
       'YouTube playback is disabled.',
       'Use SoundCloud search, Spotify/Apple links, Vimeo links, or direct audio links.',
@@ -1137,10 +1175,11 @@ async function play(guildId, options = {}) {
     const settings = await getMusicSettings(guildId).catch(() => ({
       stay247: false,
       defaultVolume: Number(process.env.MUSIC_DEFAULT_VOLUME || 65),
-      searchEngine: 'soundcloud'
+      searchEngine: 'auto'
     }));
 
     const searchEngine = preferredSearchEngine(query, settings);
+    const searchEngines = searchEnginesForQuery(query, settings);
     const stay247 = Boolean(settings.stay247);
 
     logger.info(
@@ -1149,6 +1188,7 @@ async function play(guildId, options = {}) {
         query,
         voiceChannelId: context.voiceChannel.id,
         searchEngine,
+        searchEngines,
         ffmpegPath: ffmpegPath || null
       },
       'Music play request starting'
@@ -1158,7 +1198,8 @@ async function play(guildId, options = {}) {
       guildId,
       query,
       voiceChannelId: context.voiceChannel.id,
-      searchEngine
+      searchEngine,
+      searchEngines
     });
 
     let playable = null;
@@ -1172,43 +1213,55 @@ async function play(guildId, options = {}) {
         await clearFailedQueue(playable.queue);
       }
     } else {
-      const searchResult = await player.search(query, {
-        requestedBy: context.user || undefined,
-        searchEngine
-      });
-    
-      const candidates = (searchResult?.tracks || []).slice(0, 6);
-    
-      if (!candidates.length) {
+      let foundAny = false;
+
+      for (const engine of searchEngines) {
+        const searchResult = await player.search(query, {
+          requestedBy: context.user || undefined,
+          searchEngine: engine
+        }).catch((error) => {
+          lastFailure = { ok: false, reason: error?.message || `Search failed for ${engine}.` };
+          return null;
+        });
+
+        const candidates = (searchResult?.tracks || []).slice(0, Number(process.env.MUSIC_PLAYBACK_CANDIDATES || 8));
+        if (candidates.length) foundAny = true;
+
+        for (const candidate of candidates) {
+          workerLog('trying playback candidate', {
+            guildId,
+            searchEngine: engine,
+            title: trackTitle(candidate),
+            source: trackSource(candidate),
+            url: trackUrl(candidate)
+          });
+
+          playable = await playCandidate(context, candidate, engine, settings, stay247);
+
+          workerLog('candidate playback result', {
+            guildId,
+            searchEngine: engine,
+            title: trackTitle(candidate),
+            ok: playable.ok,
+            playback: playable.playback
+          });
+
+          if (playable.ok) break;
+
+          lastFailure = playable.playback;
+          await clearFailedQueue(playable.queue);
+          await sleep(500);
+        }
+
+        if (playable?.ok) break;
+      }
+
+      if (!foundAny) {
         return fail(
           'No music results found.',
-          'Try a more specific song, artist, or SoundCloud link.',
+          'Try a more specific song, artist, Spotify link, SoundCloud link, YouTube link, or direct audio link.',
           'music_no_results'
         );
-      }
-    
-      for (const candidate of candidates) {
-        workerLog('trying playback candidate', {
-          guildId,
-          title: trackTitle(candidate),
-          source: trackSource(candidate),
-          url: trackUrl(candidate)
-        });
-      
-        playable = await playCandidate(context, candidate, searchEngine, settings, stay247);
-      
-        workerLog('candidate playback result', {
-          guildId,
-          title: trackTitle(candidate),
-          ok: playable.ok,
-          playback: playable.playback
-        });
-      
-        if (playable.ok) break;
-      
-        lastFailure = playable.playback;
-        await clearFailedQueue(playable.queue);
-        await sleep(500);
       }
     }
     
@@ -1382,7 +1435,7 @@ async function search(guildId, options = {}) {
     );
   }
 
-  if (isYoutubeUrl(query) && envFlag('MUSIC_BLOCK_YOUTUBE', true)) {
+  if (isYoutubeUrl(query) && envFlag('MUSIC_BLOCK_YOUTUBE', false)) {
     return fail(
       'YouTube search is disabled.',
       'Search by song name or use SoundCloud/Spotify/Apple links.',
@@ -1393,7 +1446,7 @@ async function search(guildId, options = {}) {
   const context = await resolveContext(guildId, options);
   if (context.error) return context.error;
 
-  const settings = await getMusicSettings(guildId).catch(() => ({ searchEngine: 'soundcloud' }));
+  const settings = await getMusicSettings(guildId).catch(() => ({ searchEngine: 'auto' }));
 
   try {
     const result = await player.search(query, {
@@ -1924,7 +1977,7 @@ async function runCommand(guildId, command, options = {}) {
     return panel('Node music backend is running.', {
       footer: toFooter([
         `${player.extractors?.size || 0} sources`,
-        `Search ${process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'}`,
+        `Search ${process.env.MUSIC_SEARCH_ENGINE || 'auto'}`,
         ffmpegPath ? 'FFmpeg ready' : 'FFmpeg unknown',
         stats?.eventLoopLag ? `${Math.round(stats.eventLoopLag)}ms lag` : null
       ].filter(Boolean).join(' · ')),
@@ -1933,7 +1986,7 @@ async function runCommand(guildId, command, options = {}) {
         detail: 'Node music backend is running.',
         status: [
           `${player.extractors?.size || 0} sources`,
-          `Search ${process.env.MUSIC_SEARCH_ENGINE || 'soundcloud'}`,
+          `Search ${process.env.MUSIC_SEARCH_ENGINE || 'auto'}`,
           ffmpegPath ? 'FFmpeg ready' : 'FFmpeg unknown',
           stats?.eventLoopLag ? `${Math.round(stats.eventLoopLag)}ms lag` : null
         ].filter(Boolean).join(' · '),
