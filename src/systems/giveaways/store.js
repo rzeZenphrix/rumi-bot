@@ -9,6 +9,29 @@ function makePublicId() {
   return crypto.randomBytes(4).toString('hex');
 }
 
+function displayGiveawayId(giveaway = {}) {
+  if (Number.isFinite(Number(giveaway.guild_number)) && Number(giveaway.guild_number) > 0) {
+    return `#${Number(giveaway.guild_number)}`;
+  }
+  if (giveaway.message_id) return giveaway.message_id;
+  return giveaway.public_id || 'pending';
+}
+
+function extractMessageId(value = '') {
+  const text = String(value || '').trim();
+  const link = text.match(/discord(?:app)?\.com\/channels\/\d{17,20}\/\d{17,20}\/(\d{17,20})/i);
+  if (link) return link[1];
+  const raw = text.replace(/[<#>]/g, '');
+  return /^\d{17,20}$/.test(raw) ? raw : null;
+}
+
+function extractGuildNumber(value = '') {
+  const text = String(value || '').trim().replace(/^#/, '');
+  if (!/^\d{1,9}$/.test(text)) return null;
+  const number = Number(text);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
 async function single(query, context) {
   const { data } = await db.runQuery(query.maybeSingle(), context);
   return data || null;
@@ -17,6 +40,20 @@ async function single(query, context) {
 async function many(query, context) {
   const { data } = await db.runQuery(query, context);
   return data || [];
+}
+
+async function nextGuildNumber(guildId) {
+  const { data } = await db.runQuery(
+    db.supabase
+      .from('giveaways')
+      .select('guild_number')
+      .eq('guild_id', guildId)
+      .not('guild_number', 'is', null)
+      .order('guild_number', { ascending: false })
+      .limit(1),
+    'giveaways:nextGuildNumber'
+  );
+  return Number(data?.[0]?.guild_number || 0) + 1;
 }
 
 async function getConfig(guildId) {
@@ -51,18 +88,21 @@ async function updateConfig(guildId, patch) {
 
 async function createGiveaway(payload) {
   let publicId = payload.public_id || makePublicId();
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+  let guildNumber = payload.guild_number || await nextGuildNumber(payload.guild_id).catch(() => null);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     const insert = {
       ...payload,
-      public_id: publicId
+      public_id: publicId,
+      guild_number: guildNumber
     };
 
     const { data, error } = await db.supabase.from('giveaways').insert(insert).select().single();
     if (!error) return data;
     if (String(error?.code) !== '23505') throw error;
+    guildNumber = Number(guildNumber || 0) + 1;
     publicId = makePublicId();
   }
-  throw new Error('Could not allocate a unique giveaway id.');
+  throw new Error('Could not allocate a unique giveaway number.');
 }
 
 async function updateGiveaway(id, patch) {
@@ -77,6 +117,21 @@ async function getGiveaway(guildId, idOrPublicId) {
   const key = String(idOrPublicId || '').trim();
   if (!key) return null;
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key);
+  const messageId = extractMessageId(key);
+  const guildNumber = extractGuildNumber(key);
+
+  if (messageId) {
+    const byMessage = await getGiveawayByMessage(guildId, messageId);
+    if (byMessage) return byMessage;
+  }
+
+  if (guildNumber) {
+    const byNumber = await single(
+      db.supabase.from('giveaways').select('*').eq('guild_id', guildId).eq('guild_number', guildNumber),
+      'giveaways:getGiveawayByNumber'
+    );
+    if (byNumber) return byNumber;
+  }
 
   let query = db.supabase.from('giveaways').select('*').eq('guild_id', guildId);
   query = isUuid ? query.eq('id', key) : query.eq('public_id', key);
@@ -427,6 +482,7 @@ async function getInviteJoin(guildId, memberId) {
 }
 
 module.exports = {
+  displayGiveawayId,
   getConfig,
   updateConfig,
   createGiveaway,

@@ -877,7 +877,7 @@ async function listKv(namespace, limit = 100) {
 }
 
 async function upsertFakePermission(row) {
-  return requireData(
+  const saved = await requireData(
     supabase
       .from('fake_permissions')
       .upsert(row, { onConflict: 'guild_id,subject_type,subject_id,permission' })
@@ -885,10 +885,13 @@ async function upsertFakePermission(row) {
       .single(),
     'upsertFakePermission'
   );
+  fakePermissionCache.clear();
+  await redisCache.delPattern?.(`fake-permission:*:${row.guild_id}:*`).catch(() => null);
+  return saved;
 }
 
 async function removeFakePermission(guildId, subjectType, subjectId, permission) {
-  return requireData(
+  const removed = await requireData(
     supabase
       .from('fake_permissions')
       .delete()
@@ -899,6 +902,9 @@ async function removeFakePermission(guildId, subjectType, subjectId, permission)
       .select(),
     'removeFakePermission'
   );
+  fakePermissionCache.clear();
+  await redisCache.delPattern?.(`fake-permission:*:${guildId}:*`).catch(() => null);
+  return removed;
 }
 
 async function listFakePermissions(guildId) {
@@ -1621,7 +1627,7 @@ async function listStaffRoles(guildId) {
 }
 
 async function clearRoleFakePermissions(guildId, roleId) {
-  return requireData(
+  const removed = await requireData(
     supabase
       .from('fake_permissions')
       .delete()
@@ -1631,6 +1637,9 @@ async function clearRoleFakePermissions(guildId, roleId) {
       .select(),
     'clearRoleFakePermissions'
   );
+  fakePermissionCache.clear();
+  await redisCache.delPattern?.(`fake-permission:*:${guildId}:*`).catch(() => null);
+  return removed;
 }
 
 async function createAntiNukeIncident(row) {

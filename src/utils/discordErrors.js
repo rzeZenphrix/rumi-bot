@@ -76,17 +76,17 @@ function classifyDiscordError(error) {
     status === 404 ||
     EXPECTED_MESSAGE_PATTERNS.some((pattern) => pattern.test(message));
 
-  let userMessage = 'Something went wrong. I logged it for review.';
+  let userMessage = error?.userMessage || 'Something went wrong. I logged it for review.';
 
-  if (code === 50013 || /missing permissions/i.test(message)) {
+  if (!error?.userMessage && (code === 50013 || /missing permissions/i.test(message))) {
     userMessage = 'I am missing the Discord permissions needed to do that.';
-  } else if (code === 50001 || /missing access/i.test(message)) {
+  } else if (!error?.userMessage && (code === 50001 || /missing access/i.test(message))) {
     userMessage = 'I no longer have access to that Discord resource.';
-  } else if (code === 10008 || /unknown message/i.test(message)) {
+  } else if (!error?.userMessage && (code === 10008 || /unknown message/i.test(message))) {
     userMessage = 'That message no longer exists.';
-  } else if (code === 10003 || /unknown channel/i.test(message)) {
+  } else if (!error?.userMessage && (code === 10003 || /unknown channel/i.test(message))) {
     userMessage = 'That channel no longer exists or I cannot access it.';
-  } else if (/external (emojis|stickers)/i.test(message)) {
+  } else if (!error?.userMessage && /external (emojis|stickers)/i.test(message)) {
     userMessage = 'I cannot use that external emoji or sticker here.';
   }
 

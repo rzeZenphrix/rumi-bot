@@ -26,7 +26,7 @@ module.exports = {
   aliases: ['econ'],
   category: 'economy',
   description: 'Configure server economy settings and inspect economy logs.',
-  usage: 'economy <config|tax|inflation|reset|audit|logs> ...',
+  usage: 'economy <config|tax|inflation|rob|casino|reset|audit|logs> ...',
   examples: ['economy config', 'economy config currency petals', 'economy tax set 5', 'economy logs'],
   subcommands: [
     {
@@ -48,6 +48,18 @@ module.exports = {
       description: 'Toggle inflation control and set its rate.',
       usage: 'economy inflation control <on|off> [rate]',
       examples: ['economy inflation control on 2', 'economy inflation control off']
+    },
+    {
+      name: 'rob',
+      description: 'Configure robbing for the server economy.',
+      usage: 'economy rob <on|off|cooldown|limits|chance|fine|protection> ...',
+      examples: ['economy rob on', 'economy rob limits 25 500', 'economy rob chance 35']
+    },
+    {
+      name: 'casino',
+      description: 'Configure casino games for the server economy.',
+      usage: 'economy casino <on|off|cooldown|limits> ...',
+      examples: ['economy casino on', 'economy casino limits 10 1000']
     },
     {
       name: 'reset',
@@ -96,6 +108,8 @@ module.exports = {
             `**Cooldowns:** daily \`${settings.dailyCooldownSeconds}s\` | weekly \`${settings.weeklyCooldownSeconds}s\` | work \`${settings.workCooldownSeconds}s\``,
             `**Tax rate:** \`${settings.taxRate}%\``,
             `**Inflation:** \`${settings.inflationEnabled ? `on (${settings.inflationRate}%)` : 'off'}\``,
+            `**Rob:** \`${settings.robEnabled ? 'on' : 'off'}\` | ${formatCoins(settings.robMinAmount)}-${formatCoins(settings.robMaxAmount)} | ${settings.robSuccessRate}% chance`,
+            `**Casino:** \`${settings.casinoEnabled ? 'on' : 'off'}\` | ${formatCoins(settings.casinoMinBet)}-${formatCoins(settings.casinoMaxBet)}`,
             `**Voter boost:** \`${settings.voterBoostEnabled ? 'on' : 'off'}\`${access?.economy?.canDisableVoterBoost ? '' : ' (free servers cannot disable it)'}`,
             `**Disabled commands:** ${settings.disabledCommands.length ? settings.disabledCommands.join(', ') : 'none'}`
           ].join('\n')
@@ -213,6 +227,97 @@ module.exports = {
       }
 
       return respond.reply(message, 'info', 'Use `economy config`, `currency`, `icon`, `daily`, `weekly`, `work`, `cooldown`, `voteboost`, `disable`, `enable`, or `reset`.');
+    }
+
+    if (root === 'rob') {
+      const sub = String(args.shift() || 'view').toLowerCase();
+      const settings = await getEconomySettings(message.guild.id);
+      if (sub === 'view') {
+        return respond.reply(message, 'info', `Rob is **${settings.robEnabled ? 'on' : 'off'}**. Range: **${formatCoins(settings.robMinAmount)}-${formatCoins(settings.robMaxAmount)}**, chance **${settings.robSuccessRate}%**, cooldown **${settings.robCooldownSeconds}s**.`);
+      }
+      if (['on', 'off', 'enable', 'disable'].includes(sub)) {
+        const enabled = ['on', 'enable'].includes(sub);
+        await updateEconomySettings(message.guild.id, (current) => {
+          current.robEnabled = enabled;
+          return current;
+        });
+        await logEconomyAudit(message.guild.id, { actorId: message.author.id, action: 'rob.enabled', value: enabled });
+        return respond.reply(message, 'good', `Robbing is now **${enabled ? 'on' : 'off'}**.`);
+      }
+      if (sub === 'cooldown') {
+        const seconds = parseAmount(args[0]);
+        if (!Number.isFinite(seconds) || seconds < 10) return respond.reply(message, 'info', 'Use `economy rob cooldown <seconds>`.');
+        await updateEconomySettings(message.guild.id, (current) => {
+          current.robCooldownSeconds = seconds;
+          return current;
+        });
+        await logEconomyAudit(message.guild.id, { actorId: message.author.id, action: 'rob.cooldown', value: seconds });
+        return respond.reply(message, 'good', `Rob cooldown is now **${seconds}s**.`);
+      }
+      if (sub === 'limits') {
+        const min = parseAmount(args[0]);
+        const max = parseAmount(args[1]);
+        if (!Number.isFinite(min) || !Number.isFinite(max) || min < 1 || max < min) return respond.reply(message, 'info', 'Use `economy rob limits <min> <max>`.');
+        await updateEconomySettings(message.guild.id, (current) => {
+          current.robMinAmount = min;
+          current.robMaxAmount = max;
+          return current;
+        });
+        await logEconomyAudit(message.guild.id, { actorId: message.author.id, action: 'rob.limits', value: `${min}-${max}` });
+        return respond.reply(message, 'good', `Rob limits are now **${formatCoins(min)}-${formatCoins(max)}**.`);
+      }
+      if (sub === 'chance' || sub === 'fine' || sub === 'protection') {
+        const value = Number(args[0]);
+        if (!Number.isFinite(value)) return respond.reply(message, 'info', `Use \`economy rob ${sub} <number>\`.`);
+        const field = sub === 'chance' ? 'robSuccessRate' : sub === 'fine' ? 'robFineRate' : 'robProtectionHours';
+        await updateEconomySettings(message.guild.id, (current) => {
+          current[field] = value;
+          return current;
+        });
+        await logEconomyAudit(message.guild.id, { actorId: message.author.id, action: `rob.${sub}`, value });
+        return respond.reply(message, 'good', `Updated rob ${sub} to **${value}**.`);
+      }
+      return respond.reply(message, 'info', 'Use `economy rob <on|off|cooldown|limits|chance|fine|protection>`.');
+    }
+
+    if (root === 'casino') {
+      const sub = String(args.shift() || 'view').toLowerCase();
+      const settings = await getEconomySettings(message.guild.id);
+      if (sub === 'view') {
+        return respond.reply(message, 'info', `Casino is **${settings.casinoEnabled ? 'on' : 'off'}**. Bet range: **${formatCoins(settings.casinoMinBet)}-${formatCoins(settings.casinoMaxBet)}**, cooldown **${settings.casinoCooldownSeconds}s**.`);
+      }
+      if (['on', 'off', 'enable', 'disable'].includes(sub)) {
+        const enabled = ['on', 'enable'].includes(sub);
+        await updateEconomySettings(message.guild.id, (current) => {
+          current.casinoEnabled = enabled;
+          return current;
+        });
+        await logEconomyAudit(message.guild.id, { actorId: message.author.id, action: 'casino.enabled', value: enabled });
+        return respond.reply(message, 'good', `Casino games are now **${enabled ? 'on' : 'off'}**.`);
+      }
+      if (sub === 'cooldown') {
+        const seconds = parseAmount(args[0]);
+        if (!Number.isFinite(seconds) || seconds < 3) return respond.reply(message, 'info', 'Use `economy casino cooldown <seconds>`.');
+        await updateEconomySettings(message.guild.id, (current) => {
+          current.casinoCooldownSeconds = seconds;
+          return current;
+        });
+        await logEconomyAudit(message.guild.id, { actorId: message.author.id, action: 'casino.cooldown', value: seconds });
+        return respond.reply(message, 'good', `Casino cooldown is now **${seconds}s**.`);
+      }
+      if (sub === 'limits') {
+        const min = parseAmount(args[0]);
+        const max = parseAmount(args[1]);
+        if (!Number.isFinite(min) || !Number.isFinite(max) || min < 1 || max < min) return respond.reply(message, 'info', 'Use `economy casino limits <min> <max>`.');
+        await updateEconomySettings(message.guild.id, (current) => {
+          current.casinoMinBet = min;
+          current.casinoMaxBet = max;
+          return current;
+        });
+        await logEconomyAudit(message.guild.id, { actorId: message.author.id, action: 'casino.limits', value: `${min}-${max}` });
+        return respond.reply(message, 'good', `Casino bet limits are now **${formatCoins(min)}-${formatCoins(max)}**.`);
+      }
+      return respond.reply(message, 'info', 'Use `economy casino <on|off|cooldown|limits>`.');
     }
 
     if (root === 'tax') {

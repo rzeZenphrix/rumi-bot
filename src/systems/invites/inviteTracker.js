@@ -4,6 +4,7 @@ const db = require('../../services/database');
 const logger = require('../logging/logger');
 
 const cache = new Map();
+const inviteAccessWarnings = new Set();
 
 function q(value) {
   if (value === null || value === undefined) return 'NULL';
@@ -37,6 +38,26 @@ function canFetchInvites(guild) {
   const me = guild.members.me;
   if (!me) return false;
   return me.permissions.has(PermissionFlagsBits.ManageGuild);
+}
+
+function noteInviteAccessIssue(guild, error = null) {
+  const guildId = guild?.id;
+  if (!guildId) return;
+
+  if (inviteAccessWarnings.has(guildId) && process.env.DEBUG_ERRORS !== 'true') return;
+  inviteAccessWarnings.add(guildId);
+
+  if (process.env.DEBUG_ERRORS === 'true') {
+    logger.warn(
+      {
+        guildId,
+        code: error?.code || error?.rawError?.code || null,
+        status: error?.status || null,
+        message: error?.message || 'Missing Manage Server permission'
+      },
+      'Invite tracking paused for guild; missing Manage Server permission'
+    );
+  }
 }
 
 async function getSettings(guildId) {
@@ -93,7 +114,23 @@ async function fetchSnapshot(guild) {
 
   if (canFetchInvites(guild)) {
     const fetched = await guild.invites.fetch().catch((error) => {
-      logger.warn({ error, guildId: guild.id }, 'Could not fetch guild invites');
+      const code = Number(error?.code || error?.rawError?.code || 0);
+      const status = Number(error?.status || error?.rawError?.status || 0);
+
+      if (code === 50013 || code === 50001 || status === 403) {
+        noteInviteAccessIssue(guild, error);
+        return null;
+      }
+
+      logger.warn(
+        {
+          guildId: guild.id,
+          code: code || null,
+          status: status || null,
+          message: error?.message || String(error)
+        },
+        'Could not fetch guild invites'
+      );
       return null;
     });
 
@@ -110,6 +147,8 @@ async function fetchSnapshot(guild) {
         });
       }
     }
+  } else {
+    noteInviteAccessIssue(guild);
   }
 
   const vanity = await fetchVanity(guild).catch(() => null);

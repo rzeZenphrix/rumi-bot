@@ -13,6 +13,30 @@ function trimText(value, max = 1500) {
   return String(value || '').trim().slice(0, max);
 }
 
+function rawAfterWords(rawInput, words = []) {
+  let rest = String(rawInput || '').trimStart();
+
+  for (const word of words) {
+    const expected = String(word || '').trim();
+    if (!expected) continue;
+
+    const head = rest.slice(0, expected.length);
+    const next = rest.slice(expected.length, expected.length + 1);
+    if (head.toLowerCase() !== expected.toLowerCase() || (next && !/\s/.test(next))) {
+      return null;
+    }
+
+    rest = rest.slice(expected.length).replace(/^\s+/, '');
+  }
+
+  return rest.trim();
+}
+
+function templateText(rawAreaInput, path, args, max = 1500) {
+  const raw = rawAfterWords(rawAreaInput, path);
+  return trimText(raw !== null ? raw : args.join(' '), max);
+}
+
 function parseToggle(value) {
   const normalized = String(value || '').toLowerCase();
   if (['on', 'enable', 'enabled', 'true', 'yes'].includes(normalized)) return true;
@@ -147,11 +171,11 @@ const command = {
   },
   typing: true,
 
-  async executeArea({ message, args, area }) {
-    return this.runArea({ message, args: [area, ...args] });
+  async executeArea({ message, args, area, rawAreaInput = '' }) {
+    return this.runArea({ message, args: [area, ...args], rawAreaInput });
   },
 
-  async execute({ message, args }) {
+  async execute({ message, args, rawArgsInput }) {
     const area = String(args[0] || '').toLowerCase();
     const moved = {
       welcome: 'welcome',
@@ -170,11 +194,13 @@ const command = {
     return respond.reply(message, 'info', 'This command has moved. Use `welcome`, `goodbye`, `dmmessage`, `pingmessage`, `sticky`, or `systemmessage` instead.');
   },
 
-  async runArea({ message, args }) {
+  async runArea({ message, args, rawAreaInput = '' }) {
     const area = String(args.shift() || '').toLowerCase();
     if (!area) {
       return respond.reply(message, 'info', 'Use `welcome`, `goodbye`, `dmmessage`, `pingmessage`, `sticky`, or `systemmessage`.');
     }
+
+    const areaInput = rawAreaInput || rawAfterWords(rawArgsInput, [area]) || '';
 
     const config = await getGuildMessagesConfig(message.guild.id);
 
@@ -203,7 +229,7 @@ const command = {
       }
 
       if (action === 'message' || action === 'embed') {
-        const text = trimText(args.join(' '), 1500);
+        const text = templateText(areaInput, [action], args, 1500);
         if (!text) return respond.reply(message, 'info', `Use \`messages ${area} ${action} <text>\`.`);
         await updateGuildMessagesConfig(message.guild.id, (current) => {
           current[area][action] = text;
@@ -240,7 +266,7 @@ const command = {
         return respond.reply(message, 'good', `Join DMs are now **${action === 'enable' ? 'enabled' : 'disabled'}**.`);
       }
       if (action === 'message' || action === 'embed') {
-        const text = trimText(args.join(' '), 1500);
+        const text = templateText(areaInput, [action], args, 1500);
         if (!text) return respond.reply(message, 'info', `Use \`messages dm ${action} <text>\`.`);
         await updateGuildMessagesConfig(message.guild.id, (current) => {
           current.dm[action] = text;
@@ -305,7 +331,7 @@ const command = {
         });
       }
       if (action === 'create') {
-        const text = trimText(args.join(' '), 1500);
+        const text = templateText(areaInput, [action], args, 1500);
         if (!text) return respond.reply(message, 'info', 'Use `messages sticky create <text>`.');
         const stickyId = `sticky_${Date.now().toString(36)}`;
         await updateGuildMessagesConfig(message.guild.id, (current) => {
@@ -334,7 +360,7 @@ const command = {
         return respond.reply(message, 'good', `Deleted sticky message \`${stickyId}\`.`);
       }
       if (action === 'edit') {
-        const text = trimText(args.join(' '), 1500);
+        const text = templateText(areaInput, [action, stickyId], args, 1500);
         if (!text) return respond.reply(message, 'info', 'Use `messages sticky edit <stickyId> <text>`.');
         await updateGuildMessagesConfig(message.guild.id, (current) => {
           const target = current.sticky.find((entry) => entry.id === stickyId);
@@ -415,7 +441,7 @@ const command = {
         if (!templateKey || messageWord !== 'message') {
           return respond.reply(message, 'info', 'Use `messages system role <add|remove|receive|lost> message <text>`.');
         }
-        const text = trimText(args.join(' '), 1500);
+        const text = templateText(areaInput, [action, verb, messageWord], args, 1500);
         if (!text) return respond.reply(message, 'info', `Use \`messages system role ${verb} message <text>\`.`);
         await updateGuildMessagesConfig(message.guild.id, (current) => {
           current.system.templates[templateKey] = text;
@@ -430,7 +456,7 @@ const command = {
         if (qualifier !== 'strip' || messageWord !== 'message') {
           return respond.reply(message, 'info', 'Use `messages system staff strip message <text>`.');
         }
-        const text = trimText(args.join(' '), 1500);
+        const text = templateText(areaInput, [action, qualifier, messageWord], args, 1500);
         if (!text) return respond.reply(message, 'info', 'Use `messages system staff strip message <text>`.');
         await updateGuildMessagesConfig(message.guild.id, (current) => {
           current.system.templates.staffStrip = text;
@@ -443,7 +469,7 @@ const command = {
       const messageWord = String(args.shift() || '').toLowerCase();
       const templateKey = SYSTEM_TEMPLATE_MAP[subject];
       if (templateKey && messageWord === 'message') {
-        const text = trimText(args.join(' '), 1500);
+        const text = templateText(areaInput, [subject, messageWord], args, 1500);
         if (!text) return respond.reply(message, 'info', `Use \`messages system ${subject} message <text>\`.`);
         await updateGuildMessagesConfig(message.guild.id, (current) => {
           current.system.templates[templateKey] = text;

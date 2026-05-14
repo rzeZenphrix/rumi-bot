@@ -18,6 +18,17 @@ function defaultSettings() {
     taxRate: 0,
     inflationEnabled: false,
     inflationRate: 0,
+    robEnabled: false,
+    robCooldownSeconds: 6 * 60 * 60,
+    robMinAmount: 25,
+    robMaxAmount: 250,
+    robSuccessRate: 35,
+    robFineRate: 50,
+    robProtectionHours: 24,
+    casinoEnabled: true,
+    casinoCooldownSeconds: 10,
+    casinoMinBet: 10,
+    casinoMaxBet: 1000,
     voterBoostEnabled: true,
     disabledCommands: [],
     updatedAt: new Date(0).toISOString()
@@ -50,6 +61,17 @@ function normalizeSettings(settings = {}) {
   normalized.taxRate = Math.max(0, Math.min(100, Number(normalized.taxRate || base.taxRate)));
   normalized.inflationEnabled = Boolean(normalized.inflationEnabled);
   normalized.inflationRate = Math.max(0, Math.min(100, Number(normalized.inflationRate || base.inflationRate)));
+  normalized.robEnabled = Boolean(normalized.robEnabled);
+  normalized.robCooldownSeconds = Math.max(10, Math.floor(Number(normalized.robCooldownSeconds || base.robCooldownSeconds)));
+  normalized.robMinAmount = Math.max(1, Math.floor(Number(normalized.robMinAmount || base.robMinAmount)));
+  normalized.robMaxAmount = Math.max(normalized.robMinAmount, Math.floor(Number(normalized.robMaxAmount || base.robMaxAmount)));
+  normalized.robSuccessRate = Math.max(1, Math.min(95, Number(normalized.robSuccessRate || base.robSuccessRate)));
+  normalized.robFineRate = Math.max(0, Math.min(100, Number(normalized.robFineRate || base.robFineRate)));
+  normalized.robProtectionHours = Math.max(0, Math.min(720, Number(normalized.robProtectionHours ?? base.robProtectionHours)));
+  normalized.casinoEnabled = normalized.casinoEnabled !== false;
+  normalized.casinoCooldownSeconds = Math.max(3, Math.floor(Number(normalized.casinoCooldownSeconds || base.casinoCooldownSeconds)));
+  normalized.casinoMinBet = Math.max(1, Math.floor(Number(normalized.casinoMinBet || base.casinoMinBet)));
+  normalized.casinoMaxBet = Math.max(normalized.casinoMinBet, Math.floor(Number(normalized.casinoMaxBet || base.casinoMaxBet)));
   normalized.voterBoostEnabled = normalized.voterBoostEnabled !== false;
   normalized.disabledCommands = [...new Set((normalized.disabledCommands || []).map((item) => String(item).toLowerCase()).filter(Boolean))];
   normalized.updatedAt = new Date().toISOString();

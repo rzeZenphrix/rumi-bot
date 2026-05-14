@@ -70,14 +70,16 @@ async function renderGiveawayEmbed(giveaway, client, { ended = false } = {}) {
 
   if (giveaway.thumbnail_url) embed.setThumbnail(giveaway.thumbnail_url);
   if (giveaway.image_url) embed.setImage(giveaway.image_url);
-  embed.setFooter({ text: giveaway.footer || `Giveaway ${giveaway.public_id}` });
+  embed.setFooter({ text: giveaway.footer || `Giveaway ${store.displayGiveawayId(giveaway)}` });
 
   return embed;
 }
 function resolveGiveawayText(input, giveaway, extra = {}) {
   const winnerMentions = (extra.winners || []).map((winner) => `<@${winner.user_id || winner.id}>`).join(', ');
   const replacements = {
-    '{giveaway.id}': giveaway.public_id,
+    '{giveaway.id}': store.displayGiveawayId(giveaway),
+    '{giveaway.public_id}': giveaway.public_id,
+    '{giveaway.number}': store.displayGiveawayId(giveaway),
     '{giveaway.prize}': giveaway.prize,
     '{giveaway.winners_count}': String(giveaway.winners_count),
     '{giveaway.host}': `<@${giveaway.host_id}>`,
@@ -281,16 +283,18 @@ async function cancelGiveaway(client, giveaway, actorId = null, { deleteMessage 
 async function handleGiveawayButton(interaction) {
   const [, action, publicId] = String(interaction.customId || '').split(':');
   if (action !== 'enter' || !publicId || !interaction.guildId) return false;
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
+  }
   const giveaway = await store.getGiveaway(interaction.guildId, publicId).catch(() => null);
   const result = await enterGiveaway(interaction.client, giveaway, interaction.user.id).catch((error) => ({
     ok: false,
     reason: error?.message || 'Could not enter the giveaway.'
   }));
-  await interaction.reply({
+  await interaction.editReply({
     content: result.ok
       ? `You are entered${result.bonus ? ` with +${result.bonus} bonus entr${result.bonus === 1 ? 'y' : 'ies'}` : ''}.`
-      : result.reason,
-    flags: MessageFlags.Ephemeral
+      : result.reason
   }).catch(() => null);
   return true;
 }

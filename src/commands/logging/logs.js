@@ -8,6 +8,12 @@ function parseColor(input) {
   return /^[0-9a-f]{6}$/i.test(raw) ? `#${raw}` : null;
 }
 
+function normalizeEvent(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  return DEFAULT_EVENTS.find((event) => event.toLowerCase() === raw.toLowerCase()) || null;
+}
+
 async function createLogWebhook(channel, user) {
   const existing = await channel.fetchWebhooks().catch(() => null);
   const old = existing?.find?.((hook) => hook.name === 'Rumi Logs' && hook.owner?.id === channel.client.user.id);
@@ -82,7 +88,7 @@ module.exports = {
       await updateGuildLogConfig(message.guild.id, (cfg) => {
         const targetId = extractId(target);
         for (const [event, channelId] of Object.entries(cfg.channels || {})) {
-          if (event === target || channelId === targetId) {
+          if (event.toLowerCase() === target.toLowerCase() || channelId === targetId) {
             delete cfg.channels[event];
             delete cfg.webhooks[event];
           }
@@ -94,8 +100,8 @@ module.exports = {
 
     if (first === 'color') {
       const color = parseColor(args.shift());
-      const event = args.shift() || 'all';
-      if (!color || !DEFAULT_EVENTS.includes(event)) return info(message, '> Set the embed color for a log event.\n \n`logs color <#hex> [event]`\n \n**Example**\n \n`logs color #ff0000 messageDelete`');
+      const event = normalizeEvent(args.shift()) || 'all';
+      if (!color || !DEFAULT_EVENTS.includes(event)) return info(message, '> Set the embed color for a log event.\n \n`logs color <#hex> [event|all]`\n \n**Example**\n \n`logs color #ff0000 messageDelete`');
 
       await updateGuildLogConfig(message.guild.id, (cfg) => {
         cfg.colors[event] = color;
@@ -104,12 +110,17 @@ module.exports = {
       return ok(message, `Set ${event} color to ${color}.`);
     }
 
-    const channelId = extractId(first);
-    const channel = channelId ? await message.guild.channels.fetch(channelId).catch(() => null) : null;
-    const event = args.shift() || 'all';
+    let event = normalizeEvent(first);
+    let channelToken = event ? args.shift() : first;
+    let channelId = extractId(channelToken);
+    let channel = channelId ? await message.guild.channels.fetch(channelId).catch(() => null) : null;
+
+    if (!event) {
+      event = normalizeEvent(args.shift()) || 'all';
+    }
 
     if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
-      return info(message, '> Configure server logs.\n \n`logs [#channel|off|events|remove|color]`\n \n**Example**\n \n`logs #message-logs messageDelete`');
+      return info(message, '> Configure server logs.\n \n`logs <#channel> [event|all]`\n`logs <event|all> <#channel>`\n`logs events`\n \n**Example**\n \n`logs #message-logs messageDelete`\n`logs all #server-logs`');
     }
 
     if (!DEFAULT_EVENTS.includes(event)) return bad(message, 'Unknown log event. Use `logs events`.');

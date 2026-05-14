@@ -24,10 +24,13 @@ function ephemeralPayload(interaction, type, text) {
 
 async function safeInteractionError(interaction, eventName, error) {
   await logEventError({ eventName, interaction }, error).catch(() => null);
+  return safeInteractionNotice(interaction, 'bad', 'That interaction could not be processed. Please try the command again.');
+}
 
+async function safeInteractionNotice(interaction, type, text) {
   if (!interaction.isRepliable?.()) return false;
 
-  const payload = ephemeralPayload(interaction, 'bad', 'That interaction could not be processed. Please try the command again.');
+  const payload = ephemeralPayload(interaction, type, text);
 
   if (interaction.deferred) {
     const editPayload = { ...payload };
@@ -103,7 +106,7 @@ module.exports = {
         return;
       }
 
-      if (await handleSlashCommandInteraction(interaction).catch(() => false)) {
+      if (await handleSlashCommandInteraction(interaction).catch((error) => safeInteractionError(interaction, 'slashCommandInteraction', error))) {
         return;
       }
 
@@ -122,7 +125,7 @@ module.exports = {
       const helpCommand = getHelpCommand(client);
 
       if (helpCommand?.handleHelpInteraction) {
-        const handled = await helpCommand.handleHelpInteraction(interaction).catch(() => false);
+        const handled = await helpCommand.handleHelpInteraction(interaction).catch((error) => safeInteractionError(interaction, 'helpInteraction', error));
         if (handled) return;
       }
 
@@ -139,10 +142,7 @@ module.exports = {
       }
     }
 
-    if (await handleVerificationInteraction(interaction).catch((error) => {
-      logEventError({ eventName: 'verificationInteraction', interaction }, error).catch(() => null);
-      return false;
-    })) {
+    if (await handleVerificationInteraction(interaction).catch((error) => safeInteractionError(interaction, 'verificationInteraction', error))) {
       return;
     }
 
@@ -154,10 +154,7 @@ module.exports = {
       return;
     }
 
-    if (await handleTicketInteraction(interaction).catch((error) => {
-      logEventError({ eventName: 'ticketInteraction', interaction }, error).catch(() => null);
-      return false;
-    })) {
+    if (await handleTicketInteraction(interaction).catch((error) => safeInteractionError(interaction, 'ticketInteraction', error))) {
       return;
     }
 
@@ -224,9 +221,7 @@ module.exports = {
       interaction.isMessageComponent?.() ||
       interaction.isModalSubmit?.()
     ) {
-      await interaction.reply(
-        ephemeralPayload(interaction, 'info', 'This control is no longer active. Run the command again to get fresh buttons.')
-      ).catch(() => null);
+      await safeInteractionNotice(interaction, 'info', 'This control is no longer active. Run the command again to get fresh buttons.');
       return;
     }
 

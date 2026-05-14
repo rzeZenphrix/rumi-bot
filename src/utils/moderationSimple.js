@@ -205,6 +205,49 @@ async function findRole(guild, input) {
   ) || null;
 }
 
+function canTarget(message, member, action = 'manage') {
+  if (!message?.guild || !message.member || !member) {
+    return { ok: false, reason: 'I could not resolve that member in this server.' };
+  }
+
+  if (member.id === message.guild.ownerId) {
+    return { ok: false, reason: 'I cannot target the server owner.' };
+  }
+
+  if (member.id === message.client?.user?.id) {
+    return { ok: false, reason: 'I cannot target myself.' };
+  }
+
+  if (member.id === message.author.id) {
+    return { ok: false, reason: 'You cannot target yourself with that command.' };
+  }
+
+  const moderator = message.member;
+  const botMember = message.guild.members.me;
+
+  if (message.author.id !== message.guild.ownerId && member.roles.highest.comparePositionTo(moderator.roles.highest) >= 0) {
+    return { ok: false, reason: 'That member is at or above your highest role.' };
+  }
+
+  if (botMember && member.roles.highest.comparePositionTo(botMember.roles.highest) >= 0) {
+    return { ok: false, reason: 'That member is at or above my highest role.' };
+  }
+
+  if (action === 'moderate' && !member.moderatable) {
+    return { ok: false, reason: 'I cannot moderate that member because of role hierarchy or permissions.' };
+  }
+
+  if (action === 'kick' && !member.kickable) {
+    return { ok: false, reason: 'I cannot kick that member because of role hierarchy or permissions.' };
+  }
+
+  if (action === 'ban' && !member.bannable) {
+    return { ok: false, reason: 'I cannot ban that member because of role hierarchy or permissions.' };
+  }
+
+  return { ok: true, reason: null };
+}
+
 async function findChannel(guild, input, fallback = null) {
   if (!guild) return null;
 
@@ -267,6 +310,7 @@ module.exports = {
   findMember,
   findRole,
   findChannel,
+  canTarget,
 
   resolveUser,
   resolveMember,

@@ -18,7 +18,7 @@ module.exports = {
   })),
   typing: true,
 
-  execute({ message, args }) {
-    return messages.executeArea({ message, args, area: 'system' });
+  execute({ message, args, rawArgsInput }) {
+    return messages.executeArea({ message, args, area: 'system', rawAreaInput: rawArgsInput });
   }
 };

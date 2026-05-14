@@ -24,7 +24,7 @@ async function channelIdFromArg(message, raw) {
 
 module.exports = {
   name: 'invites',
-  aliases: ['invitecount', 'inv'],
+  aliases: ['invitecount'],
   category: 'invites',
   description: 'View invite stats, leaderboard, and invite tracking settings.',
   usage: 'invites [@user|top|settings|enable|disable|log|refresh]',

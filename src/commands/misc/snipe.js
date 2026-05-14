@@ -136,13 +136,13 @@ function buildButtons(message, type, index) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(navId(message, type, index, 'prev'))
-      .setEmoji(emojis.prev)
+      .setLabel('Previous')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(index <= 1),
 
     new ButtonBuilder()
       .setCustomId(navId(message, type, index, 'next'))
-      .setEmoji(emojis.next)
+      .setLabel('Next')
       .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()

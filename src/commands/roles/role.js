@@ -106,11 +106,11 @@ module.exports = {
   async execute({ message, args }) {
     const first = (args.shift() || '').toLowerCase();
 
-    if (!first) return info(message, '> **Add or remove a role from a user.**\n\n```role <member> <role>```\n\n-# This will add the specified role to the specified member. You can also use "remove" instead of "add" to remove a role, or "toggle" to add or remove based on whether the member already has the role. If the first argument is a valid subcommand, you must specify the member as the second argument for add/remove operations.');
+    if (!first) return info(message, '> Add or remove a role from a user\n\n```role <member> <role>```\n\n-# This will add the specified role to the specified member. You can also use "remove" instead of "add" to remove a role, or "toggle" to add or remove based on whether the member already has the role. If the first argument is a valid subcommand, you must specify the member as the second argument for add/remove operations.');
 
     if (first === 'create') {
       const parsed = parseCreateArgs(args);
-      if (!parsed.name) return info(message, 'Usage: `role create <name> [--color #c8d8f2]`.');
+      if (!parsed.name) return info(message, '> Create a role.\n\n```role create <name> [--color #c8d8f2]\n-# Example\n```role create Event Host --color #c8d8f2```');
       if (parsed.colorInput && parsed.color === null) return bad(message, 'Use a valid role color like `#c8d8f2`.');
 
       const role = await message.guild.roles.create({
@@ -125,7 +125,7 @@ module.exports = {
           : 'Discord rejected that role creation.');
       }
 
-      return ok(message, `Created ${role}.`);
+      return ok(message, `Created **${role}**.`);
     }
 
     if (first === 'connect' || first === 'link') {
@@ -184,7 +184,7 @@ module.exports = {
         if (member) await member.roles.add(role).then(() => { assigned += 1; }).catch(() => null);
       }
 
-      return ok(message, 'good', `**Restored** ${role.name} to ${assigned} member(s).`);
+      return ok(message, 'good', `Restored **${role.name}** to **${assigned}** member(s).`);
     }
 
     if (first === 'info') {
@@ -204,7 +204,7 @@ module.exports = {
       await snapshotRole(message.guild, role, 'before color change');
       await role.setColor(color, `Role color changed by ${message.author.tag}`);
 
-      return ok(message, 'good', `**Changed** ${role.name} color.`);
+      return ok(message, 'good', `Changed **${role.name}** color.`);
     }
 
     if (first === 'rename' || first === 'name') {
@@ -230,7 +230,7 @@ module.exports = {
       const name = role.name;
       await role.delete(`Role deleted by ${message.author.tag}`);
 
-      return ok(message, 'good', `**Deleted** ${name}. Use \`role restore\` if needed.`);
+      return ok(message, 'good', `Deleted **${name}**. Use \`role restore\` if needed.`);
     }
 
     const mode = ['add', 'remove'].includes(first) ? first : 'toggle';
@@ -244,10 +244,10 @@ module.exports = {
 
     if (mode === 'add' || (mode === 'toggle' && !member.roles.cache.has(role.id))) {
       await member.roles.add(role, `Role added by ${message.author.tag}`);
-      return ok(message, 'add', `**Added** ${role.name} to ${member.user.tag}.`);
+      return ok(message, 'add', `Added **${role.name}** to **${member.user.tag}**.`);
     }
 
     await member.roles.remove(role, `Role removed by ${message.author.tag}`);
-    return ok(message, 'remove', `**Removed** ${role.name} from ${member.user.tag}.`);
+    return ok(message, 'remove', `Removed **${role.name}** from **${member.user.tag}**.`);
   }
 };

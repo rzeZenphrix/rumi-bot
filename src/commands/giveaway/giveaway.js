@@ -17,6 +17,7 @@ const {
   parseBool,
   parseDurationMs,
   parseFlags,
+  formatDuration,
   normalizeColor,
   unix
 } = require('../../systems/giveaways/flags');
@@ -57,9 +58,13 @@ function parseStartPositionals(message, rawArgs) {
     throw new Error('Use `giveaway start "Prize" 24h 1 #channel`. Prize and duration are no longer flags for start.');
   }
 
+  if (flags.preset && positionals.length === 0) {
+    return {};
+  }
+
   const [prize, duration, winners, channel] = positionals;
   if (!prize || !duration || !winners) {
-    throw new Error('Use `giveaway start "Prize" <duration> <winners> [#channel]`.');
+    throw new Error('Use `giveaway start "Prize" <duration> <winners> [#channel]` or `giveaway start --preset <name>`.');
   }
 
   return {
@@ -90,7 +95,11 @@ async function buildGiveawayPayload(message, rawArgs, base = {}) {
   const prize = String(merged.prize || '').trim();
   if (!prize) throw new Error('Giveaway prize is required.');
 
-  const durationMs = parseDurationMs(merged.duration || merged.for);
+  let durationMs = parseDurationMs(merged.duration || merged.for);
+  if (!durationMs && merged.starts_at && merged.ends_at) {
+    const derived = new Date(merged.ends_at).getTime() - new Date(merged.starts_at).getTime();
+    durationMs = Number.isFinite(derived) && derived >= 10_000 ? derived : null;
+  }
   if (!durationMs) throw new Error('Giveaway duration must be at least 10 seconds, like `30m`, `24h`, or `7d`.');
 
   const startsAt = merged.startsAt ? new Date(merged.startsAt) : new Date();
@@ -148,7 +157,7 @@ async function requireGiveaway(message, id) {
 
 function shortGiveawayLine(giveaway) {
   const status = giveaway.status.toLowerCase();
-  return `\`${giveaway.public_id}\` **${giveaway.prize}** - ${status} - ends <t:${unix(giveaway.ends_at)}:R>`;
+  return `\`${store.displayGiveawayId(giveaway)}\` **${giveaway.prize}** - ${status} - ends <t:${unix(giveaway.ends_at)}:R>`;
 }
 
 async function handleStart(message, rawArgs) {
@@ -157,10 +166,10 @@ async function handleStart(message, rawArgs) {
   const giveaway = await store.createGiveaway(payload);
   if (giveaway.status === 'SCHEDULED') {
     await store.logEvent(giveaway.guild_id, giveaway.id, 'scheduled', message.author.id, { startsAt: giveaway.starts_at });
-    return respond.reply(message, 'good', `Scheduled giveaway \`${giveaway.public_id}\` for <t:${unix(giveaway.starts_at)}:F>.`);
+    return respond.reply(message, 'good', `Scheduled giveaway \`${store.displayGiveawayId(giveaway)}\` for <t:${unix(giveaway.starts_at)}:F>.`);
   }
   const published = await publishGiveaway(message.client, giveaway);
-  return respond.reply(message, 'good', `Started giveaway \`${published.public_id}\` in <#${published.channel_id}>.`);
+  return respond.reply(message, 'good', `Started giveaway \`${store.displayGiveawayId(published)}\` in <#${published.channel_id}>.`);
 }
 
 async function handleEnd(message, args) {
@@ -168,7 +177,7 @@ async function handleEnd(message, args) {
   const config = await store.getConfig(message.guild.id);
   if (!canManageGiveaways(message.member, config, giveaway, 'end')) return respond.reply(message, 'bad', 'You cannot end this giveaway.');
   const result = await endGiveaway(message.client, giveaway, message.author.id);
-  return respond.reply(message, 'good', `Ended giveaway \`${giveaway.public_id}\`. Winners: ${result.winners.map((w) => `<@${w.user_id}>`).join(', ') || 'none'}.`);
+  return respond.reply(message, 'good', `Ended giveaway \`${store.displayGiveawayId(giveaway)}\`. Winners: ${result.winners.map((w) => `<@${w.user_id}>`).join(', ') || 'none'}.`);
 }
 
 async function handleCancel(message, args) {
@@ -177,7 +186,7 @@ async function handleCancel(message, args) {
   if (!canManageGiveaways(message.member, config, giveaway, 'cancel')) return respond.reply(message, 'bad', 'You cannot cancel this giveaway.');
   const { flags } = parseFlags(args.slice(1));
   await cancelGiveaway(message.client, giveaway, message.author.id, { deleteMessage: Boolean(flags['delete-message']) });
-  return respond.reply(message, 'good', `Cancelled giveaway \`${giveaway.public_id}\`.`);
+  return respond.reply(message, 'good', `Cancelled giveaway \`${store.displayGiveawayId(giveaway)}\`.`);
 }
 
 async function handleReroll(message, args) {
@@ -186,7 +195,7 @@ async function handleReroll(message, args) {
   if (!canManageGiveaways(message.member, config, giveaway, 'reroll')) return respond.reply(message, 'bad', 'You cannot reroll giveaways.');
   const { flags } = parseFlags(args.slice(1));
   const result = await endGiveaway(message.client, { ...giveaway, status: 'ACTIVE' }, message.author.id, { reroll: true, winnerCount: flags.winners });
-  return respond.reply(message, 'good', `Rerolled \`${giveaway.public_id}\`. Winners: ${result.winners.map((w) => `<@${w.user_id}>`).join(', ') || 'none'}.`);
+  return respond.reply(message, 'good', `Rerolled \`${store.displayGiveawayId(giveaway)}\`. Winners: ${result.winners.map((w) => `<@${w.user_id}>`).join(', ') || 'none'}.`);
 }
 
 async function handleList(message, args) {
@@ -207,7 +216,7 @@ async function handleInfo(message, args) {
   const bonus = await store.listBonusRules(giveaway.id);
   return respond.reply(message, 'info', null, {
     mentionUser: false,
-    title: `Giveaway ${giveaway.public_id}`,
+    title: `Giveaway ${store.displayGiveawayId(giveaway)}`,
     fields: [
       { name: 'Prize', value: giveaway.prize, inline: true },
       { name: 'Status', value: giveaway.status, inline: true },
@@ -227,7 +236,7 @@ async function handleEntries(message, args) {
   const rows = entries.slice(0, 25).map((entry, index) => `**${index + 1}.** <@${entry.user_id}> - ${entry.entries} entr${entry.entries === 1 ? 'y' : 'ies'}`);
   return respond.reply(message, 'list', null, {
     mentionUser: false,
-    title: `Entries for ${giveaway.public_id}`,
+    title: `Entries for ${store.displayGiveawayId(giveaway)}`,
     description: rows.join('\n') || 'No entries yet.'
   });
 }
@@ -255,6 +264,7 @@ async function handlePreset(message, args) {
     const name = String(args.shift() || '').toLowerCase();
     if (!name) return respond.reply(message, 'info', 'Use `giveaway preset create <name> --prize "Nitro" --duration 24h --winners 1`.');
     const payload = await buildGiveawayPayload(message, args);
+    payload.duration = formatDuration(new Date(payload.ends_at).getTime() - new Date(payload.starts_at).getTime());
     await store.createPreset(message.guild.id, name, payload, message.author.id);
     return respond.reply(message, 'good', `Saved giveaway preset \`${name}\`.`);
   }
@@ -422,7 +432,7 @@ async function handleSchedule(message, args) {
   const payload = await buildGiveawayPayload(message, args, { startsAt });
   const giveaway = await store.createGiveaway({ ...payload, status: 'SCHEDULED' });
   await store.logEvent(message.guild.id, giveaway.id, 'scheduled', message.author.id, { startsAt });
-  return respond.reply(message, 'good', `Scheduled giveaway \`${giveaway.public_id}\` for <t:${unix(startsAt)}:F>.`);
+  return respond.reply(message, 'good', `Scheduled giveaway \`${store.displayGiveawayId(giveaway)}\` for <t:${unix(startsAt)}:F>.`);
 }
 
 async function handleRecurring(message, args) {
@@ -512,23 +522,23 @@ const BONUS_FLAGS = [
 const subcommands = [
   {
     name: 'start',
-    usage: 'giveaway start "Discord Nitro" 24h 2 [#channel]',
+    usage: 'giveaway start "Discord Nitro" 24h 2 [#channel] OR giveaway start --preset nitro',
     flags: START_FLAGS
   },
   {
     name: 'end',
-    usage: 'giveaway end <giveaway_id>'
+    usage: 'giveaway end <#number|messageId>'
   },
   {
     name: 'cancel',
-    usage: 'giveaway cancel <giveaway_id> [--delete-message]',
+    usage: 'giveaway cancel <#number|messageId> [--delete-message]',
     flags: [
       { name: '--delete-message', description: 'Delete the giveaway message after cancel.' }
     ]
   },
   {
     name: 'reroll',
-    usage: 'giveaway reroll <giveaway_id> [--winners 2]',
+    usage: 'giveaway reroll <#number|messageId> [--winners 2]',
     flags: [
       { name: '--winners <count>', description: 'Number of winners to pick.' }
     ]
@@ -539,11 +549,11 @@ const subcommands = [
   },
   {
     name: 'info',
-    usage: 'giveaway info <giveaway_id>'
+    usage: 'giveaway info <#number|messageId>'
   },
   {
     name: 'entries',
-    usage: 'giveaway entries <giveaway_id>'
+    usage: 'giveaway entries <#number|messageId>'
   },
   {
     name: 'preset',
@@ -592,11 +602,12 @@ module.exports = {
   usage: 'giveaway <start|end|cancel|reroll|list|info|entries|preset|condition|bonus|config|stats|schedule|recurring>',
   examples: [
     'giveaway start "Discord Nitro" 24h 2 #giveaways',
+    'giveaway start --preset nitro',
     'giveaway start \"Nitro\" 24h 1 --reaction party',
     'giveaway preset create nitro --prize "Discord Nitro" --duration 24h --winners 1 --button',
-    'giveaway condition add ab12cd34 --type messages --scope entry --min 100',
-    'giveaway condition add ab12cd34 --type invited_to_server --server 123456789012345678 --inviter me',
-    'giveaway bonus add ab12cd34 --role @Booster --entries 2'
+    'giveaway condition add #1 --type messages --scope entry --min 100',
+    'giveaway condition add #1 --type invited_to_server --server 123456789012345678 --inviter me',
+    'giveaway bonus add #1 --role @Booster --entries 2'
   ],
   permissions: [PermissionFlagsBits.ManageGuild],
   botPermissions: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.AddReactions, PermissionFlagsBits.ReadMessageHistory],

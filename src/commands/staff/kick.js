@@ -16,7 +16,7 @@ module.exports = {
     const member = await findMember(message.guild, args.shift());
     if (!member) return info(message, 'Usage: `kick <member> [reason]`.');
 
-    const check = canTarget(message, member, 'manage');
+    const check = canTarget(message, member, 'kick');
     if (!check.ok) return bad(message, check.reason);
 
     const reason = clean(args, 'Manual kick');

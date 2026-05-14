@@ -63,12 +63,59 @@ async function withTyping(message, command, fn) {
   return fn();
 }
 
-async function memberHasNativeOrFake(message, permission) {
+async function memberHasAnyFakePermission(message, permissions = []) {
+  const checks = [...new Set(
+    permissions
+      .map((permission) => String(permission || '').trim())
+      .filter(Boolean)
+  )];
+
+  for (const permission of checks) {
+    if (await db.hasFakePermission(message.guild.id, message.member, permission)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function commandFakePermissionHints(command, permission) {
+  const label = permissionLabel(permission).replace(/\s+/g, '');
+  const category = String(command?.category || '').toLowerCase();
+  const name = String(command?.name || '').toLowerCase();
+  const hints = [
+    permission.toString(),
+    label,
+    `Rumi${label}`,
+    'RumiAdmin',
+    'RumiOwner'
+  ];
+
+  if (['moderation', 'mod', 'staff'].includes(category) || ['ban', 'kick', 'mute', 'warn', 'jail'].includes(name)) {
+    hints.push('RumiUseModCommands', 'RumiModerator', 'RumiStaff');
+  }
+
+  if (['security', 'antinuke', 'antiraid'].includes(category)) {
+    hints.push('RumiUseSecurityCommands', 'RumiSecurity', 'RumiStaff');
+  }
+
+  if (category === 'tickets' || name === 'ticket') {
+    hints.push('RumiUseTicketCommands', 'RumiManageTickets', 'RumiStaff');
+  }
+
+  if (['config', 'messages', 'logging', 'customization'].includes(category)) {
+    hints.push('RumiUseConfigCommands', 'RumiConfig', 'RumiStaff');
+  }
+
+  return hints;
+}
+
+async function memberHasNativeOrFake(message, permission, command = null) {
   if (!message.guild || !message.member) return false;
   if (message.member.permissions?.has(permission)) return true;
 
   try {
-    return await db.hasFakePermission(message.guild.id, message.member, permission.toString());
+    return await memberHasAnyFakePermission(message, commandFakePermissionHints(command, permission));
   } catch (error) {
     logger.warn(
       {
@@ -84,11 +131,11 @@ async function memberHasNativeOrFake(message, permission) {
   }
 }
 
-async function userHasRequiredPermissions(message, permissions = []) {
+async function userHasRequiredPermissions(message, permissions = [], command = null) {
   if (!permissions.length) return null;
 
   for (const permission of permissions) {
-    const allowed = await memberHasNativeOrFake(message, permission);
+    const allowed = await memberHasNativeOrFake(message, permission, command);
     if (!allowed) return permission;
   }
 
@@ -115,6 +162,7 @@ async function handlePrefixCommand(client, message) {
 
   const args = parseArgs(withoutPrefix);
   const commandName = args.shift()?.toLowerCase();
+  const rawArgsInput = withoutPrefix.slice(commandName?.length || 0).trimStart();
 
   if (!commandName) return false;
 
@@ -184,7 +232,7 @@ async function handlePrefixCommand(client, message) {
   }
 
   if (message.guild && command.permissions?.length && !isBotOwner(message.author.id)) {
-    const missing = await userHasRequiredPermissions(message, command.permissions);
+    const missing = await userHasRequiredPermissions(message, command.permissions, command);
 
     if (missing) {
       await safeReply(message, 'bad', `You need ${permissionLabel(missing)} to use that.`);
@@ -233,7 +281,8 @@ async function handlePrefixCommand(client, message) {
         message,
         args,
         prefix,
-        commandName
+        commandName,
+        rawArgsInput
       });
     });
   } catch (error) {

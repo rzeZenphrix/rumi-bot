@@ -1,12 +1,12 @@
 const respond = require('../../utils/respond');
 
 module.exports = {
-  name: 'vibe',
-  aliases: ["vibecheck"],
+  name: 'vibecheck',
+  aliases: ['checkvibe'],
   category: 'fun',
   description: "Checks the vibe.",
-  usage: "vibe",
-  examples: ["vibe"],
+  usage: 'vibecheck',
+  examples: ['vibecheck'],
 
   async execute({ message, args }) {
     const score = Math.floor(Math.random() * 101);

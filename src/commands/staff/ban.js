@@ -21,12 +21,17 @@ module.exports = {
 
     const member = await message.guild.members.fetch(user.id).catch(() => null);
     if (member) {
-      const check = canTarget(message, member, 'manage');
+      const check = canTarget(message, member, 'ban');
       if (!check.ok) return bad(message, check.reason);
     }
 
     const reason = clean(args, 'None provided.');
-    await message.guild.members.ban(user.id, { reason });
+    await message.guild.members.ban(user.id, { reason }).catch((error) => {
+      if (Number(error?.code) === 50013) {
+        error.userMessage = 'I could not ban that user because Discord says I am missing permission or role hierarchy.';
+      }
+      throw error;
+    });
     await modlog(message, 'ban', user.id, reason);
 
     return ok(message, 'good', `Banned **${user.tag}**. Reason: ${reason}`);

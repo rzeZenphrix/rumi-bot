@@ -152,10 +152,26 @@ async function renderTemplate(template, context) {
 
 function buildEmbed(content, user) {
   if (!content) return null;
-  return new EmbedBuilder()
-    .setDescription(content)
+
+  const lines = String(content).replace(/\r\n/g, '\n').split('\n');
+  const firstTextIndex = lines.findIndex((line) => line.trim());
+  const title = firstTextIndex >= 0 ? lines[firstTextIndex].trim() : '';
+  const body = firstTextIndex >= 0
+    ? lines.slice(firstTextIndex + 1).join('\n').trim()
+    : String(content).trim();
+
+  const embed = new EmbedBuilder()
     .setColor(respond.DEFAULT_EMBED_COLOR)
     .setThumbnail(user?.displayAvatarURL?.({ size: 256 }) || null);
+
+  if (title && body) {
+    embed.setTitle(title.slice(0, 256));
+    embed.setDescription(body.slice(0, 4096));
+  } else {
+    embed.setDescription((body || title).slice(0, 4096));
+  }
+
+  return embed;
 }
 
 async function sendConfiguredPayload(channel, baseText, embedText, context, deleteDelaySeconds = 0) {

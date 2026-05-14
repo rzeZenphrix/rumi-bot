@@ -2,7 +2,7 @@ const { runWordChain } = require('../../systems/fun/teaGames');
 
 module.exports = {
   name: 'wordchain',
-  aliases: ['wc', 'chainword'],
+  aliases: ['chainword'],
   category: 'fun',
   description: 'Start a word chain survival game.',
   usage: 'wordchain [lives] [seconds]',

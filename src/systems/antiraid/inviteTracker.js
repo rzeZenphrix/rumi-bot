@@ -1,8 +1,11 @@
+const { PermissionFlagsBits } = require('discord.js');
+
 const logger = require('../logging/logger');
 const giveawayStore = require('../giveaways/store');
 
 const inviteCache = new Map();
 const vanityCache = new Map();
+const inviteAccessWarnings = new Set();
 
 function cacheKey(guildId) {
   return String(guildId);
@@ -20,14 +23,54 @@ function serializeInvite(invite) {
   };
 }
 
-async function fetchGuildInvites(guild) {
-  if (!guild?.invites?.fetch) return new Map();
+function canFetchInvites(guild) {
+  const me = guild?.members?.me;
+  return Boolean(me?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
+}
 
-  const invites = await guild.invites.fetch().catch((error) => {
+function noteInviteAccessIssue(guild, error = null) {
+  const guildId = guild?.id;
+  if (!guildId) return;
+
+  const key = cacheKey(guildId);
+  if (inviteAccessWarnings.has(key) && process.env.DEBUG_ERRORS !== 'true') return;
+  inviteAccessWarnings.add(key);
+
+  if (process.env.DEBUG_ERRORS === 'true') {
     logger.warn(
       {
-        error,
-        guildId: guild?.id
+        guildId,
+        code: error?.code || error?.rawError?.code || null,
+        status: error?.status || null,
+        message: error?.message || 'Missing Manage Server permission'
+      },
+      'Anti-raid invite tracking paused for guild; missing Manage Server permission'
+    );
+  }
+}
+
+async function fetchGuildInvites(guild) {
+  if (!guild?.invites?.fetch) return new Map();
+  if (!canFetchInvites(guild)) {
+    noteInviteAccessIssue(guild);
+    return new Map();
+  }
+
+  const invites = await guild.invites.fetch().catch((error) => {
+    const code = Number(error?.code || error?.rawError?.code || 0);
+    const status = Number(error?.status || error?.rawError?.status || 0);
+
+    if (code === 50013 || code === 50001 || status === 403) {
+      noteInviteAccessIssue(guild, error);
+      return null;
+    }
+
+    logger.warn(
+      {
+        guildId: guild?.id,
+        code: code || null,
+        status: status || null,
+        message: error?.message || String(error)
       },
       'Anti-raid could not fetch guild invites'
     );

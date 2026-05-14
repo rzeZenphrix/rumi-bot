@@ -11,6 +11,18 @@ const {
   musicNotReadyPayload
 } = require('../../systems/runtime/featureGates');
 const { getCatalog, getPremiumStatus } = require('../../systems/monetization/service');
+const { getEconomySettings, updateEconomySettings } = require('../../systems/economy/settings');
+const { resolveVariables } = require('../../systems/variables/variableRegistry');
+const {
+  getGuildMessagesConfig,
+  updateGuildMessagesConfig
+} = require('../../systems/messages/guildMessages');
+const {
+  getGuildLogConfig,
+  updateGuildLogConfig,
+  DEFAULT_EVENTS
+} = require('../../systems/logging/logConfigStore');
+const { getTrustNobodySettings } = require('../../systems/security/trustNobody');
 
 let serverStarted = false;
 
@@ -23,6 +35,18 @@ function parseAllowedOrigins() {
 async function verifyDashboardToken(req, res, next) {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || req.query.token || req.body?.token;
   if (!token) return res.status(401).json({ ok: false, error: 'I need a dashboard token.' });
+
+  const serviceSecret = process.env.DASHBOARD_API_SECRET || process.env.BOT_SYNC_SECRET || '';
+  if (serviceSecret && token === serviceSecret) {
+    req.dashboardSession = {
+      id: null,
+      user_id: req.body?.userId || req.query.userId || null,
+      guild_id: req.body?.guildId || req.params?.guildId || null,
+      scopes: ['dashboard:service'],
+      expires_at: null
+    };
+    return next();
+  }
 
   let data;
 
@@ -44,6 +68,43 @@ function inviteUrlForGuild(guild) {
   const clientId = guild.client?.user?.id || process.env.DISCORD_CLIENT_ID || '';
   if (!clientId) return process.env.BOT_INVITE_URL || 'https://discord.com/oauth2/authorize';
   return `https://discord.com/oauth2/authorize?client_id=${clientId}&scope=bot%20applications.commands&permissions=8&guild_id=${guild.id}&disable_guild_select=true`;
+}
+
+function ensureDashboardGuild(req, res, guildId) {
+  if (req.dashboardSession.guild_id && req.dashboardSession.guild_id !== guildId) {
+    res.status(403).json({ ok: false, error: 'I cannot let this session manage that server.' });
+    return false;
+  }
+  return true;
+}
+
+function messagesSummary(messages = {}) {
+  return {
+    enabledSystems: ['welcome', 'leave', 'dm', 'ping', 'system'].filter((key) => messages[key]?.enabled).length,
+    stickyCount: Array.isArray(messages.sticky) ? messages.sticky.length : 0,
+    pingTargetCount: Array.isArray(messages.ping?.targets) ? messages.ping.targets.length : 0,
+    systemTemplateCount: Object.values(messages.system?.templates || {}).filter(Boolean).length
+  };
+}
+
+function dashboardVariables() {
+  return {
+    welcome: ['{user.mention}', '{user.tag}', '{guild.name}', '{guild.count}', '{channel.name}', '{date.now_proper}'],
+    moderation: ['{user.mention}', '{user.tag}', '{guild.name}', '{punishment.reason}', '{moderator.mention}', '{date.now_proper}']
+  };
+}
+
+function fakePermissionRow(row = {}) {
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    subjectType: row.subject_type,
+    subjectId: row.subject_id,
+    subjectLabel: row.subject_type === 'role' ? `<@&${row.subject_id}>` : `<@${row.subject_id}>`,
+    permission: row.permission,
+    enabled: row.enabled !== false,
+    createdAt: row.created_at
+  };
 }
 
 async function publicGuild(guild) {
@@ -77,6 +138,49 @@ async function publicGuilds(client, limit = 30) {
     .slice(0, Math.max(1, Math.min(60, Number(limit || 30))));
 
   return Promise.all(guilds.map(publicGuild));
+}
+
+function validateEmbedPayload(embed = {}) {
+  const fields = Array.isArray(embed.fields) ? embed.fields : [];
+  const totalLength =
+    String(embed.title || '').length +
+    String(embed.description || '').length +
+    String(embed.footer?.text || '').length +
+    String(embed.author?.name || '').length +
+    fields.reduce((sum, field) => sum + String(field?.name || '').length + String(field?.value || '').length, 0);
+
+  if (String(embed.title || '').length > 256) return 'Embed title cannot be longer than 256 characters.';
+  if (String(embed.description || '').length > 4096) return 'Embed description cannot be longer than 4096 characters.';
+  if (fields.length > 25) return 'Embeds can have at most 25 fields.';
+  if (fields.some((field) => String(field?.name || '').length > 256 || String(field?.value || '').length > 1024)) return 'One of the embed fields is too long.';
+  if (String(embed.footer?.text || '').length > 2048) return 'Embed footer cannot be longer than 2048 characters.';
+  if (String(embed.author?.name || '').length > 256) return 'Embed author cannot be longer than 256 characters.';
+  if (totalLength > 6000) return 'Embed total text cannot be longer than 6000 characters.';
+  return null;
+}
+
+function normalizeEmbedColor(embed = {}) {
+  if (embed.color == null || typeof embed.color === 'number') return embed;
+  const text = String(embed.color || '').trim().replace(/^#/, '').replace(/^0x/i, '');
+  if (/^[0-9a-f]{6}$/i.test(text)) return { ...embed, color: Number.parseInt(text, 16) };
+  const next = { ...embed };
+  delete next.color;
+  return next;
+}
+
+async function resolveEmbedVariables(embed, context) {
+  const next = JSON.parse(JSON.stringify(embed || {}));
+  const walk = async (value) => {
+    if (typeof value === 'string') return resolveVariables(value, context);
+    if (Array.isArray(value)) return Promise.all(value.map(walk));
+    if (value && typeof value === 'object') {
+      const out = {};
+      for (const [key, item] of Object.entries(value)) out[key] = await walk(item);
+      return out;
+    }
+    return value;
+  };
+  return walk(next);
 }
 
 function runtimeStatus(client, database) {
@@ -235,7 +339,7 @@ function startApiServer(client) {
   app.get('/dashboard/guilds/:guildId/settings', verifyDashboardToken, async (req, res) => {
     if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
     const { guildId } = req.params;
-    if (req.dashboardSession.guild_id && req.dashboardSession.guild_id !== guildId) return res.status(403).json({ ok: false, error: 'I cannot let this session manage that server.' });
+    if (!ensureDashboardGuild(req, res, guildId)) return;
     let settings;
     let fakePermissions;
 
@@ -269,6 +373,185 @@ function startApiServer(client) {
     }
 
     res.json({ ok: true, settings: saved });
+  });
+
+  app.get('/dashboard/guilds/:guildId/messages', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
+    const { guildId } = req.params;
+    if (!ensureDashboardGuild(req, res, guildId)) return;
+
+    try {
+      const messages = await getGuildMessagesConfig(guildId);
+      return res.json({
+        ok: true,
+        messages,
+        summary: messagesSummary(messages),
+        variables: dashboardVariables()
+      });
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not load message settings.' });
+    }
+  });
+
+  app.patch('/dashboard/guilds/:guildId/messages', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
+    const { guildId } = req.params;
+    if (!ensureDashboardGuild(req, res, guildId)) return;
+
+    try {
+      const messages = await updateGuildMessagesConfig(guildId, req.body || {});
+      return res.json({
+        ok: true,
+        messages,
+        summary: messagesSummary(messages),
+        variables: dashboardVariables()
+      });
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not save message settings.' });
+    }
+  });
+
+  app.get('/dashboard/guilds/:guildId/logging', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
+    const { guildId } = req.params;
+    if (!ensureDashboardGuild(req, res, guildId)) return;
+
+    try {
+      const config = await getGuildLogConfig(guildId);
+      return res.json({ ok: true, config, events: DEFAULT_EVENTS });
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not load logging settings.' });
+    }
+  });
+
+  app.patch('/dashboard/guilds/:guildId/logging', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
+    const { guildId } = req.params;
+    if (!ensureDashboardGuild(req, res, guildId)) return;
+
+    try {
+      const config = await updateGuildLogConfig(guildId, (current) => {
+        const body = req.body || {};
+        if (typeof body.enabled === 'boolean') current.enabled = body.enabled;
+        if (body.channels && typeof body.channels === 'object') current.channels = body.channels;
+        if (body.webhooks && typeof body.webhooks === 'object') current.webhooks = body.webhooks;
+        if (body.colors && typeof body.colors === 'object') current.colors = body.colors;
+        if (body.ignores && typeof body.ignores === 'object') current.ignores = body.ignores;
+      });
+      return res.json({ ok: true, config, events: DEFAULT_EVENTS });
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not save logging settings.' });
+    }
+  });
+
+  app.get('/dashboard/guilds/:guildId/security', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
+    const { guildId } = req.params;
+    if (!ensureDashboardGuild(req, res, guildId)) return;
+
+    try {
+      const [securityConfig, fakePermissions, whitelist, trustNobody] = await Promise.all([
+        db.getGuildSecurityConfig(guildId).catch(() => null),
+        db.listFakePermissions(guildId).catch(() => []),
+        db.listWhitelist(guildId, 100).catch(() => []),
+        getTrustNobodySettings(guildId).catch(() => ({ enabled: false }))
+      ]);
+
+      return res.json({
+        ok: true,
+        security: securityConfig?.security_json || {},
+        antinuke: securityConfig?.antinuke_json || {},
+        antiraid: securityConfig?.antiraid_json || {},
+        trustNobody,
+        thresholds: securityConfig?.thresholds_json || {},
+        securityWhitelist: whitelist.map((row) => ({
+          userId: row.user_id,
+          reason: row.reason,
+          addedBy: row.added_by,
+          createdAt: row.created_at
+        })),
+        whitelist: whitelist.map((row) => row.user_id),
+        antinukeWhitelist: securityConfig?.antinuke_json?.whitelist || [],
+        antiraidWhitelist: securityConfig?.antiraid_json?.whitelist || [],
+        fakePermissions: fakePermissions.map(fakePermissionRow)
+      });
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not load security settings.' });
+    }
+  });
+
+  app.get('/dashboard/guilds/:guildId/economy', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
+    const { guildId } = req.params;
+    if (!ensureDashboardGuild(req, res, guildId)) return;
+
+    try {
+      const settings = await getEconomySettings(guildId);
+      return res.json({ ok: true, settings });
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not load economy settings.' });
+    }
+  });
+
+  app.patch('/dashboard/guilds/:guildId/economy', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
+    const { guildId } = req.params;
+    if (req.dashboardSession.guild_id && req.dashboardSession.guild_id !== guildId) return res.status(403).json({ ok: false, error: 'I cannot let this session manage that server.' });
+
+    const allowed = [
+      'currencyName', 'currencyIcon', 'dailyBase', 'weeklyBase', 'workMin', 'workMax',
+      'dailyCooldownSeconds', 'weeklyCooldownSeconds', 'workCooldownSeconds',
+      'taxRate', 'inflationEnabled', 'inflationRate', 'voterBoostEnabled', 'disabledCommands',
+      'robEnabled', 'robCooldownSeconds', 'robMinAmount', 'robMaxAmount', 'robSuccessRate', 'robFineRate', 'robProtectionHours',
+      'casinoEnabled', 'casinoCooldownSeconds', 'casinoMinBet', 'casinoMaxBet'
+    ];
+    const patch = {};
+    for (const key of allowed) {
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) patch[key] = req.body[key];
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ ok: false, error: 'I did not receive economy settings I can save.' });
+
+    try {
+      const settings = await updateEconomySettings(guildId, (current) => ({ ...current, ...patch }));
+      return res.json({ ok: true, settings });
+    } catch (_error) {
+      return res.status(503).json({ ok: false, error: 'I could not save economy settings.' });
+    }
+  });
+
+  app.post('/dashboard/guilds/:guildId/embed/send', verifyDashboardToken, async (req, res) => {
+    if (!isDashboardReady()) return res.status(503).json(dashboardNotReadyPayload());
+    const { guildId } = req.params;
+    if (req.dashboardSession.guild_id && req.dashboardSession.guild_id !== guildId) return res.status(403).json({ ok: false, error: 'I cannot let this session manage that server.' });
+
+    const guild = client.guilds?.cache?.get(guildId) || (client.guilds?.fetch ? await client.guilds.fetch(guildId).catch(() => null) : null);
+    if (!guild) return res.status(404).json({ ok: false, error: 'I cannot find that server.' });
+
+    const channelId = String(req.body?.channelId || req.body?.channel_id || '').replace(/[<#>]/g, '');
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel?.isTextBased?.()) return res.status(400).json({ ok: false, error: 'Choose a text channel I can send messages in.' });
+
+    const embed = req.body?.embed || {};
+    const validation = validateEmbedPayload(embed);
+    if (validation) return res.status(400).json({ ok: false, error: validation });
+
+    const renderedEmbed = await resolveEmbedVariables(embed, {
+      client,
+      guild,
+      channel,
+      user: req.dashboardSession.user_id ? await client.users.fetch(req.dashboardSession.user_id).catch(() => null) : null
+    }).catch(() => embed);
+
+    try {
+      const sent = await channel.send({
+        content: req.body?.content ? String(req.body.content).slice(0, 2000) : undefined,
+        embeds: [normalizeEmbedColor(renderedEmbed)],
+        allowedMentions: { parse: [] }
+      });
+      return res.json({ ok: true, messageId: sent.id, url: `https://discord.com/channels/${guild.id}/${channel.id}/${sent.id}` });
+    } catch (_error) {
+      return res.status(403).json({ ok: false, error: 'I could not send that embed in the selected channel.' });
+    }
   });
 
   app.listen(port, '0.0.0.0', () => {
