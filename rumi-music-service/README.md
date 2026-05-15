@@ -21,7 +21,7 @@ This service now has a real runtime spine:
 - Spotify and Lavalink service layers exist
 - Supabase schema for music persistence is declared in the main bot migrations
 - Spotify OAuth link start/callback handling is wired through the music service
-- deep Lavalink playback and queue restoration still need their dedicated runtime pass
+- the Node bot now also includes a direct Lavalink v4 runtime pass for prefix music commands; this Java sidecar remains available for slash/OAuth-focused deployments
 
 That means the architecture is in place without forcing unstable voice code into the main bot.
 
@@ -77,12 +77,12 @@ Copy `.env.example` and fill in:
 
 ## Lavalink plugin setup
 
-Rumi's music service expects a Lavalink v4 node with:
+Rumi expects a Lavalink v4 node. The bundled examples use YouTube/YouTube Music search by default and do not require a SoundCloud developer account. Optional plugins:
 
 - `dev.lavalink.youtube:youtube-plugin:1.17.0`
 - `com.github.topi314.lavasrc:lavasrc-plugin:4.8.1`
 
-A ready-to-paste example is included in `application.example.yml`.
+A ready-to-paste example is included in `application.example.yml`. SoundCloud is disabled in the bundled example; add `scsearch:` only if you intentionally enable SoundCloud on your node.
 
 Current official docs:
 

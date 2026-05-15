@@ -1,4 +1,5 @@
 const nodePlayer = require('../systems/music/nodePlayer');
+const lavalinkPlayer = require('../systems/music/lavalinkPlayer');
 const logger = require('../systems/logging/logger');
 
 function envFlag(name, fallback = false) {
@@ -19,13 +20,31 @@ function getWorkerSecret() {
   return String(process.env.MUSIC_WORKER_SECRET || '').trim();
 }
 
+function selectedBackend() {
+  return String(process.env.MUSIC_BACKEND || '').trim().toLowerCase();
+}
+
 function useWorker() {
-  const backend = String(process.env.MUSIC_BACKEND || '').trim().toLowerCase();
+  const backend = selectedBackend();
 
   if (backend === 'worker' || backend === 'remote') return true;
+  if (backend === 'lavalink' || backend === 'node') return false;
   if (getWorkerUrl() && getWorkerSecret() && envFlag('MUSIC_WORKER_ENABLED', false)) return true;
 
   return false;
+}
+
+function useLavalink() {
+  const backend = selectedBackend();
+
+  if (backend === 'lavalink') return true;
+  if (backend === 'node' || backend === 'worker' || backend === 'remote') return false;
+
+  return envFlag('LAVALINK_ENABLED', Boolean(process.env.LAVALINK_URL && process.env.LAVALINK_PASSWORD));
+}
+
+function activeLocalBackend() {
+  return useLavalink() ? lavalinkPlayer : nodePlayer;
 }
 
 function errorPayload(error, code = 'music_error') {
@@ -103,10 +122,12 @@ async function runCommand(guildId, command, options = {}) {
     }
   }
 
+  const backend = activeLocalBackend();
+
   try {
-    return await nodePlayer.runCommand(guildId, command, options);
+    return await backend.runCommand(guildId, command, options);
   } catch (error) {
-    logger.warn({ error, guildId, command }, 'Local music command failed');
+    logger.warn({ error, guildId, command, backend: useLavalink() ? 'lavalink' : 'node' }, 'Local music command failed');
     return errorPayload(error, 'music_local_error');
   }
 }
@@ -130,7 +151,7 @@ async function health() {
     }
   }
 
-  return nodePlayer.health();
+  return activeLocalBackend().health();
 }
 
 async function initializeMusicPlayer(client) {
@@ -145,14 +166,23 @@ async function initializeMusicPlayer(client) {
     return null;
   }
 
-  return nodePlayer.initializeMusicPlayer(client);
+  try {
+    return await activeLocalBackend().initializeMusicPlayer(client);
+  } catch (error) {
+    logger.warn({ error, backend: useLavalink() ? 'lavalink' : 'node' }, 'Music backend failed to initialize; commands will retry on demand');
+    return null;
+  }
 }
 
 function isNodeMusicEnabled() {
-  // Music commands should still be available when using the remote worker.
-  if (useWorker()) return true;
+  // Music commands should still be available when using the remote worker or Lavalink.
+  if (useWorker() || useLavalink()) return true;
 
   return nodePlayer.isNodeMusicEnabled();
+}
+
+function isLavalinkEnabled() {
+  return useLavalink();
 }
 
 function isMusicEnabled() {
@@ -166,6 +196,7 @@ function isWorkerEnabled() {
 module.exports = {
   health,
   initializeMusicPlayer,
+  isLavalinkEnabled,
   isNodeMusicEnabled,
   isMusicEnabled,
   isWorkerEnabled,

@@ -5,6 +5,7 @@ const { Client, GatewayIntentBits, Partials, Events } = require('discord.js');
 
 const logger = require('../systems/logging/logger');
 const nodePlayer = require('../systems/music/nodePlayer');
+const lavalinkPlayer = require('../systems/music/lavalinkPlayer');
 
 const PORT = Number(process.env.PORT || process.env.MUSIC_WORKER_PORT || 3000);
 const SECRET = String(process.env.MUSIC_WORKER_SECRET || '').trim();
@@ -19,6 +20,16 @@ let ready = false;
 let starting = true;
 let startupError = null;
 let client = null;
+
+function selectedMusicRuntime() {
+  const backend = String(process.env.MUSIC_WORKER_BACKEND || process.env.MUSIC_BACKEND || '').trim().toLowerCase();
+  if (backend === 'lavalink') return lavalinkPlayer;
+  return nodePlayer;
+}
+
+function selectedMusicRuntimeName() {
+  return selectedMusicRuntime() === lavalinkPlayer ? 'lavalink' : 'node';
+}
 
 function log(...args) {
   console.log('[rumi-music-worker]', ...args);
@@ -129,7 +140,7 @@ async function startDiscordClient() {
     log(`Discord ready as ${client.user?.tag}. Guilds: ${client.guilds.cache.size}`);
 
     try {
-      await nodePlayer.initializeMusicPlayer(client);
+      await selectedMusicRuntime().initializeMusicPlayer(client);
 
       ready = true;
       starting = false;
@@ -183,8 +194,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      const health = await nodePlayer.health().catch((error) => ({
+      const health = await selectedMusicRuntime().health().catch((error) => ({
         ok: false,
+        backend: selectedMusicRuntimeName(),
         error: error.message
       }));
 
@@ -243,7 +255,7 @@ const server = http.createServer(async (req, res) => {
         textChannelId: options.textChannelId
       });
 
-      const payload = await nodePlayer.runCommand(guildId, command, options);
+      const payload = await selectedMusicRuntime().runCommand(guildId, command, options);
 
       log('/run completed', {
         guildId,

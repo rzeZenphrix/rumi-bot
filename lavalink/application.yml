@@ -4,15 +4,34 @@ server:
 
 lavalink:
   server:
-    password: "youshallnotpass"
+    password: "${LAVALINK_PASSWORD:-youshallnotpass}"
+    playerUpdateInterval: 5
+    trackStuckThresholdMs: 10000
+    useSeekGhosting: true
     sources:
       youtube: false
-      soundcloud: false
       bandcamp: true
+      soundcloud: false
       twitch: false
-      vimeo: false
+      vimeo: true
+      nico: false
       http: true
       local: false
+    filters:
+      volume: true
+      equalizer: true
+      karaoke: true
+      timescale: true
+      tremolo: true
+      vibrato: true
+      distortion: true
+      rotation: true
+      channelMix: true
+      lowPass: true
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    opusEncodingQuality: 10
+    resamplingQuality: HIGH
   plugins:
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.17.0"
       snapshot: false
@@ -36,16 +55,23 @@ plugins:
       - "ytmsearch:%QUERY%"
     sources:
       spotify: false
-      youtube: true
       applemusic: false
       deezer: false
       yandexmusic: false
       flowerytts: false
+      youtube: true
       ytsearch: true
     spotify:
-      clientId: ""
-      clientSecret: ""
+      clientId: "${SPOTIFY_CLIENT_ID:-}"
+      clientSecret: "${SPOTIFY_CLIENT_SECRET:-}"
       preferAnonymousToken: true
+
+logging:
+  file:
+    path: ./logs/
+  level:
+    root: INFO
+    lavalink: INFO
 
 metrics:
   prometheus:
