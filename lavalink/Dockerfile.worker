@@ -1,0 +1,14 @@
+FROM ghcr.io/lavalink-devs/lavalink:4-alpine
+
+USER root
+
+WORKDIR /opt/Lavalink
+
+COPY lavalink/application.yml /opt/Lavalink/application.yml
+
+RUN mkdir -p /opt/Lavalink/plugins /opt/Lavalink/logs \
+  && chown -R 322:322 /opt/Lavalink
+
+USER 322:322
+
+EXPOSE 3000

@@ -75,7 +75,8 @@ function normalizeStickyEntry(entry = {}, index = 0) {
     embed: String(entry.embed || '').trim(),
     mode,
     interval: Number.isFinite(interval) && interval > 0 ? Math.round(interval) : 5,
-    createdBy: entry.createdBy ? String(entry.createdBy) : null
+    createdBy: entry.createdBy ? String(entry.createdBy) : null,
+    lastMessageId: String(entry.lastMessageId || '').trim() || null
   };
 }
 
@@ -198,6 +199,17 @@ async function sendConfiguredPayload(channel, baseText, embedText, context, dele
   return sent;
 }
 
+async function deletePreviousStickyMessage(channel, messageId) {
+  const id = String(messageId || '').trim();
+  if (!channel?.messages || !/^\d{17,20}$/.test(id)) return false;
+
+  const previous = await channel.messages.fetch(id).catch(() => null);
+  if (!previous || !previous.deletable) return false;
+
+  await previous.delete().catch(() => null);
+  return true;
+}
+
 async function getGuildMessagesConfig(guildId) {
   const settings = await db.getGuildSettings(guildId);
   return normalizeMessagesConfig(settings.settings_json?.messages || {});
@@ -315,7 +327,8 @@ async function handleStickyMessages(message) {
     const key = `${message.guild.id}:${sticky.channelId}:${sticky.id}`;
     const current = stickyRuntime.get(key) || {
       count: 0,
-      lastSentAt: 0
+      lastSentAt: 0,
+      lastMessageId: sticky.lastMessageId || null
     };
 
     current.count += 1;
@@ -335,10 +348,19 @@ async function handleStickyMessages(message) {
       args: [],
       prefix: message.prefix || ','
     };
+    const previousMessageId = current.lastMessageId || sticky.lastMessageId;
+    await deletePreviousStickyMessage(message.channel, previousMessageId);
+
     const sent = await sendConfiguredPayload(message.channel, sticky.message, sticky.embed, context, 0);
     if (sent) {
       current.count = 0;
       current.lastSentAt = now;
+      current.lastMessageId = sent.id;
+      await updateGuildMessagesConfig(message.guild.id, (latest) => {
+        const target = latest.sticky.find((entry) => entry.id === sticky.id);
+        if (target) target.lastMessageId = sent.id;
+        return latest;
+      }).catch(() => null);
     }
     stickyRuntime.set(key, current);
   }

@@ -1,13 +1,17 @@
 server:
-  port: 2333
-  address: 0.0.0.0
+  port: ${SERVER_PORT:3000}
+  address: ${SERVER_ADDRESS:0.0.0.0}
+  http2:
+    enabled: false
 
 lavalink:
+  plugins:
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.1"
+      snapshot: false
+
   server:
-    password: "${LAVALINK_PASSWORD:-youshallnotpass}"
-    playerUpdateInterval: 5
-    trackStuckThresholdMs: 10000
-    useSeekGhosting: true
+    password: "${LAVALINK_SERVER_PASSWORD:youshallnotpass}"
+
     sources:
       youtube: false
       bandcamp: true
@@ -17,6 +21,7 @@ lavalink:
       nico: false
       http: true
       local: false
+
     filters:
       volume: true
       equalizer: true
@@ -28,15 +33,15 @@ lavalink:
       rotation: true
       channelMix: true
       lowPass: true
+
     bufferDurationMs: 400
     frameBufferDurationMs: 5000
     opusEncodingQuality: 10
-    resamplingQuality: HIGH
-  plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.17.0"
-      snapshot: false
-    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.1"
-      snapshot: false
+    resamplingQuality: LOW
+    trackStuckThresholdMs: 10000
+    useSeekGhosting: true
+    youtubePlaylistLoadLimit: 6
+    playerUpdateInterval: 5
 
 plugins:
   youtube:
@@ -47,24 +52,16 @@ plugins:
     clients:
       - MUSIC
       - WEB
-      - ANDROID_VR
       - WEBEMBEDDED
-  lavasrc:
-    providers:
-      - "ytsearch:%QUERY%"
-      - "ytmsearch:%QUERY%"
-    sources:
-      spotify: false
-      applemusic: false
-      deezer: false
-      yandexmusic: false
-      flowerytts: false
-      youtube: true
-      ytsearch: true
-    spotify:
-      clientId: "${SPOTIFY_CLIENT_ID:-}"
-      clientSecret: "${SPOTIFY_CLIENT_SECRET:-}"
-      preferAnonymousToken: true
+      - ANDROID_VR
+
+metrics:
+  prometheus:
+    enabled: false
+    endpoint: /metrics
+
+sentry:
+  dsn: ""
 
 logging:
   file:
@@ -72,7 +69,4 @@ logging:
   level:
     root: INFO
     lavalink: INFO
-
-metrics:
-  prometheus:
-    enabled: false
+    dev.lavalink.youtube: INFO

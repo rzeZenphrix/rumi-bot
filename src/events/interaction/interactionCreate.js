@@ -7,7 +7,7 @@ const { handleVerificationInteraction } = require('../../systems/verification/ve
 const { handleDisboardBumpInteraction } = require('../../systems/bump/disboardBumpReminder');
 const { handleGiveawayButton } = require('../../systems/giveaways/manager');
 const respond = require('../../utils/respond');
-const { handleMusicInteraction } = require('../../systems/music/nodePlayer');
+const { handleMusicInteraction } = require('../../services/musicService');
 const { handleUnbanRejoinButton } = require('../../systems/moderation/unbanRejoinButtons');
 const { logEventError } = require('../../utils/discordErrors');
 

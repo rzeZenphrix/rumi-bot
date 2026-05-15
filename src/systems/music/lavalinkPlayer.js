@@ -1,11 +1,11 @@
 const WebSocket = require('ws');
-const { ChannelType } = require('discord.js');
+const { ChannelType, GatewayOpcodes, PermissionFlagsBits } = require('discord.js');
 
 const logger = require('../logging/logger');
 const db = require('../../services/database');
 
 const DEFAULT_SEARCH_PREFIXES = 'ytsearch:,ytmsearch:';
-const CLIENT_NAME = 'rumi-lavalink/1.0.0';
+const CLIENT_NAME = 'rumi-lavalink/2.0.0';
 const INVISIBLE = '\u200B';
 
 let manager = null;
@@ -34,15 +34,23 @@ function isLavalinkEnabled() {
   return envFlag('LAVALINK_ENABLED', Boolean(process.env.LAVALINK_URL && process.env.LAVALINK_PASSWORD));
 }
 
+function configuredNodes() {
+  return String(process.env.LAVALINK_NODES || process.env.LAVALINK_URL || 'http://localhost:2333')
+    .split(',')
+    .map((value) => value.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+}
+
 function baseUrl() {
-  return String(process.env.LAVALINK_URL || 'http://localhost:2333').replace(/\/+$/, '');
+  return configuredNodes()[0] || 'http://localhost:2333';
 }
 
 function wsUrlFromBase(url) {
   const trimmed = String(url || '').replace(/\/+$/, '');
+  if (/^wss?:\/\//i.test(trimmed)) return `${trimmed}/v4/websocket`;
   const protocol = trimmed.startsWith('https://') ? 'wss://' : 'ws://';
-  const noProtocol = trimmed.replace(/^https?:\/\//i, '').replace(/^wss?:\/\//i, '');
-  return `${protocol}${noProtocol}/v4/websocket`;
+  const host = trimmed.replace(/^https?:\/\//i, '');
+  return `${protocol}${host}/v4/websocket`;
 }
 
 function lavalinkPassword() {
@@ -92,7 +100,7 @@ function fail(error, detail, code = 'music_lavalink_error') {
     error,
     detail,
     replyType: 'bad',
-    description: `**${escapeMarkdown(error)}**\n${escapeMarkdown(detail)}`
+    description: `**${escapeMarkdown(error)}**\n${escapeMarkdown(detail || '')}`.trim()
   });
 }
 
@@ -109,7 +117,7 @@ function isUrl(value) {
 }
 
 function looksLikeSearchIdentifier(value) {
-  return /^[a-z0-9_-]+search:/i.test(String(value || '')) || /^(sp|am|dz|ym)search:/i.test(String(value || ''));
+  return /^[a-z0-9_-]+search:/i.test(String(value || ''));
 }
 
 function parseDuration(input) {
@@ -149,6 +157,13 @@ function oneBasedIndex(raw) {
   return Number.isFinite(index) && index > 0 ? index - 1 : null;
 }
 
+function boolFromOnOff(value, fallback = false) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (['on', 'enable', 'enabled', 'true', 'yes', '1'].includes(raw)) return true;
+  if (['off', 'disable', 'disabled', 'false', 'no', '0'].includes(raw)) return false;
+  return fallback;
+}
+
 function trackTitle(track) {
   return track?.info?.title || track?.title || 'Unknown track';
 }
@@ -174,8 +189,8 @@ function trackSource(track) {
   const raw = String(track?.info?.sourceName || track?.sourceName || '').toLowerCase();
   if (raw.includes('youtube')) return 'YouTube';
   if (raw.includes('soundcloud')) return 'SoundCloud';
-  if (raw.includes('spotify')) return 'Spotify';
-  if (raw.includes('apple')) return 'Apple Music';
+  if (raw.includes('bandcamp')) return 'Bandcamp';
+  if (raw.includes('vimeo')) return 'Vimeo';
   if (raw.includes('http')) return 'Direct link';
   return raw || 'Lavalink';
 }
@@ -209,10 +224,10 @@ function fitLines(lines, max = 3900) {
 function compactFooter(state, extras = []) {
   return [
     'Lavalink',
-    state?.voiceChannelId ? `Voice ${state.voiceChannelId}` : null,
-    `${state?.queue?.length || 0} waiting`,
+    state?.queue?.length ? `${state.queue.length} waiting` : '0 waiting',
     `Vol ${state?.volume ?? envNumber('MUSIC_DEFAULT_VOLUME', 65)}%`,
     state?.loopMode && state.loopMode !== 'off' ? `Loop ${state.loopMode}` : null,
+    state?.autoplay ? 'Autoplay on' : null,
     ...extras
   ].filter(Boolean).join(' · ');
 }
@@ -234,11 +249,12 @@ function filterPayload(mode) {
   const name = String(mode || '').trim().toLowerCase();
   if (!name || ['off', 'none', 'clear', 'reset', 'disable', 'disabled'].includes(name)) return {};
 
-  if (name === 'bass' || name === 'bassboost') {
+  if (name === 'bass' || name === 'bassboost' || name === 'bassboost_high') {
     return { equalizer: [{ band: 0, gain: 0.20 }, { band: 1, gain: 0.15 }, { band: 2, gain: 0.10 }] };
   }
+  if (name === 'bassboost_low') return { equalizer: [{ band: 0, gain: 0.10 }, { band: 1, gain: 0.08 }] };
   if (name === 'nightcore') return { timescale: { speed: 1.15, pitch: 1.15, rate: 1.0 } };
-  if (name === 'vaporwave') return { timescale: { speed: 0.85, pitch: 0.85, rate: 1.0 } };
+  if (name === 'vaporwave' || name === 'lofi') return { timescale: { speed: 0.85, pitch: 0.85, rate: 1.0 } };
   if (name === 'tremolo') return { tremolo: { frequency: 2.0, depth: 0.5 } };
   if (name === 'vibrato') return { vibrato: { frequency: 2.0, depth: 0.5 } };
   if (name === '8d' || name === 'rotation' || name === 'rotate') return { rotation: { rotationHz: 0.2 } };
@@ -251,6 +267,7 @@ function filterPayload(mode) {
 async function getMusicSettings(guildId) {
   return db.getKv(`music:settings:${guildId}`, 'config', {
     stay247: false,
+    autoplay: false,
     defaultVolume: envNumber('MUSIC_DEFAULT_VOLUME', 65),
     searchEngine: String(process.env.MUSIC_LAVALINK_SEARCH_PREFIXES || DEFAULT_SEARCH_PREFIXES).toLowerCase()
   });
@@ -259,12 +276,43 @@ async function getMusicSettings(guildId) {
 async function saveMusicSettings(guildId, patch = {}) {
   const current = await getMusicSettings(guildId).catch(() => ({
     stay247: false,
+    autoplay: false,
     defaultVolume: envNumber('MUSIC_DEFAULT_VOLUME', 65),
     searchEngine: DEFAULT_SEARCH_PREFIXES
   }));
   const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
   await db.setKv(`music:settings:${guildId}`, 'config', next).catch(() => null);
   return next;
+}
+
+function queueDataFromState(state) {
+  return {
+    current: state.current ? {
+      title: trackTitle(state.current),
+      author: trackAuthor(state.current),
+      url: trackUrl(state.current),
+      thumbnail: trackThumbnail(state.current),
+      duration: trackDuration(state.current),
+      source: trackSource(state.current)
+    } : null,
+    tracks: state.queue.map((track, index) => ({
+      index: index + 1,
+      title: trackTitle(track),
+      author: trackAuthor(track),
+      url: trackUrl(track),
+      thumbnail: trackThumbnail(track),
+      duration: trackDuration(track),
+      source: trackSource(track)
+    })),
+    total: state.queue.length,
+    volume: state.volume,
+    loop: state.loopMode || 'off',
+    filters: state.filters || 'off',
+    autoplay: Boolean(state.autoplay),
+    paused: Boolean(state.paused),
+    playing: Boolean(state.playing),
+    position: state.position || 0
+  };
 }
 
 class LavalinkMusicManager {
@@ -282,10 +330,7 @@ class LavalinkMusicManager {
     this.players = new Map();
     this.readyResolvers = [];
     this.nodeIndex = 0;
-    this.nodes = String(process.env.LAVALINK_NODES || process.env.LAVALINK_URL || 'http://localhost:2333')
-      .split(',')
-      .map((value) => value.trim().replace(/\/+$/, ''))
-      .filter(Boolean);
+    this.nodes = configuredNodes();
 
     this.rawListener = (packet) => this.handleRaw(packet);
     this.client.on('raw', this.rawListener);
@@ -323,10 +368,6 @@ class LavalinkMusicManager {
         try { ws.close(); } catch { /* ignore */ }
       }, envNumber('LAVALINK_READY_TIMEOUT_MS', 20000));
 
-      ws.on('open', () => {
-        logger.info({ node: this.activeBaseUrl() }, 'Lavalink websocket opened');
-      });
-
       ws.on('message', (raw) => {
         let message;
         try {
@@ -358,8 +399,7 @@ class LavalinkMusicManager {
         clearTimeout(timeout);
         this.ready = false;
         this.connectingPromise = null;
-        const reasonText = reason?.toString?.() || '';
-        logger.warn({ code, reason: reasonText, node: this.activeBaseUrl() }, 'Lavalink websocket closed');
+        logger.warn({ code, reason: reason?.toString?.() || '', node: this.activeBaseUrl() }, 'Lavalink websocket closed');
         if (!this.destroyed) this.scheduleReconnect();
       });
     }).finally(() => {
@@ -424,8 +464,7 @@ class LavalinkMusicManager {
     if (event.type === 'TrackEndEvent') {
       state.playing = false;
       const reason = String(event.reason || '').toLowerCase();
-      if (['replaced'].includes(reason)) return;
-      if (['cleanup'].includes(reason)) return;
+      if (['replaced', 'cleanup'].includes(reason)) return;
       await this.startNext(event.guildId, reason);
       return;
     }
@@ -445,10 +484,9 @@ class LavalinkMusicManager {
 
   async updateSession() {
     if (!this.sessionId) return null;
-    const timeout = envNumber('LAVALINK_RESUME_TIMEOUT_SECONDS', 120);
     return this.rest('PATCH', `/v4/sessions/${encodeURIComponent(this.sessionId)}`, {
       resuming: true,
-      timeout
+      timeout: envNumber('LAVALINK_RESUME_TIMEOUT_SECONDS', 120)
     });
   }
 
@@ -518,6 +556,7 @@ class LavalinkMusicManager {
         playing: false,
         loopMode: 'off',
         autoplay: false,
+        stay247: false,
         filters: 'off',
         position: 0,
         connected: false,
@@ -530,9 +569,7 @@ class LavalinkMusicManager {
 
   getVoice(guildId) {
     const id = String(guildId);
-    if (!this.voice.has(id)) {
-      this.voice.set(id, { guildId: id, resolvers: [] });
-    }
+    if (!this.voice.has(id)) this.voice.set(id, { guildId: id, resolvers: [] });
     return this.voice.get(id);
   }
 
@@ -584,6 +621,7 @@ class LavalinkMusicManager {
   async joinVoice(guildId, channelId) {
     const guild = this.client.guilds.cache.get(String(guildId)) || await this.client.guilds.fetch(String(guildId)).catch(() => null);
     if (!guild) throw new Error('I could not find that server.');
+
     const channel = guild.channels.cache.get(String(channelId)) || await guild.channels.fetch(String(channelId)).catch(() => null);
     if (!channel || ![ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(channel.type)) {
       throw new Error('Join a voice channel first.');
@@ -591,7 +629,7 @@ class LavalinkMusicManager {
 
     const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
     const permissions = me ? channel.permissionsFor(me) : null;
-    if (permissions && (!permissions.has('Connect') || !permissions.has('Speak'))) {
+    if (permissions && (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak))) {
       throw new Error('I need Connect and Speak permissions in that voice channel.');
     }
 
@@ -601,7 +639,7 @@ class LavalinkMusicManager {
     voice.channelId = String(channelId);
 
     guild.shard.send({
-      op: 4,
+      op: GatewayOpcodes.VoiceStateUpdate,
       d: {
         guild_id: String(guildId),
         channel_id: String(channelId),
@@ -630,7 +668,7 @@ class LavalinkMusicManager {
     const guild = this.client.guilds.cache.get(String(guildId)) || await this.client.guilds.fetch(String(guildId)).catch(() => null);
     if (guild?.shard) {
       guild.shard.send({
-        op: 4,
+        op: GatewayOpcodes.VoiceStateUpdate,
         d: {
           guild_id: String(guildId),
           channel_id: null,
@@ -655,37 +693,24 @@ class LavalinkMusicManager {
     }
   }
 
-  searchPrefixes() {
-    const raw = String(process.env.MUSIC_LAVALINK_SEARCH_PREFIXES || DEFAULT_SEARCH_PREFIXES)
+  searchPrefixes(settings = null) {
+    const raw = String(settings?.searchEngine || process.env.MUSIC_LAVALINK_SEARCH_PREFIXES || DEFAULT_SEARCH_PREFIXES)
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean);
     return raw.length ? raw : DEFAULT_SEARCH_PREFIXES.split(',');
   }
 
-  identifiersFor(query) {
+  identifiersFor(query, settings = null) {
     const trimmed = String(query || '').trim();
     if (!trimmed) return [];
     if (isUrl(trimmed) || looksLikeSearchIdentifier(trimmed)) return [trimmed];
-
-    if (/open\.spotify\.com|spotify:/i.test(trimmed)) {
-      if (envFlag('LAVASRC_SPOTIFY_ENABLED', false) || (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET)) {
-        return [trimmed];
-      }
-      const cleaned = trimmed
-        .replace(/spotify:(track|album|playlist):/gi, '')
-        .replace(/https?:\/\/open\.spotify\.com\/(track|album|playlist)\//gi, '')
-        .replace(/\?.*$/, '')
-        .replace(/[-_]/g, ' ')
-        .trim();
-      return this.searchPrefixes().map((prefix) => `${prefix}${cleaned || trimmed}`);
-    }
-
-    return this.searchPrefixes().map((prefix) => `${prefix}${trimmed}`);
+    return this.searchPrefixes(settings).map((prefix) => `${prefix}${trimmed}`);
   }
 
-  async loadTracks(query) {
-    const identifiers = this.identifiersFor(query);
+  async loadTracks(query, guildId = null) {
+    const settings = guildId ? await getMusicSettings(guildId).catch(() => null) : null;
+    const identifiers = this.identifiersFor(query, settings);
     const failures = [];
 
     for (const identifier of identifiers) {
@@ -696,12 +721,12 @@ class LavalinkMusicManager {
           return { type: 'track', tracks: [normalizeTrack(result.data)], playlist: null, identifier };
         }
         if (loadType === 'search' && Array.isArray(result.data) && result.data.length) {
-          return { type: 'search', tracks: result.data.map(normalizeTrack).filter(Boolean), playlist: null, identifier };
+          return { type: 'search', tracks: result.data.map((track) => normalizeTrack(track)).filter(Boolean), playlist: null, identifier };
         }
         if (loadType === 'playlist' && Array.isArray(result.data?.tracks) && result.data.tracks.length) {
           return {
             type: 'playlist',
-            tracks: result.data.tracks.map(normalizeTrack).filter(Boolean),
+            tracks: result.data.tracks.map((track) => normalizeTrack(track)).filter(Boolean),
             playlist: result.data.info || { name: 'Playlist' },
             identifier
           };
@@ -721,6 +746,7 @@ class LavalinkMusicManager {
     if (!normalized?.encoded) throw new Error('The selected result had no Lavalink encoded track.');
 
     if (state.current) state.history.unshift(state.current);
+    state.history = state.history.slice(0, 50);
     state.current = normalized;
     state.playing = true;
     state.paused = false;
@@ -733,26 +759,32 @@ class LavalinkMusicManager {
     });
   }
 
+  async findAutoplayTrack(guildId, finished) {
+    const title = trackTitle(finished);
+    const author = trackAuthor(finished);
+    const seed = [author, title, 'radio'].filter(Boolean).join(' ');
+    const result = await this.loadTracks(seed, guildId).catch(() => ({ tracks: [] }));
+    const currentUrl = trackUrl(finished);
+    return (result.tracks || []).find((track) => trackUrl(track) !== currentUrl) || null;
+  }
+
   async startNext(guildId, reason = '') {
     const state = this.getPlayer(guildId);
     const finished = state.current;
+    const cleanReason = String(reason).toLowerCase();
 
-    if (finished && state.loopMode === 'track' && !['loadfailed', 'trackexceptionevent', 'trackstuckevent'].includes(String(reason).toLowerCase())) {
-      await this.playNow(guildId, finished).catch((error) => {
-        logger.warn({ error, guildId }, 'Failed to replay looped track');
-      });
+    if (finished && state.loopMode === 'track' && !['loadfailed', 'trackexceptionevent', 'trackstuckevent'].includes(cleanReason)) {
+      await this.playNow(guildId, finished).catch((error) => logger.warn({ error, guildId }, 'Failed to replay looped track'));
       return;
     }
 
-    if (finished && state.loopMode === 'queue') {
-      state.queue.push(finished);
-    }
+    if (finished && state.loopMode === 'queue') state.queue.push(finished);
 
-    const next = state.queue.shift();
+    let next = state.queue.shift();
+    if (!next && state.autoplay && finished) next = await this.findAutoplayTrack(guildId, finished);
+
     if (next) {
-      await this.playNow(guildId, next).catch((error) => {
-        logger.warn({ error, guildId }, 'Failed to start next Lavalink track');
-      });
+      await this.playNow(guildId, next).catch((error) => logger.warn({ error, guildId }, 'Failed to start next Lavalink track'));
       return;
     }
 
@@ -761,12 +793,11 @@ class LavalinkMusicManager {
     state.position = 0;
     await this.updatePlayer(guildId, { track: { encoded: null } }).catch(() => null);
 
-    const stay247 = Boolean(state.stay247);
     const idleMs = envNumber('MUSIC_IDLE_DESTROY_MS', 180000);
-    if (!stay247 && idleMs > 0) {
+    if (!state.stay247 && idleMs > 0) {
       setTimeout(async () => {
         const latest = this.getPlayer(guildId);
-        if (!latest.current && latest.queue.length === 0) {
+        if (!latest.current && latest.queue.length === 0 && !latest.stay247) {
           await this.destroyPlayer(guildId).catch(() => null);
           await this.leaveVoice(guildId).catch(() => null);
         }
@@ -805,17 +836,27 @@ async function initializeMusicPlayer(client) {
   clientRef = client;
   manager = new LavalinkMusicManager(client);
   client.rumiLavalink = manager;
-  await manager.connect();
-  await manager.info().catch(() => null);
 
-  logger.info({ node: manager.activeBaseUrl(), sessionId: manager.sessionId }, 'Lavalink music backend is ready');
+  const attempts = envNumber('LAVALINK_STARTUP_ATTEMPTS', 5);
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await manager.connect();
+      await manager.info();
+      return manager;
+    } catch (error) {
+      logger.warn({ error, attempt, attempts }, 'Lavalink startup connection failed');
+      if (attempt < attempts) await sleep(Math.min(15000, 2000 * attempt));
+    }
+  }
+
+  manager.scheduleReconnect();
   return manager;
 }
 
 async function ensureManager() {
   if (!manager && clientRef) await initializeMusicPlayer(clientRef);
-  if (!manager) throw new Error('Lavalink music backend has not been initialized.');
-  await manager.connect();
+  if (!manager) throw new Error('Lavalink manager has not been initialized yet.');
+  if (!manager.ready) await manager.connect();
   return manager;
 }
 
@@ -836,7 +877,7 @@ function voiceChannelError(voiceChannel) {
   }
   const me = voiceChannel.guild.members.me;
   const permissions = me ? voiceChannel.permissionsFor(me) : null;
-  if (permissions && (!permissions.has('Connect') || !permissions.has('Speak'))) {
+  if (permissions && (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak))) {
     return fail('I cannot play in that voice channel.', 'I need Connect and Speak permissions.', 'music_missing_voice_permissions');
   }
   return null;
@@ -880,16 +921,17 @@ async function play(guildId, options = {}) {
   if (voiceError) return voiceError;
 
   try {
-    const settings = await getMusicSettings(guildId).catch(() => ({ stay247: false, defaultVolume: envNumber('MUSIC_DEFAULT_VOLUME', 65) }));
+    const settings = await getMusicSettings(guildId).catch(() => ({ stay247: false, autoplay: false, defaultVolume: envNumber('MUSIC_DEFAULT_VOLUME', 65) }));
     const state = lavalink.getPlayer(guildId);
     state.volume = Number(settings.defaultVolume || state.volume || envNumber('MUSIC_DEFAULT_VOLUME', 65));
     state.stay247 = Boolean(settings.stay247);
+    state.autoplay = Boolean(settings.autoplay || state.autoplay);
 
-    const result = await lavalink.loadTracks(query);
+    const result = await lavalink.loadTracks(query, guildId);
     if (!result.tracks.length) {
       return fail(
         'No playable music results found.',
-        (result.failures || []).slice(0, 2).join('\n') || 'Try a more specific song name, YouTube/YouTube Music search, Spotify link with LavaSrc configured, or a direct audio URL.',
+        (result.failures || []).slice(0, 2).join('\n') || 'Try a more specific song name, YouTube/YouTube Music search, or a direct audio URL.',
         'music_no_results'
       );
     }
@@ -906,13 +948,15 @@ async function play(guildId, options = {}) {
         `${tracksToAdd.length} tracks`
       ].join('\n'), {
         thumbnail: toThumbnail(trackThumbnail(mainTrack)),
-        footer: toFooter(compactFooter(stateAfter, [trackSource(mainTrack)]))
+        footer: toFooter(compactFooter(stateAfter, [trackSource(mainTrack)])),
+        queueData: queueDataFromState(stateAfter)
       });
     }
 
     return ok([added.started ? 'playing' : 'added', formatTrack(mainTrack)].join('\n'), {
       thumbnail: toThumbnail(trackThumbnail(mainTrack)),
-      footer: toFooter(compactFooter(stateAfter, [trackDuration(mainTrack), trackSource(mainTrack)]))
+      footer: toFooter(compactFooter(stateAfter, [trackDuration(mainTrack), trackSource(mainTrack)])),
+      queueData: queueDataFromState(stateAfter)
     });
   } catch (error) {
     logger.warn({ error, guildId, query }, 'Lavalink play failed');
@@ -924,7 +968,7 @@ async function search(guildId, options = {}) {
   const lavalink = await ensureManager();
   const query = String(options.query || '').trim();
   if (!query) return fail('Tell me what to search for.', 'Use `musicsearch <song name>`.', 'music_missing_query');
-  const result = await lavalink.loadTracks(query);
+  const result = await lavalink.loadTracks(query, guildId);
   if (!result.tracks.length) return fail('No music results found.', 'Try a more specific song or artist.', 'music_no_results');
   const tracks = result.tracks.slice(0, 10);
   return panel(['search results', `**${escapeMarkdown(query)}**`].join('\n'), {
@@ -939,12 +983,14 @@ async function getState(guildId) {
   const state = lavalink.getPlayer(guildId);
   if (!state.current) {
     return panel('Nothing is currently playing.', {
-      footer: toFooter(`Lavalink · ${lavalink.ready ? 'connected' : 'connecting'} · ${lavalink.activeBaseUrl()}`)
+      footer: toFooter(`Lavalink · ${lavalink.ready ? 'connected' : 'connecting'} · ${lavalink.activeBaseUrl()}`),
+      queueData: queueDataFromState(state)
     });
   }
   return panel([playbackState(state).toLowerCase(), formatTrack(state.current), progressLine(state)].join('\n'), {
     thumbnail: toThumbnail(trackThumbnail(state.current)),
-    footer: toFooter(compactFooter(state, [trackSource(state.current)]))
+    footer: toFooter(compactFooter(state, [trackSource(state.current)])),
+    queueData: queueDataFromState(state)
   });
 }
 
@@ -954,7 +1000,8 @@ async function queuePayload(guildId) {
   const lines = state.queue.slice(0, 10).map(queueLine);
   return panel([formatTrack(state.current), '', lines.length ? fitLines(lines) : 'Nothing else queued.'].join('\n'), {
     thumbnail: toThumbnail(trackThumbnail(state.current)),
-    footer: toFooter(compactFooter(state, [state.queue.length > 10 ? `Showing 10/${state.queue.length}` : null]))
+    footer: toFooter(compactFooter(state, [state.queue.length > 10 ? `Showing 10/${state.queue.length}` : null])),
+    queueData: queueDataFromState(state)
   });
 }
 
@@ -963,7 +1010,8 @@ async function nowPlaying(guildId) {
   if (error) return error;
   return panel(['now playing', formatTrack(state.current), progressLine(state)].join('\n'), {
     thumbnail: toThumbnail(trackThumbnail(state.current)),
-    footer: toFooter(compactFooter(state, [trackDuration(state.current), trackSource(state.current)]))
+    footer: toFooter(compactFooter(state, [trackDuration(state.current), trackSource(state.current)])),
+    queueData: queueDataFromState(state)
   });
 }
 
@@ -973,7 +1021,9 @@ async function runQueueAction(guildId, action, onDone) {
   const result = await action(state);
   if (result?.ok === false) return result;
   if (result?.error) return result.error;
-  return onDone(state, result);
+  const payload = onDone(state, result);
+  if (payload?.ok) payload.queueData = queueDataFromState(state);
+  return payload;
 }
 
 async function health() {
@@ -997,7 +1047,7 @@ async function health() {
 }
 
 async function runCommand(guildId, command, options = {}) {
-  const lavalink = await ensureManager().catch((error) => null);
+  const lavalink = await ensureManager().catch(() => null);
   if (!lavalink) {
     return fail('Lavalink is not initialized.', 'Set MUSIC_BACKEND=lavalink, LAVALINK_URL, and LAVALINK_PASSWORD, then restart the bot.', 'music_not_initialized');
   }
@@ -1051,7 +1101,9 @@ async function runCommand(guildId, command, options = {}) {
     await lavalink.destroyPlayer(guildId).catch(() => null);
     await lavalink.leaveVoice(guildId).catch(() => null);
     if (normalized === 'leave') state.voiceChannelId = null;
-    return ok(normalized === 'leave' ? 'Disconnected and cleared the queue.' : 'Stopped playback and cleared the queue.');
+    return ok(normalized === 'leave' ? 'Disconnected and cleared the queue.' : 'Stopped playback and cleared the queue.', {
+      queueData: queueDataFromState(state)
+    });
   }
 
   if (normalized === 'clear') {
@@ -1072,10 +1124,7 @@ async function runCommand(guildId, command, options = {}) {
   if (normalized === 'remove') {
     const index = oneBasedIndex(options.index);
     if (index === null) return fail('Invalid queue number.', 'Use the number shown in `queue`.', 'music_invalid_index');
-    return runQueueAction(guildId, async (state) => {
-      const removed = state.queue.splice(index, 1)[0];
-      return { removed };
-    }, (state, result) => result.removed
+    return runQueueAction(guildId, async (state) => ({ removed: state.queue.splice(index, 1)[0] }), (state, result) => result.removed
       ? ok(`removed\n${formatTrack(result.removed, true)}`, { footer: toFooter(compactFooter(state)) })
       : fail('That queue entry does not exist.', 'Use the number shown in `queue`.', 'music_invalid_index'));
   }
@@ -1112,16 +1161,17 @@ async function runCommand(guildId, command, options = {}) {
     if (!['off', 'track', 'queue'].includes(mode)) return fail('Invalid loop mode.', 'Use off, track, or queue.', 'music_invalid_loop');
     const state = lavalink.getPlayer(guildId);
     state.loopMode = mode;
-    return panel(`Loop mode set to **${mode}**.`, { footer: toFooter(compactFooter(state)) });
+    return panel(`Loop mode set to **${mode}**.`, { footer: toFooter(compactFooter(state)), queueData: queueDataFromState(state) });
   }
 
   if (normalized === 'volume' || normalized === 'settings.volume') {
-    const value = Math.max(0, Math.min(200, Number.parseInt(String(options.value || ''), 10) || envNumber('MUSIC_DEFAULT_VOLUME', 65)));
+    const raw = Number.parseInt(String(options.value || ''), 10);
+    const value = Math.max(0, Math.min(200, Number.isFinite(raw) ? raw : envNumber('MUSIC_DEFAULT_VOLUME', 65)));
     const state = lavalink.getPlayer(guildId);
     state.volume = value;
     await saveMusicSettings(guildId, { defaultVolume: value }).catch(() => null);
     if (state.current) await lavalink.updatePlayer(guildId, { volume: value }).catch(() => null);
-    return ok(`Volume set to **${value}%**.`, { footer: toFooter(compactFooter(state)) });
+    return ok(`Volume set to **${value}%**.`, { footer: toFooter(compactFooter(state)), queueData: queueDataFromState(state) });
   }
 
   if (normalized === 'seek') {
@@ -1134,19 +1184,19 @@ async function runCommand(guildId, command, options = {}) {
   }
 
   if (normalized === 'autoplay' || normalized === 'settings.autoplay') {
-    const enabled = String(options.enabled || '').toLowerCase() !== 'off';
+    const enabled = boolFromOnOff(options.enabled, true);
     const state = lavalink.getPlayer(guildId);
     state.autoplay = enabled;
     await saveMusicSettings(guildId, { autoplay: enabled }).catch(() => null);
-    return panel(`Autoplay is now **${enabled ? 'on' : 'off'}**.`, { footer: toFooter(compactFooter(state)) });
+    return panel(`Autoplay is now **${enabled ? 'on' : 'off'}**.`, { footer: toFooter(compactFooter(state)), queueData: queueDataFromState(state) });
   }
 
   if (normalized === '247') {
-    const enabled = String(options.enabled || options.value || '').toLowerCase() !== 'off';
+    const enabled = boolFromOnOff(options.enabled || options.value, true);
     const state = lavalink.getPlayer(guildId);
     state.stay247 = enabled;
     await saveMusicSettings(guildId, { stay247: enabled }).catch(() => null);
-    return panel(`24/7 mode is now **${enabled ? 'on' : 'off'}**.`, { footer: toFooter(compactFooter(state)) });
+    return panel(`24/7 mode is now **${enabled ? 'on' : 'off'}**.`, { footer: toFooter(compactFooter(state)), queueData: queueDataFromState(state) });
   }
 
   if (normalized.startsWith('filter.')) {
@@ -1177,7 +1227,7 @@ async function runCommand(guildId, command, options = {}) {
   if (normalized === 'history') {
     const state = lavalink.getPlayer(guildId);
     const lines = state.history.slice(0, 10).map((track, index) => `\`${index + 1}\` ${formatTrack(track, true)}`);
-    return panel(lines.length ? fitLines(lines) : 'No recent tracks.', { footer: toFooter(compactFooter(state)) });
+    return panel(lines.length ? fitLines(lines) : 'No recent tracks.', { footer: toFooter(compactFooter(state)), queueData: queueDataFromState(state) });
   }
 
   if (normalized === 'lyrics') return panel('Lyrics lookup is not enabled in this Lavalink backend.');
@@ -1186,9 +1236,13 @@ async function runCommand(guildId, command, options = {}) {
     const prefixes = String(options.engine || options.value || '').trim();
     if (!prefixes) return fail('Invalid search setting.', 'Use values like `ytsearch:,ytmsearch:`.', 'music_invalid_search_engine');
     await saveMusicSettings(guildId, { searchEngine: prefixes }).catch(() => null);
-    process.env.MUSIC_LAVALINK_SEARCH_PREFIXES = prefixes;
     return panel(`Lavalink search prefixes set to **${escapeMarkdown(prefixes)}**.`);
   }
+
+  if (normalized === 'settings.announce') return panel('Track announcements are not needed for the Lavalink backend yet.');
+  if (normalized === 'settings.djrole') return panel('DJ role restrictions are not enforced by the Lavalink backend yet.');
+  if (normalized === 'settings.idle') return panel('Idle timeout is controlled with `MUSIC_IDLE_DESTROY_MS` in your env.');
+  if (normalized === 'settings.restrict') return panel('Music restrictions are not enforced by the Lavalink backend yet.');
 
   if (normalized === 'settings' || normalized.startsWith('settings.')) {
     const settings = await getMusicSettings(guildId).catch(() => null);
@@ -1196,28 +1250,33 @@ async function runCommand(guildId, command, options = {}) {
     return panel([
       'settings',
       `24/7: **${state.stay247 || settings?.stay247 ? 'on' : 'off'}**`,
+      `Autoplay: **${state.autoplay || settings?.autoplay ? 'on' : 'off'}**`,
       `Default volume: **${settings?.defaultVolume || envNumber('MUSIC_DEFAULT_VOLUME', 65)}%**`,
-      `Search prefixes: **${escapeMarkdown(process.env.MUSIC_LAVALINK_SEARCH_PREFIXES || DEFAULT_SEARCH_PREFIXES)}**`,
+      `Search prefixes: **${escapeMarkdown(settings?.searchEngine || process.env.MUSIC_LAVALINK_SEARCH_PREFIXES || DEFAULT_SEARCH_PREFIXES)}**`,
       `Filters: **${envFlag('MUSIC_LAVALINK_DISABLE_FILTERS', false) ? 'disabled' : 'enabled'}**`
     ].join('\n'));
   }
 
-  if (['panel', 'export', 'import', 'node.failover'].includes(normalized)) {
-    if (normalized === 'node.failover') {
-      lavalink.rotateNode();
-      lavalink.ready = false;
-      try { lavalink.ws?.close(); } catch { /* ignore */ }
-      lavalink.connect().catch(() => null);
-      return panel(`Failing over to **${escapeMarkdown(lavalink.activeBaseUrl())}**.`);
-    }
-    return getState(guildId);
+  if (normalized === 'node.failover') {
+    lavalink.rotateNode();
+    lavalink.ready = false;
+    try { lavalink.ws?.close(); } catch { /* ignore */ }
+    lavalink.connect().catch(() => null);
+    return panel(`Failing over to **${escapeMarkdown(lavalink.activeBaseUrl())}**.`);
   }
+
+  if (['panel', 'export', 'import'].includes(normalized)) return getState(guildId);
 
   return fail('Unknown music command.', `The Lavalink backend does not recognize \`${command}\`.`, 'music_unknown_command');
 }
 
+async function handleMusicInteraction() {
+  return false;
+}
+
 module.exports = {
   getState,
+  handleMusicInteraction,
   health,
   initializeMusicPlayer,
   isLavalinkEnabled,

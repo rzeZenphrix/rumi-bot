@@ -194,7 +194,7 @@ const command = {
     return respond.reply(message, 'info', 'This command has moved. Use `welcome`, `goodbye`, `dmmessage`, `pingmessage`, `sticky`, or `systemmessage` instead.');
   },
 
-  async runArea({ message, args, rawAreaInput = '' }) {
+  async runArea({ message, args, rawAreaInput = '', rawArgsInput = '' }) {
     const area = String(args.shift() || '').toLowerCase();
     if (!area) {
       return respond.reply(message, 'info', 'Use `welcome`, `goodbye`, `dmmessage`, `pingmessage`, `sticky`, or `systemmessage`.');
