@@ -32,6 +32,17 @@ function extractGuildNumber(value = '') {
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
+function isMissingGuildNumberColumn(error) {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.details,
+    error?.hint
+  ].filter(Boolean).join(' ');
+
+  return /guild_number/i.test(text) && /(column|schema cache|not found|does not exist|PGRST204|42703)/i.test(text);
+}
+
 async function single(query, context) {
   const { data } = await db.runQuery(query.maybeSingle(), context);
   return data || null;
@@ -43,17 +54,22 @@ async function many(query, context) {
 }
 
 async function nextGuildNumber(guildId) {
-  const { data } = await db.runQuery(
-    db.supabase
-      .from('giveaways')
-      .select('guild_number')
-      .eq('guild_id', guildId)
-      .not('guild_number', 'is', null)
-      .order('guild_number', { ascending: false })
-      .limit(1),
-    'giveaways:nextGuildNumber'
-  );
-  return Number(data?.[0]?.guild_number || 0) + 1;
+  try {
+    const { data } = await db.runQuery(
+      db.supabase
+        .from('giveaways')
+        .select('guild_number')
+        .eq('guild_id', guildId)
+        .not('guild_number', 'is', null)
+        .order('guild_number', { ascending: false })
+        .limit(1),
+      'giveaways:nextGuildNumber'
+    );
+    return Number(data?.[0]?.guild_number || 0) + 1;
+  } catch (error) {
+    if (isMissingGuildNumberColumn(error)) return null;
+    throw error;
+  }
 }
 
 async function getConfig(guildId) {
@@ -89,17 +105,25 @@ async function updateConfig(guildId, patch) {
 async function createGiveaway(payload) {
   let publicId = payload.public_id || makePublicId();
   let guildNumber = payload.guild_number || await nextGuildNumber(payload.guild_id).catch(() => null);
+  let canUseGuildNumber = Number.isFinite(Number(guildNumber)) && Number(guildNumber) > 0;
+
   for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { guild_number: _guildNumber, public_id: _publicId, ...basePayload } = payload;
     const insert = {
-      ...payload,
-      public_id: publicId,
-      guild_number: guildNumber
+      ...basePayload,
+      public_id: publicId
     };
+    if (canUseGuildNumber) insert.guild_number = guildNumber;
 
     const { data, error } = await db.supabase.from('giveaways').insert(insert).select().single();
     if (!error) return data;
+    if (isMissingGuildNumberColumn(error)) {
+      canUseGuildNumber = false;
+      guildNumber = null;
+      continue;
+    }
     if (String(error?.code) !== '23505') throw error;
-    guildNumber = Number(guildNumber || 0) + 1;
+    if (canUseGuildNumber) guildNumber = Number(guildNumber || 0) + 1;
     publicId = makePublicId();
   }
   throw new Error('Could not allocate a unique giveaway number.');
@@ -129,7 +153,10 @@ async function getGiveaway(guildId, idOrPublicId) {
     const byNumber = await single(
       db.supabase.from('giveaways').select('*').eq('guild_id', guildId).eq('guild_number', guildNumber),
       'giveaways:getGiveawayByNumber'
-    );
+    ).catch((error) => {
+      if (isMissingGuildNumberColumn(error)) return null;
+      throw error;
+    });
     if (byNumber) return byNumber;
   }
 

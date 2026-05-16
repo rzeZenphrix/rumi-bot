@@ -62,8 +62,21 @@ function parseStartPositionals(message, rawArgs) {
     return {};
   }
 
-  const [prize, duration, winners, channel] = positionals;
-  if (!prize || !duration || !winners) {
+  const winnersIndex = [...positionals]
+    .map((value, index) => ({ value, index }))
+    .reverse()
+    .find(({ value }) => Number.isInteger(Number(value)) && Number(value) > 0 && Number(value) <= 25)?.index ?? -1;
+
+  const lastIndex = positionals.length - 1;
+  const hasChannel = winnersIndex === lastIndex - 1;
+  const hasNoChannel = winnersIndex === lastIndex;
+  const durationIndex = winnersIndex - 1;
+  const prize = durationIndex > 0 ? positionals.slice(0, durationIndex).join(' ') : '';
+  const duration = durationIndex >= 0 ? positionals[durationIndex] : '';
+  const winners = winnersIndex >= 0 ? positionals[winnersIndex] : '';
+  const channel = hasChannel ? positionals[lastIndex] : null;
+
+  if (!prize || !duration || !winners || (!hasChannel && !hasNoChannel)) {
     throw new Error('Use `giveaway start "Prize" <duration> <winners> [#channel]` or `giveaway start --preset <name>`.');
   }
 
