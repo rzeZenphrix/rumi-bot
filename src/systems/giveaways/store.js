@@ -43,6 +43,17 @@ function isMissingGuildNumberColumn(error) {
   return /guild_number/i.test(text) && /(column|schema cache|not found|does not exist|PGRST204|42703)/i.test(text);
 }
 
+function isMissingForcedWinnersTable(error) {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.details,
+    error?.hint
+  ].filter(Boolean).join(' ');
+
+  return /giveaway_forced_winners/i.test(text) && /(relation|table|schema cache|not found|does not exist|PGRST205|42P01)/i.test(text);
+}
+
 async function single(query, context) {
   const { data } = await db.runQuery(query.maybeSingle(), context);
   return data || null;
@@ -290,6 +301,24 @@ async function listWinners(giveawayId) {
   );
 }
 
+async function listForcedWinners(giveaway) {
+  if (!giveaway?.id) return [];
+
+  return many(
+    db.supabase
+      .from('giveaway_forced_winners')
+      .select('*')
+      .eq('giveaway_id', giveaway.id)
+      .eq('guild_id', giveaway.guild_id)
+      .eq('active', true)
+      .order('created_at', { ascending: true }),
+    'giveaways:listForcedWinners'
+  ).catch((error) => {
+    if (isMissingForcedWinnersTable(error)) return [];
+    throw error;
+  });
+}
+
 async function createPreset(guildId, name, config, createdBy) {
   const { data } = await db.runQuery(
     db.supabase
@@ -525,6 +554,7 @@ module.exports = {
   countEntries,
   addWinner,
   listWinners,
+  listForcedWinners,
   createPreset,
   getPreset,
   listPresets,

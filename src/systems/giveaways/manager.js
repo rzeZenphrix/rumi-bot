@@ -195,12 +195,44 @@ function weightedPick(entries, count) {
 
 async function selectEligibleWinners(client, giveaway, requestedCount) {
   const entries = await store.listEntries(giveaway.id, { validOnly: true });
+  const forcedRows = await store.listForcedWinners(giveaway).catch(() => []);
   const guild = client.guilds.cache.get(giveaway.guild_id) || await client.guilds.fetch(giveaway.guild_id).catch(() => null);
   if (!guild) return { winners: [], audit: [], rejected: [{ reason: 'Guild unavailable' }] };
 
-  const picked = weightedPick(entries, Math.max(requestedCount * 3, requestedCount));
+  const entriesByUser = new Map(entries.map((entry) => [entry.user_id, entry]));
   const winners = [];
   const rejected = [];
+  const audit = [];
+  const pickedUserIds = new Set();
+
+  for (const row of forcedRows) {
+    if (winners.length >= requestedCount) break;
+    const userId = String(row.user_id || '').trim();
+    if (!/^\d{17,20}$/.test(userId) || pickedUserIds.has(userId)) continue;
+
+    const entry = entriesByUser.get(userId) || {
+      giveaway_id: giveaway.id,
+      guild_id: giveaway.guild_id,
+      user_id: userId,
+      entries: 1,
+      bonus_entries: 0,
+      valid: true,
+      metadata: {}
+    };
+
+    winners.push(entry);
+    pickedUserIds.add(userId);
+    audit.push({
+      userId,
+      forced: true,
+      forcedWinnerId: row.id,
+      reason: row.reason || null,
+      pickedAt: new Date().toISOString()
+    });
+  }
+
+  const remainingEntries = entries.filter((entry) => !pickedUserIds.has(entry.user_id));
+  const picked = weightedPick(remainingEntries, Math.max(requestedCount * 3, requestedCount));
 
   for (const entry of picked.winners) {
     if (winners.length >= requestedCount) break;
@@ -217,7 +249,7 @@ async function selectEligibleWinners(client, giveaway, requestedCount) {
     winners.push(entry);
   }
 
-  return { winners, audit: picked.audit, rejected };
+  return { winners, audit: [...audit, ...picked.audit], rejected };
 }
 
 async function endGiveaway(client, giveaway, actorId = null, { reroll = false, winnerCount = null } = {}) {
